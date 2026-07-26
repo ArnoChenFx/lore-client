@@ -39,6 +39,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "shortDescription": "Lore 桌面版本控制客户端"
+    "shortDescription": "Lore desktop version control client",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
   }
 }
