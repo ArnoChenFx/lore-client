@@ -1,0 +1,123 @@
+name: Release Desktop Client
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Validate Version and Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Validate tag and project version
+        run: bun run release:prepare --check "${{ github.ref_name }}"
+
+      - name: Run frontend tests
+        run: bun test
+
+      - name: Build frontend
+        run: bun run build
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: verify
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            platform: windows-latest
+            rustTargets: ''
+            tauriArgs: '--bundles nsis'
+          - name: Linux x64
+            platform: ubuntu-latest
+            rustTargets: ''
+            tauriArgs: '--bundles appimage,deb'
+          - name: macOS Universal
+            platform: macos-latest
+            rustTargets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+            tauriArgs: '--target universal-apple-darwin --bundles app,dmg'
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rustTargets }}
+
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate production release configuration
+        env:
+          TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
+        run: bun run release:prepare "${{ github.ref_name }}"
+
+      - name: Build and upload release artifacts
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Lore Client ${{ github.ref_name }}'
+          releaseBody: |
+            Lore Client ${{ github.ref_name }} automated build.
+
+            Download the installer for your platform from the assets below. Existing installations can also check for and install updates from the client settings.
+          generateReleaseNotes: true
+          releaseDraft: true
+          prerelease: false
+          retryAttempts: 2
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: '${{ matrix.tauriArgs }} --config src-tauri/tauri.release.conf.json'
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Verify updater manifest and publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release download "${{ github.ref_name }}" --pattern latest.json --dir updater-manifest
+          test -s updater-manifest/latest.json
+          gh release edit "${{ github.ref_name }}" --draft=false

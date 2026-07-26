@@ -1,0 +1,36 @@
+[package]
+name = "lore-client"
+version = "0.1.0"
+description = "面向大型二进制工程的 Lore 桌面版本控制客户端"
+authors = ["Lore Client Contributors"]
+edition = "2021"
+
+[lib]
+name = "lore_client_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+toml_edit = "0.25.13"
+
+[dependencies]
+base64 = "0.22"
+# 仅用于把浏览器无法直接显示的 TGA/TIFF 转成 PNG；不引入完整编解码全家桶。
+image = { version = "0.25", default-features = false, features = ["png", "tga", "tiff"] }
+glob-match = "0.2.1"
+lore = { git = "https://github.com/EpicGames/lore.git", rev = "9664606f5a4708606642a6670a57d16bd3d37596" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2.10"
+open = "5.4.0"
+tempfile = "3"
+toml_edit = "0.25.13"
+
+# Lore 当前提交扩展了 quinn-proto 的 RTT 与加密错误接口。作为外部 Git
+# 依赖时，上游工作区的 path patch 不会自动传播，因此在客户端侧携带同一份
+# MIT/Apache-2.0 vendored crate，确保依赖图与固定 Lore 提交完全一致。
+[patch.crates-io]
+quinn-proto = { path = "vendor/quinn-proto" }

@@ -1,0 +1,48 @@
+{
+  "name": "lore-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "check": "tsc -b --pretty false",
+    "test": "vitest run",
+    "test:ui": "bun scripts/cdp-smoke.mjs",
+    "test:visual": "bun scripts/visual-audit.mjs",
+    "release:prepare": "bun scripts/prepare-release.mjs",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "lint": "oxlint --config .oxlintrc.json src",
+    "lint-fix": "oxlint --config .oxlintrc.json --fix src",
+    "format": "oxfmt --config .oxfmtrc.json src .zed package.json .oxlintrc.json .oxfmtrc.json",
+    "format:check": "oxfmt --config .oxfmtrc.json --check src .zed package.json .oxlintrc.json .oxfmtrc.json"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
+    "i18next": "^26.3.6",
+    "lucide-react": "^1.26.0",
+    "pdfjs-dist": "^6.1.200",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-i18next": "^17.0.11",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.185.1",
+    "@vitejs/plugin-react": "^6.0.4",
+    "oxfmt": "^0.52.0",
+    "oxlint": "^1.73.0",
+    "oxlint-tsgolint": "^0.23.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
+  }
+}

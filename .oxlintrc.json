@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "react", "unicorn", "typescript", "oxc", "import"],
+  "env": {
+    "browser": true,
+    "node": true
+  },
+  "ignorePatterns": ["dist/**"],
+  "rules": {
+    "no-unused-vars": "off",
+    "typescript/no-floating-promises": "off",
+    "unicorn/no-new-array": "off",
+    "react/exhaustive-deps": "error",
+    "react/no-array-index-key": "error",
+    "react/self-closing-comp": "error"
+  },
+  "options": {
+    "typeAware": true,
+    "typeCheck": true
+  }
+}

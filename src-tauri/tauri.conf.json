@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Lore Client",
+  "version": "0.1.0",
+  "identifier": "com.lore.client",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Lore Client",
+        "width": 1600,
+        "height": 940,
+        "minWidth": 1120,
+        "minHeight": 700,
+        "center": true,
+        "resizable": true,
+        "decorations": false,
+        "transparent": false,
+        "shadow": true,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [],
+      "pubkey": ""
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "shortDescription": "Lore 桌面版本控制客户端"
+  }
+}

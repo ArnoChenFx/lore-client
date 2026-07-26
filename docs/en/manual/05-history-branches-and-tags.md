@@ -1,0 +1,74 @@
+# History, Branches, and Tags
+
+## Revision History
+
+Flat mode focuses on the current Branch. Topology mode displays real parent relationships
+and Merge lines. Rows can show ID, title, author, time, exact Branch pointers, Tags,
+workspace HEAD, selection, and Revisions ahead of the local workspace.
+
+A Branch badge means the Branch currently points to that Revision; it does not claim
+historical ownership. Tag badges open Tag actions, not Revision actions.
+
+Filters include Merge-only, starting Revision, Branch, date, limit, and Branch ancestry.
+Display options control columns and lane mode.
+
+## Inspector
+
+Overview shows identity, time, parents, and source. Changes is a real parent-child Diff
+with selectable baseline for a Merge Revision. File Tree is the complete immutable file
+set and preserves exact Show in File Tree targets while loading.
+
+Revision-file menus can open changes, run external Diff, show in the file explorer, open
+history, restore to a selected state, and copy paths.
+
+## Revision context actions
+
+| Action | Result |
+| --- | --- |
+| **Open in Inspector** | Read-only inspection. |
+| **Checkout** | Materialize that exact Revision in the workspace. |
+| **New Branch** | Point a new Branch at the selected Revision and its real source Branch. |
+| **New Tag** | Attach a Tag to the exact Revision. |
+| **Cherry-pick onto current Branch** | Replay its change as a new Revision. |
+| **Revert** | Create a new Revision that counteracts it. |
+| **Copy ID/Information** | Copy text only. |
+
+High-impact actions show the target and effect before writing. Right-click itself only
+selects context.
+
+## Branch Overview and menus
+
+Overview separates selected Branch, attached workspace Branch, and Branch Latest.
+Double-click performs Checkout. Ahead means local work is not yet pushed; Synced reflects
+the latest loaded state.
+
+A local Branch can Switch, create Branch/Tag, Push, Merge into current, Archive, and
+Copy. It cannot merge into itself or archive the currently attached Branch. Remote
+Branch checkout creates or attaches an appropriate local working Branch. Archived
+Branches are read-only pointers with locate, Tag, and copy actions.
+
+## Create a Branch
+
+The dialog displays source Branch, source Revision, and new name. Creating from history
+uses the selected Revision’s real source Branch. Creating from a Branch uses its exact
+Latest. On success, the workspace attaches to the new Branch.
+
+## Tags
+
+Tag List shows name, target, description, and update time. Create/Edit shows target
+Branch, exact target Revision, name, description, and the repository-shared metadata
+boundary.
+
+Tag actions include details, locate Revision, edit, delete, and copy name, Revision ID,
+or full information. Deleting a Tag never deletes its Revision.
+
+## Merge, Cherry-pick, and Revert
+
+Merge combines another Branch into the current Branch and may create a two-parent
+Revision. Cherry-pick replays one Revision’s change. Revert creates a counteracting
+Revision. None edits an existing Revision in place, and all can enter a conflict session.
+
+Advanced Branch protection, Latest history, Reset, and read-only Branch Diff are covered
+in [Repository Tools](08-repository-tools-reference.md#7-branch-collaboration).
+
+[Previous: Local Changes](04-local-changes-and-revisions.md) · [Next: Large and Composite Repositories](06-large-and-composite-repositories.md)

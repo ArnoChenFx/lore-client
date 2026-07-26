@@ -1,0 +1,12 @@
+/** Revision 历史与 Inspector 领域的公开入口。 */
+export * from './components/FileHistoryDialog'
+export * from './components/HistoryPanel'
+export * from './components/HistoryPanelContainer'
+export * from './components/Inspector'
+export * from './components/RevisionFileContextMenu'
+export * from './revisionCheckoutTarget'
+export * from './revisionDiffBaseline'
+export * from './revisionFilter'
+export * from './revisionHistoryMode'
+export * from './useRevisionInspectorData'
+export * from './useRevisionFileActions'

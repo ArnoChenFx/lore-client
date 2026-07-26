@@ -1,0 +1,20 @@
+# 源码、配置和脚本统一以 LF 存储与检出，避免 Windows 的 CRLF 在 Linux/macOS
+# 构建、Shell 脚本和快照中产生无意义差异。
+* text=auto eol=lf
+
+# 二进制资产不参与文本换行规范化。
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.tga binary
+*.tif binary
+*.tiff binary
+*.fbx binary
+*.glb binary
+
+# 公共文档图片统一通过 Git LFS 保存，避免二进制截图持续膨胀普通 Git 历史。
+docs/img/** filter=lfs diff=lfs merge=lfs -text

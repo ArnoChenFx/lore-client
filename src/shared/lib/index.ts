@@ -1,0 +1,12 @@
+/** 与具体页面无关的纯函数和共享状态投影入口。 */
+export * from './binaryPreview'
+export * from './changeTreeModel'
+export * from './createDemoWorkingTreeDiff'
+export * from './csvPreview'
+export * from './errorMessage'
+export * from './externalTools'
+export * from './fileLocks'
+export * from './identity'
+export * from './textLikeFiles'
+export * from './themeColors'
+export * from './unifiedDiff'
