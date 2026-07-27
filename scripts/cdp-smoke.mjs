@@ -408,6 +408,48 @@ try {
   await cdp.evaluate(`document.querySelector('button[aria-label="显示选项"]')?.click()`)
   await delay(40)
   /*
+   * 侧栏 Branch 单击必须使用精确 latest 联动 Revision History，但不能触发 Checkout。
+   * 先把目标行滚出视口，再点击 main，并等待平滑滚动结束，以同时覆盖选中态与定位。
+   */
+  await cdp.evaluate(`(() => {
+    const list = document.querySelector(".history-list");
+    if (list instanceof HTMLElement) list.scrollTop = list.scrollHeight;
+    const branch = Array.from(
+      document.querySelectorAll(".sidebar__scroll .tree-row--local")
+    ).find((button) => button.querySelector(":scope > span")?.textContent?.trim() === "main");
+    branch?.click();
+  })()`)
+  await delay(450)
+  results.sidebarBranchRevisionReveal = await cdp.evaluate(`(() => {
+    const list = document.querySelector(".history-list");
+    const selectedRow = document.querySelector(".revision-row.is-selected");
+    const selectedGraph = selectedRow?.querySelector(".revision-graph");
+    const selectedBranch = document.querySelector(".sidebar__scroll .tree-row--local.is-selected");
+    const currentBranch = document.querySelector(".sidebar__scroll .tree-row--local.is-current");
+    const listBounds = list?.getBoundingClientRect();
+    const rowBounds = selectedRow?.getBoundingClientRect();
+    return {
+      historyVisible: Boolean(document.querySelector(".history-panel")),
+      selectedBranch: selectedBranch?.querySelector(":scope > span")?.textContent?.trim() ?? "",
+      currentBranch: currentBranch?.querySelector(":scope > span")?.textContent?.trim() ?? "",
+      revisionId: selectedGraph?.getAttribute("data-revision-id") ?? "",
+      revisionVisible: Boolean(listBounds && rowBounds) &&
+        rowBounds.top >= listBounds.top && rowBounds.bottom <= listBounds.bottom,
+      hasToast: Boolean(document.querySelector(".toast"))
+    };
+  })()`)
+  assert(
+    results.sidebarBranchRevisionReveal.historyVisible &&
+      results.sidebarBranchRevisionReveal.selectedBranch === 'main' &&
+      results.sidebarBranchRevisionReveal.currentBranch === 'world/lighting-pass' &&
+      results.sidebarBranchRevisionReveal.revisionId === '5de935ea27ae40b0a6ba6df114dad190' &&
+      results.sidebarBranchRevisionReveal.revisionVisible &&
+      !results.sidebarBranchRevisionReveal.hasToast,
+    `Clicking a sidebar branch did not reveal its exact latest revision without checkout: ${JSON.stringify(
+      results.sidebarBranchRevisionReveal
+    )}`
+  )
+  /*
    * 直接读取真实 SVG path 的端点，验证合并行展开的侧 lane 会在下一行
    * 进入侧线节点，并在共同父修订前回到主 lane。这里只比较横坐标，
    * 因为相邻行分别使用 y=50 与 y=0 表达同一条跨行边界。

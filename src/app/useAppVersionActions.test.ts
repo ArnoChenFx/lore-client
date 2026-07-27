@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import type { LoreTag, TagCreationSource } from '../types'
-import { INITIAL_VERSION_ACTION_STATE, versionActionStateReducer } from './useAppVersionActions'
+import type { Branch, LoreTag, Revision, TagCreationSource } from '../types'
+import {
+  INITIAL_VERSION_ACTION_STATE,
+  resolveSidebarBranchRevisionId,
+  versionActionStateReducer
+} from './useAppVersionActions'
 
 const source: TagCreationSource = {
   kind: 'workspace',
@@ -57,5 +61,19 @@ describe('application version action state', () => {
 
     expect(closed.tagCreateSource).toBeNull()
     expect(closed.editingTag).toBeNull()
+  })
+
+  it('resolves a sidebar branch only to its exact loaded latest revision', () => {
+    const branch = { id: 'local:feature', name: 'feature', latest: 'revision-feature' } as Branch
+    const revisions = [{ id: 'revision-main' }, { id: 'revision-feature' }] as Revision[]
+
+    expect(resolveSidebarBranchRevisionId(branch, revisions)).toBe('revision-feature')
+  })
+
+  it('does not fall back when the branch latest revision is outside the loaded snapshot', () => {
+    const branch = { id: 'remote:feature', name: 'feature', latest: 'revision-missing' } as Branch
+    const revisions = [{ id: 'revision-main' }] as Revision[]
+
+    expect(resolveSidebarBranchRevisionId(branch, revisions)).toBeUndefined()
   })
 })

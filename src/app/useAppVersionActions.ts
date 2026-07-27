@@ -112,6 +112,18 @@ interface UseAppVersionActionsOptions {
   setSelectedRevisionId: (revisionId: string) => void
   setSelectedBranchId: (branchId: string) => void
   setSelectedTagId: (tagId: string) => void
+  revealRevision: (revisionId: string) => void
+}
+
+/**
+ * 只接受当前快照中真实存在的 Branch latest。
+ *
+ * Lore 历史查询可能被上限或过滤边界截断；返回 `undefined` 比让 Inspector 隐式回退
+ * 到第一条 Revision 更安全，也能避免把错误行表现成定位成功。
+ */
+export function resolveSidebarBranchRevisionId(branch: Branch, revisions: readonly Revision[]): string | undefined {
+  if (!branch.latest) return undefined
+  return revisions.some((revision) => revision.id === branch.latest) ? branch.latest : undefined
 }
 
 /**
@@ -129,7 +141,8 @@ export function useAppVersionActions({
   setActiveView,
   setSelectedRevisionId,
   setSelectedBranchId,
-  setSelectedTagId
+  setSelectedTagId,
+  revealRevision
 }: UseAppVersionActionsOptions) {
   const [state, dispatch] = useReducer(versionActionStateReducer, INITIAL_VERSION_ACTION_STATE)
 
@@ -395,6 +408,23 @@ export function useAppVersionActions({
     [setSelectedBranchId]
   )
 
+  const locateSidebarBranchRevision = useCallback(
+    (branch: Branch) => {
+      // 侧栏单击先保留 Branch 浏览上下文，但绝不把它升级为 Checkout。
+      setSelectedBranchId(branch.id)
+      const revisionId = resolveSidebarBranchRevisionId(branch, activeSnapshot?.revisions ?? [])
+      if (!revisionId) {
+        /*
+         * 历史可能受 Lore 查询上限约束。目标不在当前真实快照时保持现有 Revision，
+         * 不能把第一行或工作区 HEAD 冒充成该 Branch 的 latest。
+         */
+        return
+      }
+      revealRevision(revisionId)
+    },
+    [activeSnapshot?.revisions, revealRevision, setSelectedBranchId]
+  )
+
   const openRevisionContextMenu = useCallback(
     (revision: Revision, point: ContextMenuPoint) => {
       setSelectedRevisionId(revision.id)
@@ -626,6 +656,7 @@ export function useAppVersionActions({
     beginEditingTag,
     deleteTagFromMenu,
     selectBranch,
+    locateSidebarBranchRevision,
     openRevisionContextMenu,
     openBranchContextMenu,
     openRevisionInInspector,

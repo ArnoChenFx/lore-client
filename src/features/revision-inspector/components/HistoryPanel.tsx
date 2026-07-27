@@ -1,5 +1,5 @@
 import { AlignJustify, Columns3, Filter, GitGraph, GitMerge, ListFilter, LoaderCircle, Search } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
@@ -16,7 +16,7 @@ import {
   TextInput,
   type ContextMenuPoint
 } from '../../../shared/ui'
-import type { Branch, LoreTag, Repository, Revision, RevisionHistoryQuery } from '../../../types'
+import type { Branch, LoreTag, Repository, Revision, RevisionHistoryQuery, RevisionRevealRequest } from '../../../types'
 import { filterRevisions } from '../revisionFilter'
 import { branchPointersForLaneMode, revisionIdsAheadOfHead, revisionsForLaneMode } from '../revisionHistoryMode'
 import { RevisionGraph } from './RevisionGraph'
@@ -30,6 +30,7 @@ interface HistoryPanelProps {
   historyQuery: RevisionHistoryQuery
   historyLoading: boolean
   selectedId: string
+  revealRequest: RevisionRevealRequest | null
   onSelect: (revision: Revision) => void
   onCheckout: (revision: Revision) => void
   onContextMenu: (revision: Revision, point: ContextMenuPoint) => void
@@ -58,6 +59,7 @@ export function HistoryPanel({
   historyQuery,
   historyLoading,
   selectedId,
+  revealRequest,
   onSelect,
   onCheckout,
   onContextMenu,
@@ -71,6 +73,7 @@ export function HistoryPanel({
   const [mergesOnly, setMergesOnly] = useState(false)
   const [showAuthor, setShowAuthor] = useState(true)
   const [showTime, setShowTime] = useState(true)
+  const selectedRowRef = useRef<HTMLDivElement>(null)
   const historyOptionsRef = useDismissiblePopover<HTMLDivElement>(filterOpen || columnsOpen, () => {
     setFilterOpen(false)
     setColumnsOpen(false)
@@ -122,6 +125,19 @@ export function HistoryPanel({
         : calculateRevisionGraphLayout(filteredRevisions),
     [filteredRevisions, preferences.revisionHistoryLaneMode]
   )
+
+  useEffect(() => {
+    if (!revealRequest || revealRequest.revisionId !== selectedId) return
+    /*
+     * ref 只挂到当前实际渲染的选中行。若搜索、合并筛选或 Lane 投影隐藏了目标，
+     * 这里保持安静，不修改用户筛选，也不会错误滚到其他 Revision。
+     */
+    selectedRowRef.current?.scrollIntoView({
+      block: 'center',
+      inline: 'nearest',
+      behavior: 'smooth'
+    })
+  }, [revealRequest, selectedId])
 
   return (
     <section className="history-panel" aria-label={t('revisionHistory')}>
@@ -363,6 +379,7 @@ export function HistoryPanel({
             return (
               <div
                 key={revision.id}
+                ref={selected ? selectedRowRef : undefined}
                 role="button"
                 tabIndex={0}
                 className={`revision-row ${revisionsAheadOfHead.has(revision.id) ? 'is-ahead-of-head' : ''} ${selected ? 'is-selected' : ''} ${!showAuthor ? 'hide-author' : ''} ${!showTime ? 'hide-time' : ''}`}

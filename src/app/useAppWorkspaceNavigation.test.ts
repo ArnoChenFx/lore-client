@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Branch, ChangeFile, Revision } from '../types'
-import { resolveSearchNavigation } from './useAppWorkspaceNavigation'
+import { nextRevisionRevealRequest, resolveSearchNavigation } from './useAppWorkspaceNavigation'
 
 describe('application workspace navigation', () => {
   it('routes a revision result to history with the exact revision ID', () => {
@@ -53,5 +53,13 @@ describe('application workspace navigation', () => {
       view: 'changes',
       inspectorTab: 'changes'
     })
+  })
+
+  it('emits a new reveal sequence when the same revision is requested repeatedly', () => {
+    const first = nextRevisionRevealRequest(null, 'revision-42')
+    const second = nextRevisionRevealRequest(first, 'revision-42')
+
+    expect(first).toEqual({ revisionId: 'revision-42', sequence: 1 })
+    expect(second).toEqual({ revisionId: 'revision-42', sequence: 2 })
   })
 })

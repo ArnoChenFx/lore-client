@@ -144,7 +144,15 @@ function App() {
     setAboutOpen,
     showUpdate
   } = useAppOverlayState()
-  const { activeView, setActiveView, inspectorTab, setInspectorTab, handleSearchResult } = useAppWorkspaceNavigation({
+  const {
+    activeView,
+    setActiveView,
+    inspectorTab,
+    setInspectorTab,
+    revisionRevealRequest,
+    revealRevision,
+    handleSearchResult
+  } = useAppWorkspaceNavigation({
     preferredInspectorTab: preferences.inspectorTab,
     preferencesReady,
     onInspectorTabPreferenceChange: (inspectorTab) => updatePreferences({ inspectorTab }),
@@ -382,6 +390,7 @@ function App() {
     beginEditingTag,
     deleteTagFromMenu,
     selectBranch,
+    locateSidebarBranchRevision,
     openRevisionContextMenu,
     openBranchContextMenu,
     openRevisionInInspector,
@@ -401,7 +410,8 @@ function App() {
     setActiveView,
     setSelectedRevisionId,
     setSelectedBranchId,
-    setSelectedTagId
+    setSelectedTagId,
+    revealRevision
   })
 
   const {
@@ -759,7 +769,7 @@ function App() {
               selectedTagId={selectedTagId}
               changeCount={activeSnapshot.changes.length}
               onViewChange={setActiveView}
-              onBranchSelect={selectBranch}
+              onBranchSelect={locateSidebarBranchRevision}
               onBranchCheckout={(branch) => void switchBranchFromMenu(branch)}
               onBranchContextMenu={openBranchContextMenu}
               onTagSelect={selectTag}
@@ -786,6 +796,7 @@ function App() {
                 applicationMode={applicationMode}
                 snapshot={activeSnapshot}
                 selectedId={selectedRevisionId}
+                revealRequest={revisionRevealRequest}
                 onSelectedIdChange={setSelectedRevisionId}
                 onSnapshotChange={upsertSnapshot}
                 onCheckout={(revision) => void checkoutRevisionFromList(revision)}

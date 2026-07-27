@@ -5,7 +5,14 @@ import { t } from '../../../i18n'
 import { loadRevisionHistory } from '../../../services/lore'
 import { readErrorMessage } from '../../../shared/lib'
 import type { ContextMenuPoint } from '../../../shared/ui'
-import type { ApplicationMode, LoreTag, RepositorySnapshot, Revision, RevisionHistoryQuery } from '../../../types'
+import type {
+  ApplicationMode,
+  LoreTag,
+  RepositorySnapshot,
+  Revision,
+  RevisionHistoryQuery,
+  RevisionRevealRequest
+} from '../../../types'
 import type { AppNotify } from '../../repository-session'
 import { revisionHistoryQueryForLaneMode } from '../revisionHistoryMode'
 import { HistoryPanel } from './HistoryPanel'
@@ -14,6 +21,7 @@ interface HistoryPanelContainerProps {
   applicationMode: ApplicationMode
   snapshot: RepositorySnapshot
   selectedId: string
+  revealRequest: RevisionRevealRequest | null
   onSelectedIdChange: (revisionId: string) => void
   onSnapshotChange: (snapshot: RepositorySnapshot) => void
   onCheckout: (revision: Revision) => void
@@ -38,6 +46,7 @@ export function HistoryPanelContainer({
   applicationMode,
   snapshot,
   selectedId,
+  revealRequest,
   onSelectedIdChange,
   onSnapshotChange,
   onCheckout,
@@ -118,6 +127,7 @@ export function HistoryPanelContainer({
       historyQuery={historyQuery}
       historyLoading={historyLoading}
       selectedId={selectedId}
+      revealRequest={revealRequest}
       onSelect={(revision) => onSelectedIdChange(revision.id)}
       onCheckout={onCheckout}
       onContextMenu={onContextMenu}

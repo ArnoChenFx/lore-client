@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import type { InspectorTab, NavigationView } from '../types'
+import type { InspectorTab, NavigationView, RevisionRevealRequest } from '../types'
 import type { SearchResult } from './components/SearchDialog'
 
 interface UseAppWorkspaceNavigationOptions {
@@ -16,6 +16,17 @@ export interface SearchNavigationTarget {
   inspectorTab?: InspectorTab
   revisionId?: string
   branchId?: string
+}
+
+/** 为重复定位同一 Revision 生成可观察的新请求。 */
+export function nextRevisionRevealRequest(
+  previous: RevisionRevealRequest | null,
+  revisionId: string
+): RevisionRevealRequest {
+  return {
+    revisionId,
+    sequence: (previous?.sequence ?? 0) + 1
+  }
 }
 
 /** 把搜索结果转换为不含副作用的联合导航目标，便于独立验证跨面板定位语义。 */
@@ -44,6 +55,7 @@ export function useAppWorkspaceNavigation({
 }: UseAppWorkspaceNavigationOptions) {
   const [activeView, setActiveView] = useState<NavigationView>('history')
   const [inspectorTab, setInspectorTabState] = useState<InspectorTab>(preferredInspectorTab)
+  const [revisionRevealRequest, setRevisionRevealRequest] = useState<RevisionRevealRequest | null>(null)
 
   const setInspectorTab = useCallback(
     (tab: InspectorTab) => {
@@ -58,15 +70,28 @@ export function useAppWorkspaceNavigation({
     setInspectorTabState(preferredInspectorTab)
   }, [preferencesReady, preferredInspectorTab])
 
+  const revealRevision = useCallback(
+    (revisionId: string) => {
+      /*
+       * 视图、选中态与滚动事件必须来自同一入口。请求带递增序号，因此历史面板已
+       * 选中该 Revision 时，用户再次点击来源对象仍能重新定位，而不会被状态去重。
+       */
+      setActiveView('history')
+      onRevisionSelect(revisionId)
+      setRevisionRevealRequest((previous) => nextRevisionRevealRequest(previous, revisionId))
+    },
+    [onRevisionSelect]
+  )
+
   const handleSearchResult = useCallback(
     (result: SearchResult) => {
       const target = resolveSearchNavigation(result)
-      setActiveView(target.view)
-      if (target.revisionId) onRevisionSelect(target.revisionId)
+      if (target.revisionId) revealRevision(target.revisionId)
+      else setActiveView(target.view)
       if (target.branchId) onBranchSelect(target.branchId)
       if (target.inspectorTab) setInspectorTab(target.inspectorTab)
     },
-    [onBranchSelect, onRevisionSelect, setInspectorTab]
+    [onBranchSelect, revealRevision, setInspectorTab]
   )
 
   return {
@@ -74,6 +99,8 @@ export function useAppWorkspaceNavigation({
     setActiveView,
     inspectorTab,
     setInspectorTab,
+    revisionRevealRequest,
+    revealRevision,
     handleSearchResult
   }
 }

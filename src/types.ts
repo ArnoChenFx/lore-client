@@ -1,5 +1,16 @@
 export type NavigationView = 'history' | 'changes' | 'branches' | 'tags'
 export type InspectorTab = 'overview' | 'changes' | 'tree'
+
+/**
+ * 跨工作区入口发出的 Revision 定位请求。
+ *
+ * `sequence` 让同一 Revision 的连续定位仍然产生新事件；仅存 Revision ID 会被
+ * React 的相同状态值去重，用户再次点击同一分支时便无法把历史行滚回视口。
+ */
+export interface RevisionRevealRequest {
+  revisionId: string
+  sequence: number
+}
 export type ChangeStatus = 'modified' | 'added' | 'deleted' | 'renamed'
 export type ThemePreference = 'system' | 'dark' | 'light'
 export type ResolvedTheme = 'dark' | 'light'
