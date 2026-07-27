@@ -62,7 +62,6 @@ const enUSStatic = {
   assetWarningUnrealVersionedSummaryOnly:
     'Unreal Package Summary varies by engine version; only stable fields are shown.',
   audioPlaybackUnsupported: 'The current system media decoder cannot play this audio.',
-  audioPreviewDoesNotAutoplay: 'Audio never autoplays; the preview uses only this file’s in-memory content.',
   active: 'Active',
   added: 'Added',
   added207MbReused892Mb: 'Added 207 MB, reused 892 MB',

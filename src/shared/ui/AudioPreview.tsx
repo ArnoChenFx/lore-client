@@ -28,7 +28,6 @@ export function AudioPreview({ fileName, label, mimeType, dataBase64 }: AudioPre
       <audio controls preload="metadata" src={`data:${mimeType};base64,${dataBase64}`}>
         {t('audioPlaybackUnsupported')}
       </audio>
-      <p>{t('audioPreviewDoesNotAutoplay')}</p>
     </div>
   )
 }

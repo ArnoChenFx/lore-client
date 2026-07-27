@@ -53,7 +53,6 @@ const zhCNStatic = {
   assetWarningUnrealPakVersionedIndex: 'Unreal Pak 使用版本化索引；当前显示可信容器信息，不猜测目录项。',
   assetWarningUnrealVersionedSummaryOnly: 'Unreal Package Summary 随引擎版本变化；当前只显示稳定字段。',
   audioPlaybackUnsupported: '当前系统媒体解码器不支持该音频。',
-  audioPreviewDoesNotAutoplay: '音频不会自动播放；预览仅使用当前文件的内存内容。',
   active: '当前生效',
   added: '已新增',
   added207MbReused892Mb: '新增 207 MB，复用 892 MB',
