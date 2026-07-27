@@ -178,7 +178,12 @@ export function SettingsDialog({
   }, [defaultIdentity])
 
   useEffect(() => {
-    if (activeCategory !== 'maintenance' || applicationLogLoaded || applicationLogLoading) return
+    /*
+     * loading 是本次请求的展示状态，不能作为 Effect 依赖或再次进入的拦截条件。
+     * 否则 setApplicationLogLoading(true) 会触发清理函数，把尚未返回的原生命令标记为
+     * cancelled，finally 随后也无法复位状态，界面便会永久停留在“正在读取”。
+     */
+    if (activeCategory !== 'maintenance' || applicationLogLoaded) return
     let cancelled = false
     setApplicationLogLoading(true)
     void loadApplicationLogInfo()
@@ -199,7 +204,7 @@ export function SettingsDialog({
     return () => {
       cancelled = true
     }
-  }, [activeCategory, applicationLogLoaded, applicationLogLoading])
+  }, [activeCategory, applicationLogLoaded])
 
   const openLogDirectory = async () => {
     setApplicationLogError(false)

@@ -4,6 +4,7 @@ import { debug, error as writeError, info, warn } from '@tauri-apps/plugin-log'
 import type { ApplicationLogInfo } from '../types'
 
 const MAX_LOG_MESSAGE_LENGTH = 4_000
+const EXPECTED_IPC_CONTROL_FLOW_CODES = new Set(['auth_binding_missing', 'auth_binding_identity_not_requested'])
 
 /**
  * 在日志写入磁盘前移除常见凭据形式。
@@ -41,6 +42,16 @@ function readLogValue(value: unknown): string {
   } catch {
     return Object.prototype.toString.call(value)
   }
+}
+
+/**
+ * 某些结构化错误表示可选增强能力在当前上下文中不适用，调用方会按设计回退。
+ * 这些结果仍保留 Debug 轨迹，但不能冒充需要用户处理的 ERROR。
+ */
+export function isExpectedIpcControlFlowError(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || !('code' in value)) return false
+  const code = (value as { code?: unknown }).code
+  return typeof code === 'string' && EXPECTED_IPC_CONTROL_FLOW_CODES.has(code)
 }
 
 type LogWriter = (message: string) => Promise<void>
@@ -91,10 +102,12 @@ export async function invokeLogged<T>(command: string, args?: Record<string, unk
     logDebug('ipc', `succeeded command=${command} durationMs=${Math.round(performance.now() - startedAt)}`)
     return result
   } catch (cause) {
-    logError(
-      'ipc',
-      `failed command=${command} durationMs=${Math.round(performance.now() - startedAt)} error=${sanitizeLogMessage(cause)}`
-    )
+    const durationMs = Math.round(performance.now() - startedAt)
+    if (isExpectedIpcControlFlowError(cause)) {
+      logDebug('ipc', `not-applicable command=${command} durationMs=${durationMs} detail=${sanitizeLogMessage(cause)}`)
+    } else {
+      logError('ipc', `failed command=${command} durationMs=${durationMs} error=${sanitizeLogMessage(cause)}`)
+    }
     throw cause
   }
 }
