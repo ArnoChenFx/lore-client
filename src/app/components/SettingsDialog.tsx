@@ -41,6 +41,7 @@ import { isUpdateBusy, type AppUpdateState } from '../appUpdater'
 interface SettingsDialogProps {
   preference: ThemePreference
   language: LanguagePreference
+  automaticallyCheckForUpdates?: boolean
   defaultIdentity: string
   externalDiffTools?: ExternalDiffToolPreference[]
   externalMergeTools?: ExternalDiffToolPreference[]
@@ -48,6 +49,7 @@ interface SettingsDialogProps {
   initialCategory?: SettingsCategory
   onPreferenceChange: (preference: ThemePreference) => void
   onLanguageChange: (language: LanguagePreference) => void
+  onAutomaticallyCheckForUpdatesChange?: (enabled: boolean) => void
   onDefaultIdentityChange: (identity: string) => void
   onExternalDiffToolsChange?: (tools: ExternalDiffToolPreference[]) => void
   onExternalMergeToolsChange?: (tools: ExternalDiffToolPreference[]) => void
@@ -75,6 +77,7 @@ export type SettingsCategory = 'general' | 'identity' | 'integrations' | 'storag
 export function SettingsDialog({
   preference,
   language,
+  automaticallyCheckForUpdates = true,
   defaultIdentity,
   externalDiffTools = DEFAULT_EXTERNAL_DIFF_TOOLS,
   externalMergeTools = DEFAULT_EXTERNAL_MERGE_TOOLS,
@@ -82,6 +85,7 @@ export function SettingsDialog({
   initialCategory = 'general',
   onPreferenceChange,
   onLanguageChange,
+  onAutomaticallyCheckForUpdatesChange = () => undefined,
   onDefaultIdentityChange,
   onExternalDiffToolsChange = () => undefined,
   onExternalMergeToolsChange = () => undefined,
@@ -741,6 +745,16 @@ export function SettingsDialog({
               </div>
               <fieldset className="settings-group settings-group--updates">
                 <legend>{t('applicationUpdates')}</legend>
+                <label className="settings-update-preference">
+                  <CheckboxInput
+                    checked={automaticallyCheckForUpdates}
+                    onChange={(event) => onAutomaticallyCheckForUpdatesChange(event.target.checked)}
+                  />
+                  <span>
+                    <strong>{t('automaticallyCheckForUpdates')}</strong>
+                    <small>{t('automaticUpdateCheckDescription')}</small>
+                  </span>
+                </label>
                 <div className="settings-update">
                   <span className="settings-update__icon">
                     <RefreshCw size={16} />

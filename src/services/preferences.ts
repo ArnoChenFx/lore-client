@@ -10,6 +10,7 @@ export const DEFAULT_CLIENT_PREFERENCES: ClientPreferences = {
   theme: 'system',
   // 静态默认仍为简体中文；首次无偏好文件时由 resolveSystemLanguagePreference 覆盖。
   language: 'zh-CN',
+  automaticallyCheckForUpdates: true,
   defaultIdentity: '',
   workspaceLayout: {
     sidebarWidth: 244,
@@ -168,6 +169,11 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
     externalMergeTools: normalizeTools(value?.externalMergeTools, DEFAULT_EXTERNAL_MERGE_TOOLS, 'merge'),
     defaultIdentity,
     language,
+    // 旧偏好文件没有该字段时保持既有的启动检查行为。
+    automaticallyCheckForUpdates:
+      typeof value?.automaticallyCheckForUpdates === 'boolean'
+        ? value.automaticallyCheckForUpdates
+        : DEFAULT_CLIENT_PREFERENCES.automaticallyCheckForUpdates,
     localChangesDiffVisible:
       typeof value?.localChangesDiffVisible === 'boolean'
         ? value.localChangesDiffVisible

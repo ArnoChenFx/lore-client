@@ -101,7 +101,10 @@ function App() {
   const { preference, resolvedTheme, setPreference, toggleTheme } = useTheme()
   const { layout, resizeSidebar, resizeInspector, resetLayout } = useWorkspaceLayout()
   // 浏览器演示与 Vite 开发构建没有正式签名公钥和发布端点，不执行无意义的更新请求。
-  const appUpdater = useAppUpdater(applicationMode === 'tauri' && import.meta.env.PROD)
+  const appUpdater = useAppUpdater(
+    applicationMode === 'tauri' && import.meta.env.PROD,
+    preferencesReady && preferences.automaticallyCheckForUpdates
+  )
   const {
     snapshots,
     activeRepositoryId,
@@ -535,6 +538,7 @@ function App() {
             ? {
                 preference,
                 language: preferences.language,
+                automaticallyCheckForUpdates: preferences.automaticallyCheckForUpdates,
                 defaultIdentity: preferences.defaultIdentity,
                 externalDiffTools: preferences.externalDiffTools,
                 externalMergeTools: preferences.externalMergeTools,
@@ -547,6 +551,8 @@ function App() {
                 initialSharedStoreRemoteUrl: activeSnapshot?.repository.serverUrl ?? DEFAULT_SERVER_URL,
                 onPreferenceChange: setPreference,
                 onLanguageChange: (language) => updatePreferences({ language }),
+                onAutomaticallyCheckForUpdatesChange: (automaticallyCheckForUpdates) =>
+                  updatePreferences({ automaticallyCheckForUpdates }),
                 onDefaultIdentityChange: (defaultIdentity) => updatePreferences({ defaultIdentity }),
                 onExternalDiffToolsChange: (externalDiffTools) => updatePreferences({ externalDiffTools }),
                 onExternalMergeToolsChange: (externalMergeTools) => updatePreferences({ externalMergeTools }),

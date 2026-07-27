@@ -894,6 +894,7 @@ const enUSStatic = {
   abortConflictOperation: 'Abort conflict operation',
   applicationUpdateAvailable: 'Application Update Available',
   applicationUpdates: 'Application Updates',
+  automaticallyCheckForUpdates: 'Automatically check for updates',
   automaticUpdateCheckDescription:
     'Release desktop builds check GitHub Releases at startup; you can also check manually at any time.',
   availableVersion: 'Available version',

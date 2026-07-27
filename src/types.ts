@@ -834,6 +834,8 @@ export interface ClientPreferences {
   theme: ThemePreference
   /** 界面语言使用稳定 BCP 47 标签，避免将来扩展语言时迁移显示名称。 */
   language: LanguagePreference
+  /** 是否在正式桌面版启动完成后自动检查应用更新；手动检查始终保持可用。 */
+  automaticallyCheckForUpdates: boolean
   /**
    * 仓库没有配置 `identity` 时用于单次提交的客户端默认身份。
    *

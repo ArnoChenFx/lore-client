@@ -4054,6 +4054,40 @@ try {
       results.sharedStoreEndpointRoles.hint.includes('仅用于本次创建'),
     `Shared Store unexpectedly reused the temporary server-browser draft: ${JSON.stringify(results.sharedStoreEndpointRoles)}`
   )
+  await cdp.evaluate(`Array.from(document.querySelectorAll(".settings-categories > button"))
+    .find((button) => button.textContent.includes("维护"))
+    ?.click()`)
+  await delay(40)
+  results.automaticUpdateCheck = await cdp.evaluate(`(() => {
+    const panel = document.querySelector("#settings-panel-maintenance");
+    const checkbox = panel?.querySelector(
+      '.settings-update-preference input[type="checkbox"]'
+    );
+    const manualButton = Array.from(panel?.querySelectorAll(".settings-update button") ?? [])
+      .find((button) => button.textContent?.includes("检查更新"));
+    if (!(checkbox instanceof HTMLInputElement)) {
+      return { visible: false };
+    }
+    const initiallyChecked = checkbox.checked;
+    checkbox.click();
+    const checkedAfterDisable = checkbox.checked;
+    checkbox.click();
+    return {
+      visible: panel instanceof HTMLElement && !panel.hidden,
+      initiallyChecked,
+      checkedAfterDisable,
+      checkedAfterRestore: checkbox.checked,
+      manualActionPresent: Boolean(manualButton)
+    };
+  })()`)
+  assert(
+    results.automaticUpdateCheck.visible &&
+      results.automaticUpdateCheck.initiallyChecked &&
+      !results.automaticUpdateCheck.checkedAfterDisable &&
+      results.automaticUpdateCheck.checkedAfterRestore &&
+      results.automaticUpdateCheck.manualActionPresent,
+    `Automatic update preference is not wired to the settings UI: ${JSON.stringify(results.automaticUpdateCheck)}`
+  )
   await cdp.evaluate(`(() => {
     const authorInput = document.querySelector(
       'input[aria-label="默认提交作者名"]'

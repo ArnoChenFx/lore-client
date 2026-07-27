@@ -75,12 +75,12 @@ Rescans configured Stores, size, file count, directory existence, and scan error
 
 ### Create Shared Store
 
-| Parameter | Meaning |
-| --- | --- |
-| **Target server** | Required, e.g. `lore://127.0.0.1:41337`; used only for this creation. |
-| **Device-level parent directory** | Optional; blank uses Lore’s default location. |
-| **Choose/Clear** | Select or reset the parent. |
-| **Create Shared Store** | Create, then reload status; disabled with no target server. |
+| Parameter                         | Meaning                                                               |
+| --------------------------------- | --------------------------------------------------------------------- |
+| **Target server**                 | Required, e.g. `lore://127.0.0.1:41337`; used only for this creation. |
+| **Device-level parent directory** | Optional; blank uses Lore’s default location.                         |
+| **Choose/Clear**                  | Select or reset the parent.                                           |
+| **Create Shared Store**           | Create, then reload status; disabled with no target server.           |
 
 This server does not edit repository configuration or the server browser’s temporary
 address.
@@ -98,6 +98,9 @@ repositories, theme, language, View, selection, or history.
 
 ### Application Updates
 
+**Automatically check for updates** is enabled by default. When disabled, release desktop builds do not query GitHub
+Releases after startup;
+
 The section reports current version, checking, up-to-date, available, check failure,
 install failure, or an unsupported runtime. **Check for updates** is available in a
 desktop release with no update task running. **Download, install, and restart** exits the
@@ -105,13 +108,13 @@ current application, so finish or save active work first.
 
 ## Scope boundaries
 
-| Setting | Scope |
-| --- | --- |
-| Theme, language, layout, external tools | This device/client |
-| Default identity | This device; fallback only |
-| Shared Store automatic policy | This device |
-| Repository identity and remote URL | Current repository, in Repository Tools |
-| Server browsing address | Current dialog only |
-| Clone advanced parameters | One Clone only |
+| Setting                                                          | Scope                                   |
+| ---------------------------------------------------------------- | --------------------------------------- |
+| Theme, language, layout, external tools, automatic update checks | This device/client                      |
+| Default identity                                                 | This device; fallback only              |
+| Shared Store automatic policy                                    | This device                             |
+| Repository identity and remote URL                               | Current repository, in Repository Tools |
+| Server browsing address                                          | Current dialog only                     |
+| Clone advanced parameters                                        | One Clone only                          |
 
 [Previous: Repository Tools](08-repository-tools-reference.md) · [Next: Troubleshooting](10-troubleshooting-and-safety.md)

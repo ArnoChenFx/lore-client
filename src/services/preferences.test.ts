@@ -19,6 +19,7 @@ describe('client preferences stored on disk', () => {
     expect(DEFAULT_CLIENT_PREFERENCES).toMatchObject({
       theme: 'system',
       language: 'zh-CN',
+      automaticallyCheckForUpdates: true,
       defaultIdentity: '',
       workspaceLayout: {
         sidebarWidth: 244,
@@ -116,6 +117,16 @@ describe('client preferences stored on disk', () => {
 
     updateClientPreferences({ language: 'zh-CN' })
     expect(getClientPreferences().language).toBe('zh-CN')
+  })
+
+  it('enables automatic update checks by default and persists the opt-out', () => {
+    expect(DEFAULT_CLIENT_PREFERENCES.automaticallyCheckForUpdates).toBe(true)
+
+    updateClientPreferences({ automaticallyCheckForUpdates: false })
+    expect(getClientPreferences().automaticallyCheckForUpdates).toBe(false)
+
+    updateClientPreferences({ automaticallyCheckForUpdates: true })
+    expect(getClientPreferences().automaticallyCheckForUpdates).toBe(true)
   })
 
   it('normalizes Windows extended paths and deduplicates repository tabs', () => {

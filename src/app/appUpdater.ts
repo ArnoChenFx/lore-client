@@ -48,13 +48,19 @@ export function isUpdateBusy(phase: AppUpdatePhase): boolean {
   return phase === 'checking' || phase === 'downloading' || phase === 'installing' || phase === 'installed'
 }
 
+/** 自动检查必须同时等待偏好就绪，并确认当前构建具备原生更新能力。 */
+export function shouldAutomaticallyCheckForUpdates(enabled: boolean, automaticallyCheck: boolean): boolean {
+  return enabled && automaticallyCheck
+}
+
 /**
  * 管理 Tauri Updater 原生资源的完整生命周期。
  *
  * `enabled` 只在带正式发布配置的桌面构建中开启；浏览器演示和 Vite 开发模式不会
- * 请求 GitHub。启动检查只发现更新，真正下载、安装与重启仍需用户明确确认。
+ * 请求 GitHub。`automaticallyCheck` 只控制启动后的延迟检查，不限制用户主动检查；
+ * 自动检查也只发现更新，真正下载、安装与重启仍需用户明确确认。
  */
-export function useAppUpdater(enabled: boolean) {
+export function useAppUpdater(enabled: boolean, automaticallyCheck = true) {
   const [state, setState] = useState<AppUpdateState>(() => ({
     ...EMPTY_UPDATE_STATE,
     phase: enabled ? 'idle' : 'unsupported'
@@ -154,10 +160,12 @@ export function useAppUpdater(enabled: boolean) {
       closeUpdateResource()
       return
     }
+    // 关闭自动检查只取消启动调度，不清理手动检查已获得的更新资源。
+    if (!shouldAutomaticallyCheckForUpdates(enabled, automaticallyCheck)) return
     // 留出首屏水合时间，避免更新网络请求与仓库恢复竞争启动关键路径。
     const timeout = window.setTimeout(() => void checkForUpdates(), 2_000)
     return () => window.clearTimeout(timeout)
-  }, [checkForUpdates, closeUpdateResource, enabled])
+  }, [automaticallyCheck, checkForUpdates, closeUpdateResource, enabled])
 
   useEffect(() => closeUpdateResource, [closeUpdateResource])
 

@@ -844,6 +844,7 @@ const zhCNStatic = {
   abortConflictOperation: '中止冲突操作',
   applicationUpdateAvailable: '发现应用更新',
   applicationUpdates: '应用更新',
+  automaticallyCheckForUpdates: '自动检查更新',
   automaticUpdateCheckDescription: '正式桌面版启动后自动检查 GitHub Releases，也可随时手动检查。',
   availableVersion: '可用版本',
   checkForUpdates: '检查更新',

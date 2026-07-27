@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { calculateUpdateProgress, isUpdateBusy } from './appUpdater'
+import { calculateUpdateProgress, isUpdateBusy, shouldAutomaticallyCheckForUpdates } from './appUpdater'
 
 describe('app updater state helpers', () => {
   it('keeps progress indeterminate until the server reports a valid total size', () => {
@@ -20,5 +20,11 @@ describe('app updater state helpers', () => {
     expect(isUpdateBusy('installing')).toBe(true)
     expect(isUpdateBusy('available')).toBe(false)
     expect(isUpdateBusy('error')).toBe(false)
+  })
+
+  it('schedules automatic checks only after preferences are ready and updater support is enabled', () => {
+    expect(shouldAutomaticallyCheckForUpdates(true, true)).toBe(true)
+    expect(shouldAutomaticallyCheckForUpdates(true, false)).toBe(false)
+    expect(shouldAutomaticallyCheckForUpdates(false, true)).toBe(false)
   })
 })

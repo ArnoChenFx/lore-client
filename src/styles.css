@@ -7633,6 +7633,38 @@ body.is-resizing-panes {
   gap: 8px;
 }
 
+.settings-update-preference {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-update-preference > .control-checkbox {
+  margin-top: 2px;
+}
+
+.settings-update-preference > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settings-update-preference strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.settings-update-preference small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .settings-update__icon {
   display: grid;
   width: 30px;
