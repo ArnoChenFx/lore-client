@@ -20,6 +20,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { t } from '../../i18n'
+import { loadApplicationLogInfo, openApplicationLogDirectory } from '../../services/logging'
 import {
   createCustomExternalTool,
   DEFAULT_EXTERNAL_DIFF_TOOLS,
@@ -30,6 +31,7 @@ import {
 import { formatCommitIdentity, parseCommitIdentity } from '../../shared/lib'
 import { CheckboxInput, RevisionAuthorAvatar, SelectInput, TextButton, TextInput } from '../../shared/ui'
 import type {
+  ApplicationLogInfo,
   ExternalDiffToolKind,
   ExternalDiffToolPreference,
   LanguagePreference,
@@ -112,6 +114,10 @@ export function SettingsDialog({
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>(initialCategory)
   const [selectedDiffToolId, setSelectedDiffToolId] = useState(externalDiffTools[0]?.id ?? '')
   const [selectedMergeToolId, setSelectedMergeToolId] = useState(externalMergeTools[0]?.id ?? '')
+  const [applicationLogInfo, setApplicationLogInfo] = useState<ApplicationLogInfo | null>(null)
+  const [applicationLogLoading, setApplicationLogLoading] = useState(false)
+  const [applicationLogLoaded, setApplicationLogLoaded] = useState(false)
+  const [applicationLogError, setApplicationLogError] = useState(false)
   const lastEmittedIdentityRef = useRef<string | null>(null)
 
   const themeOptions = [
@@ -170,6 +176,39 @@ export function SettingsDialog({
     }
     setIdentity(parseCommitIdentity(defaultIdentity))
   }, [defaultIdentity])
+
+  useEffect(() => {
+    if (activeCategory !== 'maintenance' || applicationLogLoaded || applicationLogLoading) return
+    let cancelled = false
+    setApplicationLogLoading(true)
+    void loadApplicationLogInfo()
+      .then((info) => {
+        if (cancelled) return
+        setApplicationLogInfo(info)
+        setApplicationLogError(false)
+      })
+      .catch(() => {
+        if (!cancelled) setApplicationLogError(true)
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setApplicationLogLoading(false)
+          setApplicationLogLoaded(true)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeCategory, applicationLogLoaded, applicationLogLoading])
+
+  const openLogDirectory = async () => {
+    setApplicationLogError(false)
+    try {
+      await openApplicationLogDirectory()
+    } catch {
+      setApplicationLogError(true)
+    }
+  }
 
   const updateIdentity = (name: string, email: string) => {
     const next = { name, email, raw: formatCommitIdentity(name, email) }
@@ -743,6 +782,36 @@ export function SettingsDialog({
                   {t('restoreDefaults')}
                 </button>
               </div>
+              <fieldset className="settings-group settings-group--logs">
+                <legend>{t('applicationLogs')}</legend>
+                <div className="settings-log">
+                  <span>
+                    <strong>{t('logDirectory')}</strong>
+                    <small>{t('applicationLogsDescription')}</small>
+                    {applicationLogInfo && (
+                      <small>
+                        {t('status.applicationLogRetention', {
+                          size: `${Math.round(applicationLogInfo.maxFileSizeBytes / 1024 / 1024)} MiB`,
+                          count: applicationLogInfo.retainedFileCount
+                        })}
+                      </small>
+                    )}
+                  </span>
+                  <code title={applicationLogInfo?.directoryPath}>
+                    {applicationLogLoading
+                      ? t('loadingLogDirectory')
+                      : applicationLogInfo?.directoryPath || t('logDirectoryUnavailable')}
+                  </code>
+                  <TextButton
+                    disabled={!applicationLogInfo || applicationLogLoading}
+                    onClick={() => void openLogDirectory()}
+                  >
+                    <FolderOpen size={14} />
+                    {t('openLogDirectory')}
+                  </TextButton>
+                </div>
+                {applicationLogError && <small className="settings-log__error">{t('unableToOpenLogDirectory')}</small>}
+              </fieldset>
               <fieldset className="settings-group settings-group--updates">
                 <legend>{t('applicationUpdates')}</legend>
                 <label className="settings-update-preference">

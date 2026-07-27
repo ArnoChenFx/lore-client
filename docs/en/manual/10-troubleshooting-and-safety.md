@@ -102,9 +102,14 @@ conflict, and diagnostic workflows after upgrades.
 
 ## Useful problem reports
 
+First open **Client Settings → Maintenance → Open Log Directory** and locate
+`lore-client.log` plus any relevant recent rotated file. Reproduce the problem once, then
+use timestamps to find the matching command's `started`, `succeeded`, or `failed` record.
+
 Include Client version, operation and failed stage, error category/message, online state,
 current Branch and short Revision ID, View/Layer/Link/Shared Store/dependency use, and
-reproduction steps. Never send Access Tokens, credentials, or an unredacted sensitive
-state Dump.
+reproduction steps. Common credential patterns are redacted automatically, but logs may
+still include local paths and upstream error details. Never send Access Tokens,
+credentials, an unreviewed full log, or an unredacted sensitive state Dump.
 
 [Previous: Client Settings](09-client-settings-reference.md) · [Back to manual index](README.md)

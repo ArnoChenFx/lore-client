@@ -3,6 +3,8 @@ import { relaunch } from '@tauri-apps/plugin-process'
 import { check, type DownloadEvent, type Update } from '@tauri-apps/plugin-updater'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { logError, logWarning } from '../services/logging'
+
 export type AppUpdatePhase =
   | 'unsupported'
   | 'idle'
@@ -73,7 +75,7 @@ export function useAppUpdater(enabled: boolean, automaticallyCheck = true) {
     updateRef.current = null
     if (update) {
       // close() 只释放 Rust 侧资源；失败不影响下一次检查，因此不向用户制造额外错误。
-      void update.close().catch((error: unknown) => console.warn('Failed to release the updater resource', error))
+      void update.close().catch((error: unknown) => logWarning('application-updater-release', error))
     }
   }, [])
 
@@ -103,7 +105,7 @@ export function useAppUpdater(enabled: boolean, automaticallyCheck = true) {
       })
     } catch (error) {
       // 原始插件错误只写入开发控制台；产品界面按语义错误类型显示本地化文案。
-      console.error('Failed to check for application updates', error)
+      logError('application-updater-check', error)
       setState((current) => ({ ...current, phase: 'error', errorKind: 'check' }))
     } finally {
       busyRef.current = false
@@ -144,7 +146,7 @@ export function useAppUpdater(enabled: boolean, automaticallyCheck = true) {
        */
       await relaunch()
     } catch (error) {
-      console.error('Failed to install the application update', error)
+      logError('application-updater-install', error)
       setState((current) => ({ ...current, phase: 'error', errorKind: 'install' }))
     } finally {
       busyRef.current = false

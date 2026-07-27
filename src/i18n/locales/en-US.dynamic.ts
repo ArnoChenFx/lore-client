@@ -7,6 +7,7 @@
 
 const enUSDynamic = {
   status: {
+    applicationLogRetention: 'Up to {{size}} per file; keeps the {{count}} most recent log files.',
     binaryMetadataSummary: 'Binary metadata ({{count}} bytes)',
     repositoryPathHealed: 'Healed repository state for {{path}}',
     staleInstancesPruned: 'Pruned stale repository instances',

@@ -96,6 +96,22 @@ remote, local path, size/file count, missing directory, and scan errors.
 **Restore defaults** resets sidebar and Inspector widths only. It does not clear
 repositories, theme, language, View, selection, or history.
 
+### Application Logs
+
+The desktop app writes startup events, IPC command names and durations, outcomes, and
+unhandled errors to `lore-client.log`. **Open Log Directory** opens the fixed platform
+location in the system file manager:
+
+- Windows: `%LOCALAPPDATA%\com.lore.client\logs`;
+- macOS: `~/Library/Logs/com.lore.client`;
+- Linux: `$XDG_DATA_HOME/com.lore.client/logs`, or
+  `~/.local/share/com.lore.client/logs` when XDG data home is unset.
+
+Each file is limited to 5 MiB, with five active or rotated files retained in total. Lore
+Client does not log IPC arguments and redacts common Token, JWT, password, and URL
+credential patterns. Logs can still contain local repository paths or error details, so
+review them before sharing. Browser demo mode does not create log files.
+
 ### Application Updates
 
 **Automatically check for updates** is enabled by default. When disabled, release desktop builds do not query GitHub

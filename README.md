@@ -65,6 +65,8 @@ Repository Configuration is the only place that persistently changes a repositor
 
 Keep multiple repositories open in tabs, resize and restore your layout, switch between light and dark themes, and use keyboard-accessible menus and navigation. The interface is available in English and Simplified Chinese.
 
+For troubleshooting, bounded application logs collect command timing and errors in the platform log directory; open that fixed location directly from Client Settings → Maintenance.
+
 ---
 
 ## Get started

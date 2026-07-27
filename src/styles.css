@@ -7633,6 +7633,56 @@ body.is-resizing-panes {
   gap: 8px;
 }
 
+.settings-log {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px 12px;
+}
+
+.settings-log > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  grid-column: 1 / -1;
+  gap: 3px;
+}
+
+.settings-log strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.settings-log small,
+.settings-log__error {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.settings-log > code {
+  min-width: 0;
+  overflow: hidden;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-subtle);
+  color: var(--text-soft);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-log > button {
+  white-space: nowrap;
+}
+
+.settings-log__error {
+  display: block;
+  margin-top: 8px;
+  color: var(--danger);
+}
+
 .settings-update-preference {
   display: flex;
   min-width: 0;

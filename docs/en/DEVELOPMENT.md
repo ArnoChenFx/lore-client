@@ -94,6 +94,19 @@ Desktop mode must show real failures. Do not substitute sample data or report su
 
 Use the preferences service and `client-preferences.json` flow for durable settings. Do not add runtime `localStorage` writes.
 
+### Record runtime logs
+
+Use `src/services/logging.ts` for frontend logs instead of adding scattered
+`console.error` calls. Lore IPC goes through `invokeLogged`; log command names, durations,
+and outcomes only. Never serialize arguments, Token DTOs, or file content. Error text must
+pass through `sanitizeLogMessage`.
+
+Rust logging, rotation, and log-directory commands live in
+`src-tauri/src/app_logging.rs`. Logs use Tauri's `AppLog` directory, are limited to 5 MiB
+per file, and retain five active or rotated files in total. Changes to logging boundaries
+must add redaction tests and keep `src-tauri/capabilities/default.json` limited to required
+permissions.
+
 ### Work with a Lore server
 
 Set an explicit server address before starting the desktop application:

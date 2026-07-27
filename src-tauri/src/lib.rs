@@ -1,3 +1,4 @@
+mod app_logging;
 mod client_preferences;
 mod lore_adapter;
 
@@ -7,8 +8,11 @@ pub fn run() {
     let _ = lore::set_thread_limit(8);
 
     tauri::Builder::default()
+        .plugin(app_logging::plugin())
         .setup(|app| {
+            app_logging::install_panic_hook();
             lore_adapter::install_event_emitter(app.handle().clone());
+            log::info!(target: "lore_client_lib::startup", "Lore Client started");
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
@@ -16,6 +20,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
+            app_logging::application_log_info,
+            app_logging::application_log_open_directory,
             client_preferences::lore_client_preferences_load,
             client_preferences::lore_client_preferences_save,
             lore_adapter::lore_runtime_info,

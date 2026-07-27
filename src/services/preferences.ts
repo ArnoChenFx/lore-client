@@ -1,9 +1,8 @@
-import { invoke } from '@tauri-apps/api/core'
-
 import { t } from '../i18n'
 import { resolveSystemLanguagePreference } from '../i18n/systemLanguage'
 import { DEFAULT_EXTERNAL_DIFF_TOOLS, DEFAULT_EXTERNAL_MERGE_TOOLS } from '../shared/lib'
 import type { ClientPreferences, WorkspaceLayout } from '../types'
+import { invokeLogged, logError } from './logging'
 
 export const DEFAULT_CLIENT_PREFERENCES: ClientPreferences = {
   version: 3,
@@ -284,7 +283,7 @@ function removeLegacyPreferences(): void {
 }
 
 async function savePreferencesNow(preferences: ClientPreferences): Promise<void> {
-  await invoke('lore_client_preferences_save', { preferences })
+  await invokeLogged('lore_client_preferences_save', { preferences })
 }
 
 function scheduleSave(): void {
@@ -308,7 +307,7 @@ function scheduleSave(): void {
       .catch((error: unknown) => {
         preferencesError = readPreferencesError(error)
         notifyListeners()
-        console.error('Failed to save client preferences', error)
+        logError('preferences', error)
       })
   }, 120)
 }
@@ -346,7 +345,7 @@ export async function initializeClientPreferences(): Promise<ClientPreferences> 
       return cachedPreferences
     }
 
-    const stored = await invoke<ClientPreferences | null>('lore_client_preferences_load')
+    const stored = await invokeLogged<ClientPreferences | null>('lore_client_preferences_load')
     if (stored) {
       cachedPreferences = normalizePreferences(stored)
       removeLegacyPreferences()

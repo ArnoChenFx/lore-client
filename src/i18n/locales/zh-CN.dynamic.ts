@@ -7,6 +7,7 @@
 
 const zhCNDynamic = {
   status: {
+    applicationLogRetention: '单个文件最大 {{size}}，保留最近 {{count}} 个日志文件。',
     binaryMetadataSummary: '二进制元数据（{{count}} 字节）',
     repositoryPathHealed: '已修复 {{path}} 的仓库状态',
     staleInstancesPruned: '已清理失效的仓库 Instance',

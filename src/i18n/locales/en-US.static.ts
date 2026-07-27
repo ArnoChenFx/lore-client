@@ -395,8 +395,15 @@ const enUSStatic = {
   loreServerAddress: 'Lore server address',
   loreServerRootAddress: 'Lore server root address',
   loreWriteOperationRunsTauri_0117: 'This Lore write operation only runs in the Tauri desktop app',
+  applicationLogs: 'Application Logs',
+  applicationLogsDescription:
+    'Records application startup, command durations, and errors. Review local paths before sharing a log.',
+  loadingLogDirectory: 'Loading the log directory…',
+  logDirectory: 'Fixed Log Directory',
+  logDirectoryUnavailable: 'Browser demo mode does not write log files',
   maintenance: 'Maintenance',
   metadata: 'Metadata',
+  openLogDirectory: 'Open Log Directory',
   metadataBrowser: 'Metadata Browser',
   metadataBrowserReadOnlyDescription:
     'Read Lore metadata for repositories, branches, revisions, and files without modifying tags or other namespaces.',
@@ -446,6 +453,7 @@ const enUSStatic = {
   repositoryHealDidNotComplete: 'Repository healing did not complete',
   remoteRepositoryInfoMissing: 'Lore did not return remote repository details',
   unableToLoadRemoteRepositoryDetails: 'Unable to Load Remote Repository Details',
+  unableToOpenLogDirectory: 'Unable to open the log directory. Check the system file manager permissions.',
   remoteRepositoryDetails: 'Remote Repository Details',
   noRepositoryDescription: 'This repository has no description',
   defaultBranch: 'Default Branch',

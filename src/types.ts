@@ -470,6 +470,14 @@ export interface ToastMessage {
 
 export type ApplicationMode = 'tauri' | 'browser-demo'
 
+/** Tauri 按平台解析的固定应用日志目录及有界轮转策略。 */
+export interface ApplicationLogInfo {
+  directoryPath: string
+  activeFilePath: string
+  maxFileSizeBytes: number
+  retainedFileCount: number
+}
+
 export interface LoreRuntimeInfo {
   application: string
   available: boolean

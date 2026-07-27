@@ -1,4 +1,4 @@
-import { invoke, isTauri } from '@tauri-apps/api/core'
+import { isTauri } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { open, save } from '@tauri-apps/plugin-dialog'
 
@@ -67,6 +67,7 @@ import type {
   RevisionFile,
   WorkingTreeDiff
 } from '../types'
+import { invokeLogged } from './logging'
 
 const ZERO_HASH_PATTERN = /^0+$/
 
@@ -106,7 +107,7 @@ export async function connectRepositoryNotifications(
     if (event.payload.repositoryPath === repositoryPath) listener(event.payload)
   })
   try {
-    const status = await invoke<number>('lore_notification_subscribe', { repositoryPath })
+    const status = await invokeLogged<number>('lore_notification_subscribe', { repositoryPath })
     if (status !== 0) {
       throw new Error(t('notificationSubscriptionFailed'))
     }
@@ -116,7 +117,7 @@ export async function connectRepositoryNotifications(
   }
   return async () => {
     try {
-      await invoke<number>('lore_notification_unsubscribe', { repositoryPath })
+      await invokeLogged<number>('lore_notification_unsubscribe', { repositoryPath })
     } finally {
       unlisten()
     }
@@ -171,7 +172,7 @@ export async function getLoreRuntimeInfo(): Promise<LoreRuntimeInfo> {
     }
   }
 
-  return invoke<LoreRuntimeInfo>('lore_runtime_info')
+  return invokeLogged<LoreRuntimeInfo>('lore_runtime_info')
 }
 
 /**
@@ -1070,7 +1071,7 @@ export async function setRepositoryAuthAccountBinding(
   userId?: string,
   authUrl?: string
 ): Promise<void> {
-  await invoke('lore_auth_repository_binding_set', {
+  await invokeLogged('lore_auth_repository_binding_set', {
     repositoryPath,
     userId: userId?.trim() || null,
     authUrl: authUrl?.trim() || null
@@ -1810,12 +1811,12 @@ export async function loadRevisionHistory(
 
 /** 使用系统文件管理器定位当前 Lore 工作区。 */
 export async function openWorkspace(repositoryPath: string): Promise<void> {
-  await invoke('lore_open_workspace', { repositoryPath })
+  await invokeLogged('lore_open_workspace', { repositoryPath })
 }
 
 /** 使用系统文件管理器选中仓库内文件；删除文件会由原生层退回到所在目录。 */
 export async function revealWorkspaceFile(repositoryPath: string, relativePath: string): Promise<void> {
-  await invoke('lore_reveal_workspace_file', {
+  await invokeLogged('lore_reveal_workspace_file', {
     repositoryPath,
     relativePath
   })
@@ -1905,7 +1906,7 @@ export async function ignoreWorkspacePaths(
 
 async function runOperation(command: string, args: Record<string, unknown>): Promise<LoreOperationResult> {
   try {
-    const result = await invoke<LoreOperationResult>(command, args)
+    const result = await invokeLogged<LoreOperationResult>(command, args)
     if (result.status !== 0) {
       throw new LoreOperationError(result)
     }
@@ -1924,7 +1925,7 @@ async function runOperation(command: string, args: Record<string, unknown>): Pro
 /** 把直接返回 DTO 的 Tauri 命令错误统一恢复为标准 Error。 */
 async function invokeCommand<T>(command: string, args: Record<string, unknown>): Promise<T> {
   try {
-    return await invoke<T>(command, args)
+    return await invokeLogged<T>(command, args)
   } catch (error) {
     if (error instanceof Error) {
       throw error

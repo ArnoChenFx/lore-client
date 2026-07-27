@@ -1,5 +1,7 @@
 import { getVersion } from '@tauri-apps/api/app'
 
+import { logWarning } from '../services/logging'
+
 /**
  * 从 Tauri 读取当前正在运行的应用版本。
  *
@@ -12,7 +14,7 @@ export async function loadApplicationVersion(): Promise<string | null> {
     return version || null
   } catch (error) {
     // 原生调用失败只进入开发日志；About 页仍可继续展示 Lore Core 等诊断信息。
-    console.warn('Failed to read the application version', error)
+    logWarning('application-version', error)
     return null
   }
 }

@@ -5,8 +5,12 @@ import { createRoot } from 'react-dom/client'
 import './i18n'
 import App from './App'
 import { t } from './i18n'
+import { initializeApplicationLogging } from './services/logging'
 
 import './styles.css'
+
+// 在 React 挂载前注册全局错误监听，确保启动阶段异常也进入固定日志文件。
+initializeApplicationLogging()
 
 const rootElement = document.getElementById('root')
 
