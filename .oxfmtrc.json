@@ -19,5 +19,4 @@
     "functions": ["cn", "clsx", "cva", "twMerge"],
     "stylesheet": "src/styles.css"
   }
-  // "ignorePatterns": ["frontend/src/components/ui/*.tsx"]
 }
