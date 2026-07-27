@@ -9,11 +9,14 @@ workspace HEAD, selection, and Revisions ahead of the local workspace.
 A Branch badge means the Branch currently points to that Revision; it does not claim
 historical ownership. Tag badges open Tag actions, not Revision actions.
 
-For a connected and authorized repository, Lore Client submits the author identities
-from the currently loaded history to the Auth service as one batch. A real user ID is
-replaced by the returned username. Free-form identities, unknown user IDs, offline or
-unauthorized repositories, and failed lookups keep the exact historical identity. The
-current viewer's username never replaces another historical author.
+Lore Client submits the author identities from the currently loaded history to the Auth
+service as one batch. A real user ID is replaced by the returned username. If that remote
+lookup is temporarily unavailable, only the current repository's bound user ID may use
+its token-free local profile as a display cache; other identities remain unchanged.
+Read-only recovery refreshes the history after connectivity returns. Free-form identities,
+unknown user IDs, unauthorized repositories, and unresolved lookups keep the exact
+historical identity. The current viewer's username never replaces another historical
+author.
 
 Filters include Merge-only, starting Revision, Branch, date, limit, and Branch ancestry.
 Display options control columns and lane mode.

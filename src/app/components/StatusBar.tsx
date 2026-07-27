@@ -19,7 +19,14 @@ export function StatusBar({ repository, runtimeInfo, busyLabel, demoMode }: Stat
       : repository.conflictCount > 0
         ? t('status.conflictsResolved', { count: repository.conflictCount })
         : t('noActiveConflicts')
-  const remoteLabel = repository.online ? t('remoteAuthorized') : t('offlineOrNoRemote')
+  const remoteLabel =
+    repository.remoteState === 'online'
+      ? t('remoteAuthorized')
+      : repository.remoteState === 'unauthorized'
+        ? t('remoteAuthenticationRequired')
+        : repository.remoteState === 'offline'
+          ? t('offline')
+          : t('localMode')
   const operationLabel = busyLabel ?? t('idle')
   const storeLabel = demoMode ? t('cache187Gb28Gb') : t('storeIsManagedByLoreCore')
   const versionLabel = `Lore Core ${runtimeInfo?.libraryVersion ?? t('checking')}${demoMode ? t('browserDemo') : ''}`

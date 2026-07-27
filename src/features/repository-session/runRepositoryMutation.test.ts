@@ -25,6 +25,7 @@ function snapshot(conflict = false): RepositorySnapshot {
       ahead: 0,
       behind: 0,
       online: true,
+      remoteState: 'online',
       color: '#000000',
       conflictCount: conflict ? 1 : 0,
       unresolvedConflictCount: conflict ? 1 : 0

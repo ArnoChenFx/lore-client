@@ -131,7 +131,13 @@ export function TitleBar({ repository, theme, operationCount, onAction, onToggle
       <div className="titlebar__status">
         <span className="titlebar__connection">
           <i aria-hidden="true" className={repository.online ? '' : 'is-offline'} />
-          {repository.online ? t('remoteAvailable') : t('localMode')}
+          {repository.remoteState === 'online'
+            ? t('remoteAvailable')
+            : repository.remoteState === 'unauthorized'
+              ? t('remoteAuthenticationRequired')
+              : repository.remoteState === 'offline'
+                ? t('offline')
+                : t('localMode')}
         </span>
         <IconButton
           icon={theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}

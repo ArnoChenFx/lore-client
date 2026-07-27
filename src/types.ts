@@ -11,6 +11,8 @@ export type LoreOperationStreamPhase = 'queued' | 'running' | 'streaming' | 'suc
 export type ConflictOperationKind = 'merge' | 'cherryPick' | 'revert' | 'unknown'
 /** 文件级冲突动作与仓库级中止动作的稳定 IPC 语义。 */
 export type ConflictAction = 'resolve' | 'mine' | 'theirs' | 'unresolve' | 'restart' | 'abort'
+/** 远端连接状态；把无远端、网络不可达与认证失败分开，供恢复策略精确决策。 */
+export type RepositoryRemoteState = 'local' | 'offline' | 'unauthorized' | 'online'
 
 /**
  * 当前仓库的冲突会话。
@@ -36,6 +38,8 @@ export interface Repository {
   ahead: number
   behind: number
   online: boolean
+  /** 当前快照观察到的远端状态；`online` 保留为常用布尔投影。 */
+  remoteState: RepositoryRemoteState
   color: string
   /** 仓库配置中的完整远端地址，例如 `lore://host:41337/repository`。 */
   remoteUrl?: string

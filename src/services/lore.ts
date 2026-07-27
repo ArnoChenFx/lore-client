@@ -1065,10 +1065,15 @@ export async function clearAuthIdentities(): Promise<LoreOperationResult> {
 }
 
 /** 立即切换仓库认证身份；偏好持久化由调用方在命令成功后单独完成。 */
-export async function setRepositoryAuthAccountBinding(repositoryPath: string, userId?: string): Promise<void> {
+export async function setRepositoryAuthAccountBinding(
+  repositoryPath: string,
+  userId?: string,
+  authUrl?: string
+): Promise<void> {
   await invoke('lore_auth_repository_binding_set', {
     repositoryPath,
-    userId: userId?.trim() || null
+    userId: userId?.trim() || null,
+    authUrl: authUrl?.trim() || null
   })
 }
 
@@ -2049,6 +2054,14 @@ function parseRepository(repositoryPath: string, events: LoreEvent[], config: Re
   const conflictEvents = events.filter(
     (event) => event.tagName === 'repositoryStatusFile' && readBoolean(event.data.flagConflict)
   )
+  const remoteAvailable = readBoolean(status?.remoteAvailable)
+  const remoteAuthorized = readBoolean(status?.remoteAuthorized)
+  const online = remoteAvailable && remoteAuthorized
+  /*
+   * `remote_url` 是“是否配置远端”的权威来源；Status 只描述本次连接结果。
+   * 少数只消费 Status 的调用没有配置投影，因此成功连接本身也足以证明存在远端。
+   */
+  const remoteState = online ? 'online' : !config.remoteUrl ? 'local' : remoteAvailable ? 'unauthorized' : 'offline'
 
   return {
     id: readString(status?.repository, stablePathId(repositoryPath)),
@@ -2065,7 +2078,8 @@ function parseRepository(repositoryPath: string, events: LoreEvent[], config: Re
     identity: config.identity,
     ahead: localAhead ? Math.max(1, localRevision - remoteRevision) : 0,
     behind: remoteAhead ? Math.max(1, remoteRevision - localRevision) : 0,
-    online: readBoolean(status?.remoteAvailable) && readBoolean(status?.remoteAuthorized),
+    online,
+    remoteState,
     color: colorFromText(repositoryPath),
     conflictCount: conflictEvents.length,
     unresolvedConflictCount: conflictEvents.filter((event) => readBoolean(event.data.flagConflictUnresolved)).length
@@ -2366,27 +2380,48 @@ async function resolveRevisionAuthorNames(
   repositoryOnline: boolean
 ): Promise<Map<string, string>> {
   const identities = collectRevisionAuthorIdentities(events)
-  /*
-   * 其他用户的名称必须通过远程 Auth 查询。Status 已明确报告离线或
-   * 未授权时直接保留 identity，避免把预期降级记成一条失败操作。
-   */
-  if (!repositoryOnline || identities.length === 0) return new Map()
+  if (identities.length === 0) return new Map()
 
+  if (repositoryOnline) {
+    try {
+      const result = await runOperation('lore_auth_user_info', {
+        repositoryPath,
+        userIds: identities
+      })
+      const resolved = new Map<string, string>()
+      for (const event of result.events) {
+        if (event.tagName !== 'authUserInfo') continue
+        const userId = readString(event.data.id).trim()
+        const username = readString(event.data.name).trim()
+        if (userId && username && username !== userId) {
+          resolved.set(userId, username)
+        }
+      }
+      return resolved
+    } catch {
+      // 在线状态与 Auth 服务可用性并不等价；远端查询失败后继续尝试本地绑定缓存。
+    }
+  }
+
+  /*
+   * 离线时不制造必然失败的远端操作记录；只尝试仓库当前绑定账户的本地脱敏资料。
+   * Rust 会把候选严格限制为绑定 userId，避免把当前账户名称套给其他历史作者。
+   */
   try {
-    const result = await runOperation('lore_auth_user_info', {
+    const localResult = await runOperation('lore_auth_repository_local_user_info', {
       repositoryPath,
       userIds: identities
     })
-    const resolved = new Map<string, string>()
-    for (const event of result.events) {
+    const locallyResolved = new Map<string, string>()
+    for (const event of localResult.events) {
       if (event.tagName !== 'authUserInfo') continue
       const userId = readString(event.data.id).trim()
       const username = readString(event.data.name).trim()
       if (userId && username && username !== userId) {
-        resolved.set(userId, username)
+        locallyResolved.set(userId, username)
       }
     }
-    return resolved
+    return locallyResolved
   } catch {
     return new Map()
   }

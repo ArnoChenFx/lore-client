@@ -22,6 +22,7 @@ pub fn run() {
             lore_adapter::lore_auth_list,
             lore_adapter::lore_auth_local_user_info,
             lore_adapter::lore_auth_user_info,
+            lore_adapter::lore_auth_repository_local_user_info,
             lore_adapter::lore_auth_login_interactive,
             lore_adapter::lore_auth_login_with_token,
             lore_adapter::lore_auth_logout,

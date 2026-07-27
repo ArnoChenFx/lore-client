@@ -23,6 +23,7 @@ describe('RepositoryToolsDialog publishing account', () => {
         ahead: 0,
         behind: 0,
         online: true,
+        remoteState: 'online',
         color: '#78a4ff',
         serverUrl: 'lore://server:41337',
         remoteUrl: 'lore://server:41337',

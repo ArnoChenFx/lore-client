@@ -81,15 +81,21 @@ use crate::client_preferences::RepositoryAuthAccountBinding;
 /// Tauri 启动后安装的应用句柄，只用于把 Lore 回调实时转发给 WebView。
 static EVENT_APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 static OPERATION_STREAM_COUNTER: AtomicU64 = AtomicU64::new(1);
-/// 绑定只保存 Lore Token Store 的脱敏用户键；真实 Token 从不进入客户端偏好。
-static AUTH_ACCOUNT_BINDINGS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+/// 运行期只保留 Lore Token Store 的脱敏索引；真实 Token 从不进入客户端偏好或 IPC。
+static AUTH_ACCOUNT_BINDINGS: OnceLock<Mutex<HashMap<String, BoundAuthAccount>>> = OnceLock::new();
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct BoundAuthAccount {
+    auth_url: String,
+    user_id: String,
+}
 
 /// 在 Tauri `setup` 阶段安装唯一事件出口。
 pub fn install_event_emitter(app_handle: tauri::AppHandle) {
     let _ = EVENT_APP_HANDLE.set(app_handle);
 }
 
-fn auth_account_bindings() -> &'static Mutex<HashMap<String, String>> {
+fn auth_account_bindings() -> &'static Mutex<HashMap<String, BoundAuthAccount>> {
     AUTH_ACCOUNT_BINDINGS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -104,7 +110,10 @@ pub(crate) fn sync_auth_account_bindings(
             .unwrap_or_else(|_| repository_path.to_path_buf());
         next.insert(
             repository_binding_key(&canonical),
-            binding.user_id.trim().to_owned(),
+            BoundAuthAccount {
+                auth_url: binding.auth_url.trim().to_owned(),
+                user_id: binding.user_id.trim().to_owned(),
+            },
         );
     }
     *auth_account_bindings().lock().map_err(|_| {
@@ -125,7 +134,9 @@ fn repository_binding_key(path: &Path) -> String {
     }
 }
 
-fn bound_auth_identity(repository_path: &Path) -> Result<Option<String>, LoreCommandError> {
+fn bound_auth_account(
+    repository_path: &Path,
+) -> Result<Option<BoundAuthAccount>, LoreCommandError> {
     Ok(auth_account_bindings()
         .lock()
         .map_err(|_| {
@@ -136,6 +147,10 @@ fn bound_auth_identity(repository_path: &Path) -> Result<Option<String>, LoreCom
         })?
         .get(&repository_binding_key(repository_path))
         .cloned())
+}
+
+fn bound_auth_identity(repository_path: &Path) -> Result<Option<String>, LoreCommandError> {
+    Ok(bound_auth_account(repository_path)?.map(|binding| binding.user_id))
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -676,6 +691,53 @@ pub async fn lore_auth_user_info(
     .await
 }
 
+/**
+ * 远端作者查询失败时，仅从当前仓库绑定账户的本地脱敏资料恢复显示名。
+ *
+ * 候选集合由前端历史批量传入，但 Rust 边界只允许查询绑定的 userId；这条命令
+ * 固定关闭 Token 返回，既不能读取其他历史作者，也不会把 JWT 暴露给 WebView。
+ */
+#[tauri::command]
+pub async fn lore_auth_repository_local_user_info(
+    repository_path: String,
+    user_ids: Vec<String>,
+) -> Result<LoreOperationResult, LoreCommandError> {
+    let user_ids = normalize_auth_user_ids(user_ids)?;
+    run_lore_task(move || {
+        let repository_path = validate_repository_path(&repository_path)?;
+        let binding = bound_auth_account(&repository_path)?.ok_or_else(|| {
+            LoreCommandError::new(
+                "auth_binding_missing",
+                "The repository does not have a bound authentication account",
+            )
+        })?;
+        if !user_ids
+            .iter()
+            .any(|candidate| candidate == &binding.user_id)
+        {
+            return Err(LoreCommandError::new(
+                "auth_binding_identity_not_requested",
+                "The bound authentication identity is not present in the revision history",
+            ));
+        }
+        let (auth_url, bound_user_ids) =
+            validate_auth_user_info_request(binding.auth_url, vec![binding.user_id])?;
+        run_operation("auth.repository-local-user-info", move |callback| {
+            lore::runtime().block_on(lore::auth::local_user_info(
+                LoreGlobalArgs::default(),
+                LoreAuthLocalUserInfoArgs {
+                    auth_endpoint: auth_url.into(),
+                    user_ids: to_lore_array(bound_user_ids),
+                    // 本地缓存降级只需要显示名，Token 内容永远不能进入事件流。
+                    with_token: 0,
+                },
+                callback,
+            ))
+        })
+    })
+    .await
+}
+
 /// 启动 Lore 原生交互认证；浏览器打开与回调均由 Rust 上游持有。
 #[tauri::command]
 pub async fn lore_auth_login_interactive(
@@ -799,16 +861,26 @@ pub async fn lore_auth_clear() -> Result<LoreOperationResult, LoreCommandError> 
 pub async fn lore_auth_repository_binding_set(
     repository_path: String,
     user_id: Option<String>,
+    auth_url: Option<String>,
 ) -> Result<(), LoreCommandError> {
     run_lore_task(move || {
         let repository_path = validate_repository_path(&repository_path)?;
         let user_id = user_id.map(|value| value.trim().to_owned());
+        let auth_url = auth_url.map(|value| value.trim().to_owned());
         if user_id.as_ref().is_some_and(|value| {
             value.is_empty() || value.len() > 512 || value.chars().any(char::is_control)
         }) {
             return Err(LoreCommandError::new(
                 "auth_identity_invalid",
                 "The authentication user identity is invalid",
+            ));
+        }
+        if auth_url.as_ref().is_some_and(|value| {
+            value.is_empty() || value.len() > 2_048 || value.chars().any(char::is_control)
+        }) {
+            return Err(LoreCommandError::new(
+                "auth_url_invalid",
+                "The authentication service URL is invalid",
             ));
         }
         let previous = {
@@ -820,7 +892,12 @@ pub async fn lore_auth_repository_binding_set(
             })?;
             let key = repository_binding_key(&repository_path);
             if let Some(user_id) = user_id {
-                bindings.insert(key, user_id)
+                let mut next = bindings.get(&key).cloned().unwrap_or_default();
+                next.user_id = user_id;
+                if let Some(auth_url) = auth_url {
+                    next.auth_url = auth_url;
+                }
+                bindings.insert(key, next)
             } else {
                 bindings.remove(&key)
             }
@@ -9455,7 +9532,13 @@ mod tests {
         auth_account_bindings()
             .lock()
             .expect("The auth binding store should be writable")
-            .insert(binding_key.clone(), "remote-account".to_owned());
+            .insert(
+                binding_key.clone(),
+                BoundAuthAccount {
+                    auth_url: "https://auth.example.com".to_owned(),
+                    user_id: "remote-account".to_owned(),
+                },
+            );
 
         let globals = revision_storage_globals(&repository_path)
             .expect("The revision storage globals should be constructed");

@@ -49,6 +49,7 @@ describe('sidebar Lore tools and archived branches', () => {
           ahead: 0,
           behind: 0,
           online: false,
+          remoteState: 'local',
           color: '#78a4ff',
           conflictCount: 0,
           unresolvedConflictCount: 0

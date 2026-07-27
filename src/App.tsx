@@ -181,6 +181,7 @@ function App() {
   } = useRepositoryRefresh({
     enabled: applicationMode === 'tauri',
     repositoryPath: activeRepositoryPath,
+    remoteState: activeSnapshot?.repository.remoteState ?? 'local',
     upsertSnapshot,
     onRefreshError: notifyRepositoryRefreshError
   })

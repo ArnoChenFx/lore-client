@@ -13,6 +13,7 @@ export function createPlaceholderRepository(): Repository {
     ahead: 0,
     behind: 0,
     online: false,
+    remoteState: 'local',
     color: BRAND_ACCENT_COLOR,
     conflictCount: 0,
     unresolvedConflictCount: 0

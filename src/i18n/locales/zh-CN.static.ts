@@ -579,6 +579,7 @@ const zhCNStatic = {
   remainingUnchangedContent: '其余未变更内容',
   remote: '远程',
   remoteAuthorized: '远端已授权',
+  remoteAuthenticationRequired: '远端需要重新认证',
   remoteAvailable: '远端可用',
   remoteBranchAdvanced: '远端分支已推进',
   remoteBranches: '远程分支',

@@ -829,7 +829,7 @@ export function useRepositoryToolsController({
              * 目录读取继续使用同一 Token Store 身份。留空只影响本次发布，不会暗中
              * 删除用户在账户页维护的既有绑定。
              */
-            await setRepositoryAuthAccountBinding(repository.path, selectedUserId)
+            await setRepositoryAuthAccountBinding(repository.path, selectedUserId, selectedIdentity.authUrl)
             const nextBindings = authAccountBindings.filter(
               (binding) => binding.repositoryPath.toLocaleLowerCase() !== repository.path.toLocaleLowerCase()
             )
@@ -916,6 +916,7 @@ export function useRepositoryToolsController({
       ahead: 0,
       behind: 0,
       online: false,
+      remoteState: 'local',
       color: '#78a4ff',
       conflictCount: 0,
       unresolvedConflictCount: 0
@@ -1007,7 +1008,7 @@ export function useRepositoryToolsController({
       onSetAuthAccountBinding: async (targetRepository, identity) => {
         try {
           setLoading(true)
-          await setRepositoryAuthAccountBinding(targetRepository.path, identity?.userId)
+          await setRepositoryAuthAccountBinding(targetRepository.path, identity?.userId, identity?.authUrl)
           const nextBindings = authAccountBindings.filter(
             (binding) => binding.repositoryPath.toLocaleLowerCase() !== targetRepository.path.toLocaleLowerCase()
           )

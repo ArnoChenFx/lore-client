@@ -5,7 +5,7 @@
 | Control | Purpose | Notes |
 | --- | --- | --- |
 | Repository switcher | Switch between open repositories. | Switching does not Sync or close other tabs. |
-| Online/offline status | Shows remote reachability. | Local work remains available, but uncached content may not. |
+| Remote status | Distinguishes online, offline, local-only, and reauthentication-required states. | Offline remotes retry read-only probes automatically; uncached content may remain unavailable. |
 | **Open project directory** | Open another local repository or regular directory. | Initialization requires confirmation. |
 | **Sync** | Merge remote Branch progress locally. | Local writes or conflicts may block it. |
 | **Push** | Advance the current Branch remotely. | Requires configuration and a non-diverged remote Latest. |

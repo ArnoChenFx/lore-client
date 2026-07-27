@@ -615,6 +615,7 @@ const enUSStatic = {
   remainingUnchangedContent: 'Remaining unchanged content',
   remote: 'Remote',
   remoteAuthorized: 'Remote authorized',
+  remoteAuthenticationRequired: 'Remote authentication required',
   remoteAvailable: 'Remote available',
   remoteBranchAdvanced: 'Remote branch advanced',
   remoteBranches: 'Remote branches',

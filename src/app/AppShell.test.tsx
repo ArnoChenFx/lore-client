@@ -14,6 +14,7 @@ const repository: Repository = {
   ahead: 0,
   behind: 0,
   online: true,
+  remoteState: 'online',
   color: '#78a4ff',
   conflictCount: 0,
   unresolvedConflictCount: 0

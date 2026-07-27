@@ -13,7 +13,9 @@ let conflictSessionResponse: unknown = null
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: invokeMock,
-  isTauri: () => true
+  isTauri: () => true,
+  // lore.ts 同时导出通知订阅能力；独立运行本文件时 Event API 需要看到该命名导出。
+  transformCallback: vi.fn()
 }))
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
@@ -613,6 +615,44 @@ describe('repository snapshot branch loading', () => {
 
     await expect(loadRevisionHistory(repository, [], { onlyBranch: false, limit: 100 })).resolves.toEqual([
       expect.objectContaining({ author: 'user-42', authorEmail: undefined })
+    ])
+  })
+
+  it('uses only the bound local Auth profile while the repository is offline', async () => {
+    const repository = loreEventParsers.parseRepository('E:\\Worlds\\RealLore', [
+      {
+        tagName: 'repositoryStatusRevision',
+        data: { repository: 'repository-id', branchName: 'main', revision: 'tip' }
+      }
+    ])
+    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+      if (command === 'lore_revision_history') {
+        return {
+          operation: 'revision.history',
+          status: 0,
+          events: [
+            { tagName: 'revisionHistoryEntry', data: { revision: 'tip', revisionNumber: 1, parent: [] } },
+            {
+              tagName: 'metadata',
+              data: { key: 'committed-by', value: { tagName: 'string', data: 'user-42' } }
+            }
+          ]
+        }
+      }
+      if (command === 'lore_auth_user_info') throw new Error('Offline history must not query the remote Auth service')
+      if (command === 'lore_auth_repository_local_user_info') {
+        expect(args).toEqual({ repositoryPath: 'E:\\Worlds\\RealLore', userIds: ['user-42'] })
+        return {
+          operation: 'auth.repository-local-user-info',
+          status: 0,
+          events: [{ tagName: 'authUserInfo', data: { id: 'user-42', name: 'Arno Chen' } }]
+        }
+      }
+      throw new Error(`The test does not handle command: ${command}`)
+    })
+
+    await expect(loadRevisionHistory(repository, [], { onlyBranch: false, limit: 100 })).resolves.toEqual([
+      expect.objectContaining({ author: 'Arno Chen', authorEmail: undefined })
     ])
   })
 

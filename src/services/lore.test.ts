@@ -117,7 +117,8 @@ describe('Lore event adapter', () => {
       branch: 'main',
       ahead: 2,
       behind: 0,
-      online: true
+      online: true,
+      remoteState: 'online'
     })
     expect(changes).toEqual([
       expect.objectContaining({
@@ -128,6 +129,27 @@ describe('Lore event adapter', () => {
         size: '4.0 KB'
       })
     ])
+  })
+
+  it('distinguishes local, offline and unauthorized repository states', () => {
+    const statusEvent = (remoteAvailable: boolean, remoteAuthorized: boolean): LoreEvent[] => [
+      {
+        tagName: 'repositoryStatusRevision',
+        data: { remoteAvailable, remoteAuthorized }
+      }
+    ]
+
+    expect(loreEventParsers.parseRepository(repositoryPath, statusEvent(false, false)).remoteState).toBe('local')
+    expect(
+      loreEventParsers.parseRepository(repositoryPath, statusEvent(false, false), {
+        remoteUrl: 'lore://example.com/repository'
+      }).remoteState
+    ).toBe('offline')
+    expect(
+      loreEventParsers.parseRepository(repositoryPath, statusEvent(true, false), {
+        remoteUrl: 'lore://example.com/repository'
+      }).remoteState
+    ).toBe('unauthorized')
   })
 
   it('maps query and status events to one stable collaborative lock DTO', () => {

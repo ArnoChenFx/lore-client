@@ -20,6 +20,13 @@ initialization over damaged Lore metadata. Back up the directory before recovery
 - Check network, VPN, firewall, and account permissions.
 - Refresh and reauthenticate under Repository Tools → Accounts.
 
+An open remote repository retries read-only snapshots with capped exponential backoff and
+resubscribes after its notification stream ends. Returning the window to the foreground
+or restoring network connectivity triggers an immediate probe. These probes never run
+Sync or another write operation. A **Remote authentication required** state stops automatic
+network retries until you sign in again because the pinned Lore version does not silently
+refresh expired credentials.
+
 Directory browsing success does not grant access to every repository or write operation.
 
 ## Clone failed

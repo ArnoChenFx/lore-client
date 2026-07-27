@@ -11,6 +11,7 @@ export const repositories: Repository[] = [
     ahead: 2,
     behind: 1,
     online: true,
+    remoteState: 'online',
     color: repositoryAccentFromIndex(0),
     conflictCount: 0,
     unresolvedConflictCount: 0
@@ -24,6 +25,7 @@ export const repositories: Repository[] = [
     ahead: 0,
     behind: 0,
     online: true,
+    remoteState: 'online',
     color: repositoryAccentFromIndex(1),
     conflictCount: 0,
     unresolvedConflictCount: 0
@@ -37,6 +39,7 @@ export const repositories: Repository[] = [
     ahead: 0,
     behind: 4,
     online: false,
+    remoteState: 'offline',
     color: repositoryAccentFromIndex(2),
     conflictCount: 0,
     unresolvedConflictCount: 0

@@ -14,6 +14,7 @@ function snapshot(id: string, path: string): RepositorySnapshot {
       ahead: 0,
       behind: 0,
       online: true,
+      remoteState: 'online',
       color: '#000000',
       conflictCount: 0,
       unresolvedConflictCount: 0

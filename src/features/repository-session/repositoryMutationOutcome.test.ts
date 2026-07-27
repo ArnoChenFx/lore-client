@@ -14,6 +14,7 @@ function createSnapshot(conflict: boolean): RepositorySnapshot {
       ahead: 0,
       behind: 0,
       online: true,
+      remoteState: 'online',
       color: '#78a4ff',
       conflictCount: conflict ? 1 : 0,
       unresolvedConflictCount: conflict ? 1 : 0

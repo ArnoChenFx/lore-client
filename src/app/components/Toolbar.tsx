@@ -72,7 +72,13 @@ export function Toolbar({ repository, onAction, onOpenCommands }: ToolbarProps) 
           </small>
         </span>
         <span className={`connection-pill ${repository.online ? 'is-online' : ''}`}>
-          {repository.online ? t('online') : t('offline')}
+          {repository.remoteState === 'online'
+            ? t('online')
+            : repository.remoteState === 'unauthorized'
+              ? t('remoteAuthenticationRequired')
+              : repository.remoteState === 'offline'
+                ? t('offline')
+                : t('localMode')}
         </span>
       </button>
 
