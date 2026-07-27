@@ -99,10 +99,6 @@ bun tauri build --debug --no-bundle
 统一经过 `invokeLogged`；只记录命令名、耗时和结果，禁止序列化参数、Token DTO
 或文件内容。错误文本必须经 `sanitizeLogMessage` 脱敏。
 
-Rust 日志、轮转与日志目录命令集中在 `src-tauri/src/app_logging.rs`。日志落到
-Tauri `AppLog` 目录，单文件 5 MiB，总共保留 5 个活动或轮转文件。修改日志边界时必须
-补充脱敏测试，并确认 `src-tauri/capabilities/default.json` 仍只授予必要权限。
-
 ### 连接 Lore 服务器
 
 启动桌面应用前显式设置服务器地址：

@@ -46,19 +46,19 @@ bun tauri build --debug --no-bundle
 
 ## Find the right place to work
 
-| Task | Main locations |
-| --- | --- |
-| Application-level UI, shell, and dialogs | `src/app/`, `src/App.tsx`, `src/styles.css` |
-| Domain UI and workflows such as revisions, local changes, and branches | `src/features/<domain>/` |
-| Cross-domain primitives and pure helpers | `src/shared/ui/`, `src/shared/lib/` |
-| Stable frontend data types | `src/types.ts` |
-| Frontend Lore calls | `src/services/lore.ts` |
-| Native Lore operations | `src-tauri/src/lore_adapter.rs`, `src-tauri/src/lib.rs` |
-| Preferences and persisted layout | `src/services/preferences.ts`, `src/hooks/` |
-| English and Chinese UI text | `src/i18n/locales/` |
-| Browser-preview sample data | `src/data.ts` |
-| UI and visual validation | `scripts/` |
-| Public documentation and images | `README.md`, `docs/en/`, `docs/zh/`, `docs/img/` |
+| Task                                                                   | Main locations                                          |
+| ---------------------------------------------------------------------- | ------------------------------------------------------- |
+| Application-level UI, shell, and dialogs                               | `src/app/`, `src/App.tsx`, `src/styles.css`             |
+| Domain UI and workflows such as revisions, local changes, and branches | `src/features/<domain>/`                                |
+| Cross-domain primitives and pure helpers                               | `src/shared/ui/`, `src/shared/lib/`                     |
+| Stable frontend data types                                             | `src/types.ts`                                          |
+| Frontend Lore calls                                                    | `src/services/lore.ts`                                  |
+| Native Lore operations                                                 | `src-tauri/src/lore_adapter.rs`, `src-tauri/src/lib.rs` |
+| Preferences and persisted layout                                       | `src/services/preferences.ts`, `src/hooks/`             |
+| English and Chinese UI text                                            | `src/i18n/locales/`                                     |
+| Browser-preview sample data                                            | `src/data.ts`                                           |
+| UI and visual validation                                               | `scripts/`                                              |
+| Public documentation and images                                        | `README.md`, `docs/en/`, `docs/zh/`, `docs/img/`        |
 
 Do not commit generated dependencies, build output, Rust targets, temporary browser profiles, or generated analysis directories.
 
@@ -101,12 +101,6 @@ Use `src/services/logging.ts` for frontend logs instead of adding scattered
 and outcomes only. Never serialize arguments, Token DTOs, or file content. Error text must
 pass through `sanitizeLogMessage`.
 
-Rust logging, rotation, and log-directory commands live in
-`src-tauri/src/app_logging.rs`. Logs use Tauri's `AppLog` directory, are limited to 5 MiB
-per file, and retain five active or rotated files in total. Changes to logging boundaries
-must add redaction tests and keep `src-tauri/capabilities/default.json` limited to required
-permissions.
-
 ### Work with a Lore server
 
 Set an explicit server address before starting the desktop application:
@@ -143,12 +137,12 @@ These rules protect the most important cross-module behavior:
 
 Run checks in proportion to the files and behavior you changed.
 
-| Change | Required checks |
-| --- | --- |
-| Documentation only | Check links and bilingual parity; run `git diff --check` |
-| Frontend logic or components | `bun run check`, `bun test`, `bun run lint`, `bun run format:check`, `bun run build` |
-| Rust or Lore adapter | `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`, `cargo check --manifest-path src-tauri/Cargo.toml`, and targeted Rust tests |
-| Desktop permissions, shell, or packaging | `bun tauri build --debug --no-bundle` |
+| Change                                   | Required checks                                                                                                                          |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Documentation only                       | Check links and bilingual parity; run `git diff --check`                                                                                 |
+| Frontend logic or components             | `bun run check`, `bun test`, `bun run lint`, `bun run format:check`, `bun run build`                                                     |
+| Rust or Lore adapter                     | `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`, `cargo check --manifest-path src-tauri/Cargo.toml`, and targeted Rust tests |
+| Desktop permissions, shell, or packaging | `bun tauri build --debug --no-bundle`                                                                                                    |
 
 The baseline delivery checks are:
 
