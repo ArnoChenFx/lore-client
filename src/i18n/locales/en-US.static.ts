@@ -732,7 +732,7 @@ const enUSStatic = {
   showTime: 'Show time',
   hideDiffView: 'Hide Diff view',
   sidebarInspectorRestoredDefaultWidths_744b: 'Sidebar and inspector restored to default widths',
-  simplifiedChinese: 'Simplified Chinese',
+  simplifiedChinese: '简体中文',
   someRepositoriesCouldNotBeRestored: 'Some repositories could not be restored',
   sourceBranch: 'Source branch',
   sourceRevision: 'Source revision',

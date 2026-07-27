@@ -7761,11 +7761,6 @@ body.is-resizing-panes {
   height: 72px;
 }
 
-.language-options small {
-  color: var(--faint);
-  font-size: 10px;
-}
-
 .theme-options button {
   display: flex;
   height: 64px;
@@ -8022,18 +8017,12 @@ body.is-resizing-panes {
   display: flex;
   min-width: 0;
   align-items: flex-start;
-  flex-direction: column;
-  gap: 2px;
 }
 
 .settings-page .language-options strong {
   color: inherit;
   font-size: 12px;
   font-weight: 500;
-}
-
-.settings-page .language-options small {
-  font-family: var(--mono);
 }
 
 .settings-group--external-diff {

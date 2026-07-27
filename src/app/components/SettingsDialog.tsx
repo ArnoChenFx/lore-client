@@ -117,9 +117,9 @@ export function SettingsDialog({
   ]
 
   const languageOptions = [
-    // 语言选项使用母语名称 + BCP 47 标签；避免在英文模式下叠成重复文案。
-    { id: 'zh-CN' as const, label: t('simplifiedChinese'), detail: 'zh-CN' },
-    { id: 'en-US' as const, label: 'English', detail: 'en-US' }
+    // 语言选项只展示用户可读名称，内部语言标签不作为界面次级文案暴露。
+    { id: 'zh-CN' as const, label: t('simplifiedChinese') },
+    { id: 'en-US' as const, label: 'English' }
   ]
 
   const settingsCategories = [
@@ -471,7 +471,6 @@ export function SettingsDialog({
                       <Languages size={17} />
                       <span>
                         <strong>{option.label}</strong>
-                        <small>{option.detail}</small>
                       </span>
                     </button>
                   ))}
