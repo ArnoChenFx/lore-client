@@ -7854,20 +7854,21 @@ fn run_operation(
     }));
 
     let status = call(callback);
-    let events = Arc::try_unwrap(events)
-        .map_err(|_| {
-            LoreCommandError::new(
-                "event_collector_in_use",
-                "The Lore event callback remained in use after the operation completed",
-            )
-        })?
-        .into_inner()
-        .map_err(|_| {
+    /*
+     * Lore 的 EventDispatcher 会先调用 End callback，再通知 `complete()` 的等待者，
+     * 最后才随转发任务退出而析构 callback。因此同步 Lore 调用返回时，事件流已经
+     * 完整结束，但 callback 捕获的 Arc 仍可能短暂存活。这里在 Mutex 下原子取走
+     * 已完成事件，避免用 `Arc::try_unwrap` 把正常的异步析构窗口误判成 Diff 失败。
+     */
+    let events = {
+        let mut target = events.lock().map_err(|_| {
             LoreCommandError::new(
                 "event_collector_poisoned",
                 "The Lore event collector state is poisoned",
             )
         })?;
+        std::mem::take(&mut *target)
+    };
 
     let duration_ms = started_at.elapsed().as_millis();
     emit_operation_stream(LoreOperationStreamEvent {
@@ -9391,6 +9392,28 @@ mod tests {
             .expect_err("A nonzero status must map to a structured error");
         assert_eq!(error.code, "revision_tree_read_failed");
         assert!(error.message.contains("AddressNotFound"));
+    }
+
+    #[test]
+    fn completed_operation_collects_events_while_callback_is_still_dropping() {
+        let mut retained_callback: LoreEventCallback = None;
+        let result = run_operation("test.callback-drop-race", |callback| {
+            /*
+             * 固定 Lore 的事件转发线程会先调用 End、再唤醒等待完成的调用方，
+             * callback 本身要等异步任务退出时才析构。这里精确保留这个短窗口，
+             * 防止适配层再次把“事件已完整送达”误判成操作失败。
+             */
+            if let Some(callback_ref) = callback.as_ref() {
+                callback_ref(&LoreEvent::End(Default::default()));
+            }
+            retained_callback = callback;
+            0
+        })
+        .expect("A completed event stream should not require the callback to be dropped first");
+
+        assert_eq!(result.status, 0);
+        assert!(result.events.iter().any(|event| event["tagName"] == "end"));
+        drop(retained_callback);
     }
 
     #[test]
