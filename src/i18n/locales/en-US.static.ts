@@ -399,11 +399,11 @@ const enUSStatic = {
   applicationLogsDescription:
     'Records application startup, command durations, and errors. Review local paths before sharing a log.',
   loadingLogDirectory: 'Loading the log directory…',
-  logDirectory: 'Fixed Log Directory',
+  logDirectory: 'Log Directory',
   logDirectoryUnavailable: 'Browser demo mode does not write log files',
   maintenance: 'Maintenance',
   metadata: 'Metadata',
-  openLogDirectory: 'Open Log Directory',
+  openLogDirectory: 'Open',
   metadataBrowser: 'Metadata Browser',
   metadataBrowserReadOnlyDescription:
     'Read Lore metadata for repositories, branches, revisions, and files without modifying tags or other namespaces.',
@@ -1081,8 +1081,8 @@ const enUSStatic = {
   skipDependencyCycleDetection: 'Skip cycle detection (dangerous)',
   addDependency: 'Add Dependency',
   inspectDependencyClosure: 'Inspect Dependency Closure',
-  dependencyQueryUsesCurrentRevision:
-    'Results are bound to the current immutable revision. Query again after switching or syncing.',
+  dependencyQueryUsesStagedState:
+    'Results read the current staged state and refresh immediately after an edge is added or removed.',
   showReverseDependencies: 'Show reverse dependencies',
   zeroMeansUnlimited: '0 means unlimited recursive depth',
   queryDependencies: 'Query Dependencies',

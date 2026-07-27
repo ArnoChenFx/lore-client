@@ -120,6 +120,38 @@ export function normalizeRepositoryToolPaths(paths: readonly string[]): string[]
   return [...new Set(paths.map((path) => path.trim()).filter(Boolean))]
 }
 
+type DependencyGraphLoader = (
+  repositoryPath: string,
+  rootPaths: string[],
+  options: LoreDependencySelection,
+  reverse: boolean,
+  revision?: string
+) => Promise<LoreDependencyGraphQuery>
+
+/**
+ * 加载当前工作区的依赖图。
+ *
+ * 单独保留这个编排边界，使“新增依赖后立即查询”的 Revision 选择可以被回归测试覆盖，
+ * 而无需在测试中挂载包含大量仓库工具状态的完整 React 控制器。
+ */
+export async function loadCurrentDependencyGraph(
+  repositoryPath: string,
+  rootPaths: string[],
+  options: LoreDependencySelection,
+  reverse: boolean,
+  currentRevision: string,
+  loader: DependencyGraphLoader = loadFileDependencyGraph
+): Promise<LoreDependencyGraphQuery> {
+  /*
+   * dependency-add / dependency-remove 会把元数据写入 staged anchor，而显式传入当前
+   * Revision 会绕过该暂存状态并读取旧快照。这里故意省略 Revision，让 Lore 按
+   * “staged anchor > current anchor”解析；返回 DTO 仍使用当前 Revision 标识其基线，
+   * 避免图谱标题因为协议未回传 staged signature 而出现空白。
+   */
+  const result = await loader(repositoryPath, rootPaths, options, reverse, undefined)
+  return result.revision ? result : { ...result, revision: currentRevision }
+}
+
 /**
  * 从服务器目录定位当前本地仓库连接的远端对象。
  *
@@ -614,7 +646,7 @@ export function useRepositoryToolsController({
       if (!activeSnapshot || applicationMode !== 'tauri') return null
       try {
         setLoading(true)
-        const result = await loadFileDependencyGraph(
+        const result = await loadCurrentDependencyGraph(
           activeSnapshot.repository.path,
           paths,
           options,

@@ -315,7 +315,7 @@ export function DependencyGraphPanel({
         <section className="dependency-query">
           <header>
             <strong>{t('inspectDependencyClosure')}</strong>
-            <small>{t('dependencyQueryUsesCurrentRevision')}</small>
+            <small>{t('dependencyQueryUsesStagedState')}</small>
           </header>
           <label className="is-wide">
             <span>{t('dependencyRootFiles')}</span>

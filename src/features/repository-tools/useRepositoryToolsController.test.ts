@@ -5,6 +5,7 @@ import {
   isRepositoryToolsBusy,
   findConnectedRemoteRepository,
   isPublishAuthenticationError,
+  loadCurrentDependencyGraph,
   normalizeRepositoryToolPaths,
   resolvePublishAuthAccount
 } from './useRepositoryToolsController'
@@ -19,6 +20,43 @@ describe('repository tools controller helpers', () => {
 
   it('keeps path order stable while removing duplicates', () => {
     expect(normalizeRepositoryToolPaths(['B', 'A', 'B', 'C'])).toEqual(['B', 'A', 'C'])
+  })
+
+  it('queries the staged dependency state after a dependency mutation', async () => {
+    const selection = {
+      rootFiles: ['sc/Fox.gltf'],
+      tags: [],
+      recursive: true,
+      depthLimit: 0
+    }
+    const revisions: Array<string | undefined> = []
+
+    const result = await loadCurrentDependencyGraph(
+      'E:\\Project\\Lore',
+      selection.rootFiles,
+      selection,
+      false,
+      'immutable-revision',
+      async (_repositoryPath, rootPaths, options, reverse, revision) => {
+        revisions.push(revision)
+        return {
+          revision: revision ?? '',
+          groups: [],
+          nodes: rootPaths.map((path) => ({ path, distance: 0, root: true })),
+          edges: [],
+          reverse,
+          recursive: options.recursive,
+          depthLimit: options.depthLimit,
+          truncated: false,
+          nodeLimit: 240
+        }
+      }
+    )
+
+    // Lore 只有在 Revision 为空时才读取 dependency-add 写入的 staged anchor。
+    expect(revisions).toEqual([undefined])
+    // 图谱仍保留当前不可变 Revision 作为暂存状态的可读基线。
+    expect(result.revision).toBe('immutable-revision')
   })
 
   it('finds the connected remote repository by stable repository ID', () => {

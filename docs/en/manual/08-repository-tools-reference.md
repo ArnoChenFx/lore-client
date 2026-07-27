@@ -108,7 +108,7 @@ Create, pin update, and removal are staged. **Edit Pin** does not commit automat
 | **Depth** | `0–1024`, default `0` | Edge-hop limit; `0` unlimited and disabled without recursion. |
 | **Include transitive dependencies** | On by default on this page | Recursively traverses indirect dependencies; off reads one hop. |
 | **Show reverse dependencies** | Off | Changes “what roots require” to “what requires the roots.” |
-| **Query Revision** | Current Revision automatically | Keeps results tied to immutable history, not uncommitted Status. |
+| **Query state** | Current staged state automatically | Uses the current Revision as its baseline and overlays staged dependency metadata. Add/remove refreshes immediately, without requiring a new Revision. |
 
 **Query Dependencies** is read-only. **Dependency-driven Sync** changes materialized
 workspace content after confirmation.

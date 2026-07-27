@@ -9720,6 +9720,15 @@ body.is-resizing-panes {
   border-radius: 4px;
 }
 
+.dependency-query {
+  /*
+   * 英文“Dependency tags (optional; comma separated)”远长于深度标题。
+   * 查询卡片在双栏工具区中通常只有约 340px，因此按内容职责分配宽窄列，
+   * 避免等宽网格让标签标题和示例值同时发生不必要的拥挤。
+   */
+  grid-template-columns: minmax(190px, 1.75fr) minmax(96px, 0.75fr);
+}
+
 .dependency-editor > header,
 .dependency-query > header {
   display: flex;
@@ -9742,6 +9751,11 @@ body.is-resizing-panes {
   gap: 4px;
   color: var(--muted);
   font-size: 10px;
+}
+
+.dependency-query > label:not(.is-wide) {
+  /* 标题换行数不同时仍让同一参数行的输入框底部对齐。 */
+  justify-content: flex-end;
 }
 
 .dependency-editor input:not(.control-checkbox),
