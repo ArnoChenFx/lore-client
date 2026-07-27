@@ -1951,11 +1951,23 @@ pub async fn lore_revision_history(
         let limit = limit.unwrap_or(100).clamp(1, 1_000);
         collect_revision_history_with(limit, revision, move |revision, length| {
             let globals = global_args(&repository_path)?;
-            let branch = branch.clone();
+            // Lore 不允许同时指定 revision 和 branch；查询合并父链时
+            // fetch 会传入具体 revision，此时必须清除 branch 参数。
+            let effective_branch = if revision.is_some() {
+                None
+            } else {
+                branch.clone()
+            };
             run_operation("revision.history", move |callback| {
                 lore::runtime().block_on(lore::revision::history(
                     globals,
-                    build_revision_history_args(revision, branch, date, length, only_branch),
+                    build_revision_history_args(
+                        revision,
+                        effective_branch,
+                        date,
+                        length,
+                        only_branch,
+                    ),
                     callback,
                 ))
             })
