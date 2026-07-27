@@ -1,18 +1,23 @@
 import { Binary, FileWarning, LoaderCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { t } from '../../i18n'
 import type { BinaryDiffPreview, BinaryFilePreview } from '../../types'
 import { formatPreviewBytes } from '../lib'
+import { AudioPreview } from './AudioPreview'
 import { CsvTablePreview } from './CsvTablePreview'
+import { FontPreview } from './FontPreview'
 import { ModelCanvasPreview } from './ModelCanvasPreview'
 import { PdfCanvasPreview } from './PdfCanvasPreview'
+import { StructuredAssetPreview } from './StructuredAssetPreview'
+import { TextureCanvasPreview } from './TextureCanvasPreview'
 
 interface BinaryDiffPreviewProps {
   fileName: string
   preview: BinaryDiffPreview | null
   loading: boolean
   error: string | null
+  /** 原始文件字节数；预览不可用时用于显示基础文件信息。 */
+  size?: number
 }
 
 interface PreviewCardProps {
@@ -41,10 +46,28 @@ function PreviewCard({ label, fileName, preview }: PreviewCardProps) {
             alt={`${fileName}（${label}）`}
             draggable={false}
           />
+        ) : preview.kind === 'texture' ? (
+          <TextureCanvasPreview
+            fileName={fileName}
+            label={label}
+            dataBase64={preview.dataBase64}
+            metadata={preview.structuredPreview}
+          />
         ) : preview.kind === 'model' ? (
           <ModelCanvasPreview fileName={fileName} label={label} dataBase64={preview.dataBase64} />
         ) : preview.kind === 'csv' ? (
           <CsvTablePreview fileName={fileName} label={label} dataBase64={preview.dataBase64} />
+        ) : preview.kind === 'audio' ? (
+          <AudioPreview fileName={fileName} label={label} mimeType={preview.mimeType} dataBase64={preview.dataBase64} />
+        ) : preview.kind === 'font' ? (
+          <FontPreview fileName={fileName} label={label} dataBase64={preview.dataBase64} />
+        ) : preview.kind === 'archive' || preview.kind === 'asset' ? (
+          <StructuredAssetPreview
+            fileName={fileName}
+            label={label}
+            preview={preview.structuredPreview}
+            size={preview.size}
+          />
         ) : (
           <PdfCanvasPreview fileName={fileName} label={label} dataBase64={preview.dataBase64} />
         )}
@@ -53,8 +76,8 @@ function PreviewCard({ label, fileName, preview }: PreviewCardProps) {
   )
 }
 
-/** 图片、PDF、三维模型与 CSV 共用的 Diff 预览表面；两侧缺失时给出明确状态。 */
-export function BinaryDiffPreview({ fileName, preview, loading, error }: BinaryDiffPreviewProps) {
+/** 所有受控资产类型共用的 Diff 预览表面；两侧缺失时给出明确状态。 */
+export function BinaryDiffPreview({ fileName, preview, loading, error, size }: BinaryDiffPreviewProps) {
   const { t } = useTranslation()
   if (loading) {
     return (
@@ -82,6 +105,7 @@ export function BinaryDiffPreview({ fileName, preview, loading, error }: BinaryD
         <Binary size={30} />
         <strong>{t('noPreviewVersionToDisplay')}</strong>
         <span>{fileName}</span>
+        {size !== undefined && <span>{formatPreviewBytes(size)}</span>}
       </div>
     )
   }

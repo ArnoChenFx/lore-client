@@ -39,9 +39,12 @@ The right side reads actual workspace and baseline content. Line statistics appe
 after the selected Diff loads; unknown values are not shown as `+0/−0`.
 
 Text Diff supports context and whitespace preferences. Binary and structured previews
-include common images, TGA/TIFF, one PDF page at a time, bounded CSV tables, and common
-3D formats. Disabling binary Diff stops content reads in both workspace and Revision
-views.
+include common images, TGA/TIFF/DDS/KTX2/EXR textures, one PDF page at a time, bounded
+CSV tables, common 3D formats, WAV/OGG/MP3/FLAC audio, TTF/OTF fonts, read-only
+ZIP/PAK/AssetBundle/PCK directories, and bounded Unreal/Unity/Godot/Blender metadata.
+Encrypted or version-dependent directories explicitly fall back to trusted container
+metadata instead of guessed entries. Disabling binary Diff stops content reads in both
+workspace and Revision views.
 
 ## File context menu
 

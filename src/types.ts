@@ -439,8 +439,40 @@ export interface ExternalMergeRequest {
   }
 }
 
-/** 当前内嵌预览允许安全图片、PDF、三维模型，以及表格化 CSV。 */
-export type BinaryPreviewKind = 'image' | 'pdf' | 'model' | 'csv'
+/** 当前内嵌预览允许的受控渲染类别；未知二进制格式不会进入该联合类型。 */
+export type BinaryPreviewKind = 'image' | 'texture' | 'pdf' | 'model' | 'csv' | 'audio' | 'archive' | 'font' | 'asset'
+
+/** 归档目录中的只读条目；路径只用于展示，不会回传给提取或写入命令。 */
+export interface ArchivePreviewEntry {
+  path: string
+  kind: 'file' | 'directory'
+  size: number
+  compressedSize?: number
+}
+
+/** 引擎资产的稳定语义字段；`key` 在前端映射为当前语言标签。 */
+export interface AssetMetadataFact {
+  key: string
+  value: string
+}
+
+/** Rust 对归档或专有引擎资产生成的有界结构化投影。 */
+export type StructuredAssetPreview =
+  | {
+      type: 'archive'
+      format: string
+      totalEntries: number
+      truncated: boolean
+      entries: ArchivePreviewEntry[]
+      facts: AssetMetadataFact[]
+      warningCodes: string[]
+    }
+  | {
+      type: 'assetMetadata'
+      format: string
+      facts: AssetMetadataFact[]
+      warningCodes: string[]
+    }
 
 /**
  * 从工作区文件或不可变 Revision Store 按需读取的单个二进制预览。
@@ -454,6 +486,8 @@ export interface BinaryFilePreview {
   mimeType: string
   dataBase64: string
   size: number
+  /** 只有 KTX2、归档和引擎资产携带；普通媒体继续使用受控原始载荷。 */
+  structuredPreview?: StructuredAssetPreview | null
 }
 
 /** Diff 面板的二进制前后版本；新增与删除文件只会存在其中一侧。 */

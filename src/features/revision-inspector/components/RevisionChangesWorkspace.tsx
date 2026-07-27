@@ -634,6 +634,7 @@ export function RevisionChangesWorkspace({
                 preview={binaryPreview}
                 loading={binaryPreviewLoading}
                 error={binaryPreviewError}
+                size={primaryFile.size ? Number(primaryFile.size) : undefined}
               />
             ) : primaryFile.binary || !primaryDiff?.patch ? (
               <div className="revision-diff-pane__empty">
@@ -643,7 +644,7 @@ export function RevisionChangesWorkspace({
                 </strong>
                 <span>
                   {primaryFile.binary
-                    ? t('status.binaryFormatsSupported', { path: changeFilePath(primaryFile) })
+                    ? t('status.binaryFormatsSupported', { path: changeFilePath(primaryFile), size: primaryFile.size ?? t('unknownSize') })
                     : changeFilePath(primaryFile)}
                 </span>
               </div>

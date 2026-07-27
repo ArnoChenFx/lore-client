@@ -8,8 +8,18 @@
 const enUSDynamic = {
   status: {
     applicationLogRetention: 'Up to {{size}} per file; keeps the {{count}} most recent log files.',
+    archiveEntryCount_one: '{{count}} entry',
+    archiveEntryCount_other: '{{count}} entries',
+    archivePreviewTruncated: 'Showing the first {{shown}} of {{total}} entries.',
+    assetPreview: 'Asset preview for {{fileName}} ({{label}})',
+    audioPreview: 'Audio preview for {{fileName}} ({{label}})',
     binaryMetadataSummary: 'Binary metadata ({{count}} bytes)',
+    fontPreview: 'Font preview for {{fileName}} ({{label}})',
     repositoryPathHealed: 'Healed repository state for {{path}}',
+    texturePreview: 'Texture preview for {{fileName}} ({{label}})',
+    textureDimensions: '{{width}} × {{height}} pixels',
+    textureMipLevels_one: '{{count}} mip level',
+    textureMipLevels_other: '{{count}} mip levels',
     staleInstancesPruned: 'Pruned stale repository instances',
     instancePathUpdated: 'Updated the current instance path',
     instanceTooltip: 'Current Lore workspace instance: {{value}}',
@@ -167,7 +177,7 @@ const enUSDynamic = {
     pdfNextPage: '{{label}} PDF next page',
     folderSelection: '{{path}} · folder selection',
     selectLeftObject: '{{id}} · select an object on the left',
-    binaryFormatsSupported: '{{path}} · common images, PDF, models, and CSV are supported',
+    binaryFormatsSupported: '{{path}} · {{size}} · common images, PDF, models, and CSV are supported',
     workspaceBinaryPreviewHint:
       '{{size}} · common images, PDF, models, and CSV are supported; open other types from the context menu',
     revisionDiffOf: 'Revision diff for {{name}}',

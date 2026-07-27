@@ -68,14 +68,25 @@ missing directory is reported even if its configuration still exists.
 
 | Type | Preview |
 | --- | --- |
-| Images, TGA, TIFF | In-app image preview with controlled conversion where needed. |
+| Images, TGA, TIFF, DDS, EXR | In-app image preview; non-browser formats are converted at the Rust boundary, with HDR tone mapping for EXR. |
+| KTX2 | WebGL Canvas using the app-bundled Basis transcoder, without a CDN. |
 | PDF | In-app parser drawing the current page only. |
 | CSV | Bounded, read-only table. |
 | OBJ, FBX, GLTF, GLB | In-app Canvas without external resource loading. |
+| WAV, OGG, MP3, FLAC | Non-autoplay in-app audio controls; the underlying codec must still be available to the system media pipeline. |
+| TTF, OTF | Lifecycle-bound in-memory font specimen, unloaded when the preview closes. |
+| ZIP, Quake PAK | Read-only directory and size information without extracting entry bodies. |
+| Unity AssetBundle, Godot PCK | Bounded directories; LZMA, legacy, or encrypted directories explicitly fall back to container information. |
+| Unreal PAK | Reliable footer and index metadata; versioned indexes are not guessed as directory entries. |
+| UAsset/UMap, Unity `.assets`, Godot `.res`, Blender `.blend` | Stable headers, versions, sizes, and safely countable object types. |
 | Other binary | Metadata/comparison or an explicit unsupported reason. |
 
 Content is read on demand for the primary selection. Disabling Binary Diff stops those
 reads in both workspace and Revision changes.
+
+Container directories are entry-limited, texture decoding has dimension and memory budgets,
+and every source file remains subject to the 20 MiB embedded-preview limit. Previewing never
+extracts archives, executes scripts, follows symlinks, or reads resources outside the container.
 
 ## Choosing the mechanism
 

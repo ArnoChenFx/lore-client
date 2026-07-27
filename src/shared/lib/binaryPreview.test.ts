@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { binaryPreviewKind, decodeBinaryPreviewBase64, formatPreviewBytes } from './binaryPreview'
 
 describe('binary preview formats', () => {
-  it('recognizes common images, PDFs, textures, and 3D models across path styles and casing', () => {
+  it('recognizes media, archives, fonts, and engine assets across path styles and casing', () => {
     expect(binaryPreviewKind('Content\\Textures\\Sky.PNG')).toBe('image')
     expect(binaryPreviewKind('Docs/design.PdF')).toBe('pdf')
     expect(binaryPreviewKind('Images/photo.jpeg')).toBe('image')
@@ -14,11 +14,23 @@ describe('binary preview formats', () => {
     expect(binaryPreviewKind('Content/Meshes/Prop.glb')).toBe('model')
     expect(binaryPreviewKind('Content/Meshes/Rock.obj')).toBe('model')
     expect(binaryPreviewKind('Data\\Stats.CSV')).toBe('csv')
+    expect(binaryPreviewKind('Content/Textures/Sky.DDS')).toBe('image')
+    expect(binaryPreviewKind('Content/Textures/Sky.ktx2')).toBe('texture')
+    expect(binaryPreviewKind('Content/Textures/Lighting.exr')).toBe('image')
+    expect(binaryPreviewKind('Audio/Theme.ogg')).toBe('audio')
+    expect(binaryPreviewKind('Build/Game.pak')).toBe('archive')
+    expect(binaryPreviewKind('Build/client.bundle')).toBe('archive')
+    expect(binaryPreviewKind('Build/client.assetbundle')).toBe('archive')
+    expect(binaryPreviewKind('Fonts/Interface.otf')).toBe('font')
+    expect(binaryPreviewKind('Content/Map.umap')).toBe('asset')
+    expect(binaryPreviewKind('Assets/resources.assets')).toBe('asset')
+    expect(binaryPreviewKind('Scenes/Main.res')).toBe('asset')
+    expect(binaryPreviewKind('Art/Hero.blend')).toBe('asset')
   })
 
-  it('rejects SVG, generic assets, and paths without extensions', () => {
+  it('rejects SVG, unknown binary formats, and paths without extensions', () => {
     expect(binaryPreviewKind('Images/vector.svg')).toBeNull()
-    expect(binaryPreviewKind('Content/Map.umap')).toBeNull()
+    expect(binaryPreviewKind('Content/Map.unknown')).toBeNull()
     expect(binaryPreviewKind('LICENSE')).toBeNull()
   })
 

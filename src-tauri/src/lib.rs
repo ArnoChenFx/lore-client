@@ -1,4 +1,5 @@
 mod app_logging;
+mod asset_preview;
 mod client_preferences;
 mod lore_adapter;
 

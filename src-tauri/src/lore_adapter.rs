@@ -76,6 +76,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::Emitter;
 
+use crate::asset_preview::{
+    binary_preview_format, build_structured_preview, ensure_binary_preview_size,
+    prepare_preview_payload, StructuredAssetPreview,
+};
 use crate::client_preferences::RepositoryAuthAccountBinding;
 
 /// Tauri 启动后安装的应用句柄，只用于把 Lore 回调实时转发给 WebView。
@@ -276,6 +280,15 @@ pub struct LoreCommandError {
     pub message: String,
 }
 
+impl From<crate::asset_preview::AssetPreviewError> for LoreCommandError {
+    fn from(error: crate::asset_preview::AssetPreviewError) -> Self {
+        Self {
+            code: error.code,
+            message: error.message,
+        }
+    }
+}
+
 /// Clone 需要同时返回 Lore 原始事件与最终目标目录，避免前端自行拼接
 /// Windows、macOS 和 Linux 上不同的路径分隔符。
 #[derive(Debug, Serialize)]
@@ -395,6 +408,8 @@ pub struct LoreFilePreview {
     pub mime_type: &'static str,
     pub data_base64: String,
     pub size: u64,
+    /// 归档目录与引擎资产元数据由 Rust 解析，React 不接触不可信二进制结构。
+    pub structured_preview: Option<StructuredAssetPreview>,
 }
 
 /// Revision 相对第一父 Revision 的轻量文件变化。
@@ -7444,12 +7459,20 @@ fn is_known_binary_revision_path(path: &str) -> bool {
             | "tga"
             | "tif"
             | "tiff"
+            | "dds"
+            | "ktx2"
+            | "exr"
             | "pdf"
             | "obj"
             | "fbx"
             | "gltf"
             | "glb"
             | "zip"
+            | "pak"
+            | "assetbundle"
+            | "bundle"
+            | "unity3d"
+            | "pck"
             | "7z"
             | "rar"
             | "gz"
@@ -7458,6 +7481,7 @@ fn is_known_binary_revision_path(path: &str) -> bool {
             | "mp3"
             | "wav"
             | "ogg"
+            | "flac"
             | "mp4"
             | "mov"
             | "avi"
@@ -7467,130 +7491,14 @@ fn is_known_binary_revision_path(path: &str) -> bool {
             | "dylib"
             | "uasset"
             | "umap"
+            | "uexp"
+            | "ubulk"
+            | "assets"
+            | "res"
+            | "blend"
+            | "ttf"
+            | "otf"
     )
-}
-
-/// 返回前端允许内嵌的预览类别与固定 MIME；不接受 SVG 或通用二进制资产。
-///
-/// TGA/TIFF 会在读取后转成 PNG 再下发；三维模型保持原始字节，由前端 Canvas 解析。
-fn binary_preview_format(path: &Path) -> Option<(&'static str, &'static str)> {
-    let extension = path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    match extension.as_str() {
-        "png" => Some(("image", "image/png")),
-        "jpg" | "jpeg" => Some(("image", "image/jpeg")),
-        "gif" => Some(("image", "image/gif")),
-        "webp" => Some(("image", "image/webp")),
-        "bmp" => Some(("image", "image/bmp")),
-        "ico" => Some(("image", "image/x-icon")),
-        // 源 MIME 仅作识别；实际 IPC 载荷会转成 image/png。
-        "tga" => Some(("image", "image/x-tga")),
-        "tif" | "tiff" => Some(("image", "image/tiff")),
-        "pdf" => Some(("pdf", "application/pdf")),
-        "obj" => Some(("model", "model/obj")),
-        "fbx" => Some(("model", "model/fbx")),
-        "gltf" => Some(("model", "model/gltf+json")),
-        "glb" => Some(("model", "model/gltf-binary")),
-        "csv" => Some(("csv", "text/csv")),
-        _ => None,
-    }
-}
-
-/// 兼容部分工具导出的 24 位色表 TGA 描述符。
-///
-/// TGA 描述符低 4 位表示每个最终颜色的属性位数量，24 位 BGR 色表没有 Alpha，
-/// 因而这里应为 0。部分 Godot 资产会写成 8；`image` 会据此推导出不存在的
-/// “8 位属性 + 16 位颜色”布局，并以 `Unknown(8)` 拒绝解码。
-///
-/// 这里只修正已明确冲突的“色表图 + 24 位色表”组合，并保留描述符中的屏幕原点
-/// 与交错标记等高 4 位。32 位色表的 8 位 Alpha、真彩图和灰度图均不受影响。
-fn normalize_tga_preview_header(bytes: &mut [u8]) {
-    const TGA_HEADER_LENGTH: usize = 18;
-    const COLOR_MAP_PRESENT: u8 = 1;
-    const RAW_COLOR_MAP_IMAGE: u8 = 1;
-    const RLE_COLOR_MAP_IMAGE: u8 = 9;
-    const COLOR_MAP_ENTRY_SIZE_OFFSET: usize = 7;
-    const IMAGE_DESCRIPTOR_OFFSET: usize = 17;
-    const ATTRIBUTE_BITS_MASK: u8 = 0x0f;
-
-    if bytes.len() < TGA_HEADER_LENGTH
-        || bytes[1] != COLOR_MAP_PRESENT
-        || !matches!(bytes[2], RAW_COLOR_MAP_IMAGE | RLE_COLOR_MAP_IMAGE)
-        || bytes[COLOR_MAP_ENTRY_SIZE_OFFSET] != 24
-    {
-        return;
-    }
-
-    bytes[IMAGE_DESCRIPTOR_OFFSET] &= !ATTRIBUTE_BITS_MASK;
-}
-
-/// 浏览器无法直接显示的纹理在边界转成 PNG；模型与已支持图片原样透传。
-fn prepare_preview_payload(
-    path: &Path,
-    kind: &'static str,
-    mime_type: &'static str,
-    mut bytes: Vec<u8>,
-) -> Result<(&'static str, Vec<u8>), LoreCommandError> {
-    let extension = path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    let source_format = match extension.as_str() {
-        "tga" if kind == "image" => Some(image::ImageFormat::Tga),
-        "tif" | "tiff" if kind == "image" => Some(image::ImageFormat::Tiff),
-        _ => None,
-    };
-    let Some(source_format) = source_format else {
-        return Ok((mime_type, bytes));
-    };
-
-    if source_format == image::ImageFormat::Tga {
-        normalize_tga_preview_header(&mut bytes);
-    }
-
-    let image = image::load_from_memory_with_format(&bytes, source_format).map_err(|error| {
-        LoreCommandError::new(
-            "binary_preview_decode_failed",
-            format!(
-                "Failed to decode texture preview {}: {error}",
-                path.file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("unknown file")
-            ),
-        )
-    })?;
-    let mut png_bytes = Vec::new();
-    image
-        .write_to(
-            &mut std::io::Cursor::new(&mut png_bytes),
-            image::ImageFormat::Png,
-        )
-        .map_err(|error| {
-            LoreCommandError::new(
-                "binary_preview_encode_failed",
-                format!("Failed to encode the texture preview as PNG: {error}"),
-            )
-        })?;
-    Ok(("image/png", png_bytes))
-}
-
-/// 同时在读取前后检查体积，避免损坏元数据或并发文件增长绕过 IPC 上限。
-fn ensure_binary_preview_size(size: u64) -> Result<(), LoreCommandError> {
-    const MAX_BINARY_PREVIEW_BYTES: u64 = 20 * 1024 * 1024;
-    if size > MAX_BINARY_PREVIEW_BYTES {
-        return Err(LoreCommandError::new(
-            "binary_preview_too_large",
-            format!(
-                "The file is {:.1} MB, exceeding the 20 MB embedded preview limit; open it with an external application",
-                size as f64 / (1024.0 * 1024.0)
-            ),
-        ));
-    }
-    Ok(())
 }
 
 /// 构造单文件预览 DTO；内容来源在进入 Base64 编码前始终留在 Rust 适配层。
@@ -7650,8 +7558,10 @@ fn build_file_preview(
         })?
     };
     ensure_binary_preview_size(bytes.len() as u64)?;
-    // size 报告原始资产字节；TGA/TIFF 转码后的 PNG 只进入 data_base64。
+    // size 报告原始资产字节；纹理转码后的 PNG 只进入 data_base64。
     let original_size = bytes.len() as u64;
+    let structured_preview = build_structured_preview(&relative_path, &bytes)
+        .map_err(|error| LoreCommandError::new(error.code, error.message))?;
     let (mime_type, preview_bytes) =
         prepare_preview_payload(&relative_path, kind, source_mime_type, bytes)?;
 
@@ -7661,6 +7571,7 @@ fn build_file_preview(
         mime_type,
         data_base64: BASE64_STANDARD.encode(&preview_bytes),
         size: original_size,
+        structured_preview,
     })
 }
 
@@ -9348,95 +9259,6 @@ mod tests {
         assert!(is_text_like_revision_path("Dockerfile"));
         assert!(!is_text_like_revision_path("Content/Map.umap"));
         assert!(!is_text_like_revision_path("Content/Actor.uasset"));
-    }
-
-    #[test]
-    fn binary_preview_allows_only_common_images_pdfs_and_game_assets() {
-        assert_eq!(
-            binary_preview_format(Path::new("Content/Textures/Sky.PNG")),
-            Some(("image", "image/png"))
-        );
-        assert_eq!(
-            binary_preview_format(Path::new("Docs/Design.pdf")),
-            Some(("pdf", "application/pdf"))
-        );
-        assert_eq!(
-            binary_preview_format(Path::new("Content/Textures/Albedo.TGA")),
-            Some(("image", "image/x-tga"))
-        );
-        assert_eq!(
-            binary_preview_format(Path::new("Content/Meshes/Hero.FBX")),
-            Some(("model", "model/fbx"))
-        );
-        assert_eq!(
-            binary_preview_format(Path::new("Content/Meshes/Prop.gltf")),
-            Some(("model", "model/gltf+json"))
-        );
-        assert_eq!(
-            binary_preview_format(Path::new("Data/Stats.CSV")),
-            Some(("csv", "text/csv"))
-        );
-        assert_eq!(binary_preview_format(Path::new("Images/vector.svg")), None);
-        assert_eq!(binary_preview_format(Path::new("Content/Map.umap")), None);
-    }
-
-    #[test]
-    fn tga_texture_preview_is_converted_to_png_payload() {
-        // 1×1 未压缩 TGA：18 字节头 + BGRA 像素，足以验证解码与 PNG 重编码。
-        let mut tga = vec![0u8; 18];
-        tga[2] = 2; // 未压缩真彩色
-        tga[12] = 1; // 宽度
-        tga[13] = 0;
-        tga[14] = 1; // 高度
-        tga[15] = 0;
-        tga[16] = 32; // 每像素位数
-        tga[17] = 8; // alpha 深度
-        tga.extend_from_slice(&[0x20, 0x40, 0x80, 0xff]);
-
-        let (mime_type, png_bytes) =
-            prepare_preview_payload(Path::new("Albedo.tga"), "image", "image/x-tga", tga)
-                .expect("A valid TGA should be converted to PNG");
-        assert_eq!(mime_type, "image/png");
-        assert!(png_bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]));
-    }
-
-    #[test]
-    fn color_mapped_tga_texture_preview_is_converted_to_png_payload() {
-        // 该 1×1 样本保留 Godot 资产中使用的 8 位索引 + 24 位色表结构。
-        // `image` 的通用 TGA 入口会把索引像素报告为 `Unknown(8)`，因此测试必须
-        // 覆盖真实色表展开路径，而不能继续只验证 32 位真彩 TGA。
-        let mut tga = vec![0u8; 18];
-        tga[1] = 1; // 存在色表
-        tga[2] = 1; // 未压缩色表索引图像
-        tga[5] = 1; // 色表长度为 1
-        tga[7] = 24; // 每个色表项为 BGR 24 位
-        tga[12] = 1; // 宽度
-        tga[14] = 1; // 高度
-        tga[16] = 8; // 每个像素是 8 位色表索引
-        tga[17] = 8; // 与问题资产一致，保留冲突的 8 个属性位
-        tga.extend_from_slice(&[0x20, 0x40, 0x80]); // 一个 BGR 色表项
-        tga.push(0); // 像素引用色表索引 0
-
-        let (mime_type, png_bytes) =
-            prepare_preview_payload(Path::new("Clouds.tga"), "image", "image/x-tga", tga)
-                .expect("A valid color-mapped TGA should be converted to PNG");
-        assert_eq!(mime_type, "image/png");
-        assert!(png_bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]));
-        let decoded = image::load_from_memory_with_format(&png_bytes, image::ImageFormat::Png)
-            .expect("The converted preview should remain a valid PNG")
-            .to_rgba8();
-        assert_eq!(decoded.get_pixel(0, 0).0, [0x80, 0x40, 0x20, 0xff]);
-    }
-
-    #[test]
-    fn binary_preview_rejects_content_larger_than_twenty_mb() {
-        assert!(ensure_binary_preview_size(20 * 1024 * 1024).is_ok());
-        assert_eq!(
-            ensure_binary_preview_size(20 * 1024 * 1024 + 1)
-                .expect_err("Content above the limit must fail before reading")
-                .code,
-            "binary_preview_too_large"
-        );
     }
 
     #[test]

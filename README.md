@@ -49,7 +49,7 @@ Work with local, remote, and archived branches without losing track of the curre
 - Explore exact file dependency graphs in both directions, pan freely with the left mouse button, zoom around the pointer with the wheel, inspect tagged edges and cycles, and configure dependency-driven Clone or Sync with guided scope controls.
 - Clone an exact Revision or Branch, create a Bare workspace, opt into Direct File I/O for compatibility diagnostics, and compose an initial Layer with an optional Revision-matching metadata key.
 - Inspect and manage Layers and linked repositories.
-- Preview images, PDF pages, CSV files, TGA/TIFF textures, and common 3D assets inside the app.
+- Preview modern DDS/KTX2/EXR textures, WAV/OGG/MP3/FLAC audio, ZIP/PAK/AssetBundle and Godot PCK directories, TTF/OTF fonts, common 3D assets, and Unreal/Unity/Godot/Blender metadata inside the app.
 
 ---
 

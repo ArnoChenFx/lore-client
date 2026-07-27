@@ -1940,6 +1940,21 @@ async function invokeCommand<T>(command: string, args: Record<string, unknown>):
  * 这里仅覆盖客户端能够给出明确恢复建议的错误；其余错误继续保留上游详情。
  */
 function localizeCommandError(error: Partial<LoreCommandError>, command: string): string {
+  if (error.code === 'binary_preview_invalid_asset') {
+    return t('binaryPreviewInvalidAsset')
+  }
+  if (error.code === 'binary_preview_asset_variant_unsupported') {
+    return t('binaryPreviewUnsupportedAssetVariant')
+  }
+  if (error.code === 'binary_preview_decode_failed' || error.code === 'binary_preview_encode_failed') {
+    return t('binaryPreviewDecodeFailed')
+  }
+  if (error.code === 'binary_preview_too_large') {
+    return t('binaryPreviewTooLarge')
+  }
+  if (error.code === 'binary_preview_unsupported') {
+    return t('binaryPreviewUnsupportedFormat')
+  }
   if (error.code === 'invalid_clone_target') {
     return t('invalidCloneTarget')
   }

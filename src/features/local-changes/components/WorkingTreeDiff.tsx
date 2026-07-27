@@ -137,6 +137,7 @@ export function WorkingTreeDiff({
           preview={binaryPreview}
           loading={binaryPreviewLoading}
           error={binaryPreviewError}
+          size={file.size ? Number(file.size) : undefined}
         />
       ) : file.binary ? (
         <div className="working-diff__empty">

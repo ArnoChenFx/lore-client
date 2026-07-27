@@ -16,7 +16,9 @@ toml_edit = "0.25.13"
 [dependencies]
 base64 = "0.22"
 # 仅用于把浏览器无法直接显示的 TGA/TIFF 转成 PNG；不引入完整编解码全家桶。
-image = { version = "0.25", default-features = false, features = ["png", "tga", "tiff"] }
+image = { version = "0.25", default-features = false, features = ["dds", "exr", "png", "tga", "tiff"] }
+exr = "1.74"
+zstd = "0.13"
 glob-match = "0.2.1"
 lore = { git = "https://github.com/EpicGames/lore.git", rev = "9664606f5a4708606642a6670a57d16bd3d37596" }
 serde = { version = "1", features = ["derive"] }
@@ -30,9 +32,21 @@ tempfile = "3"
 toml_edit = "0.25.13"
 tauri-plugin-log = "2.9.0"
 log = "0.4"
+# 归档预览只读取 ZIP 中央目录，正文不会解压或写入磁盘；关闭默认功能可避免
+# 引入本功能不需要的加密与额外压缩算法。
+zip = { version = "4.6.1", default-features = false, features = ["deflate"] }
 
 # Lore 当前提交扩展了 quinn-proto 的 RTT 与加密错误接口。作为外部 Git
 # 依赖时，上游工作区的 path patch 不会自动传播，因此在客户端侧携带同一份
 # MIT/Apache-2.0 vendored crate，确保依赖图与固定 Lore 提交完全一致。
 [patch.crates-io]
 quinn-proto = { path = "vendor/quinn-proto" }
+
+# Windows MSVC 的单个 PDB 有体积/类型数量上限。完整 debug=2 会让 Lore 及其
+# 依赖链生成数 GB 级 PDB（例如 lore.dll.pdb），触发 link.exe LNK1140。
+# line-tables-only 仍保留行号栈回溯，足够日常开发、panic 定位与测试失败排查。
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"

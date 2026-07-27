@@ -121,6 +121,146 @@ describe('binary diff preview', () => {
     expect(html).not.toContain('data:text/csv')
   })
 
+  it('renders audio with a non-autoplay in-memory source', () => {
+    const html = renderToStaticMarkup(
+      <BinaryDiffPreview
+        fileName="Theme.ogg"
+        loading={false}
+        error={null}
+        preview={{
+          after: {
+            path: 'Audio/Theme.ogg',
+            kind: 'audio',
+            mimeType: 'audio/ogg',
+            dataBase64: 'T2dnUw==',
+            size: 4
+          }
+        }}
+      />
+    )
+
+    expect(html).toContain('<audio controls="" preload="metadata"')
+    expect(html).toContain('data:audio/ogg;base64,T2dnUw==')
+    expect(html).not.toContain(' autoplay=')
+  })
+
+  it('renders the KTX2 canvas shell without external texture URLs', () => {
+    const html = renderToStaticMarkup(
+      <BinaryDiffPreview
+        fileName="Sky.ktx2"
+        loading={false}
+        error={null}
+        preview={{
+          after: {
+            path: 'Textures/Sky.ktx2',
+            kind: 'texture',
+            mimeType: 'image/ktx2',
+            dataBase64: 'q0tUWCAyMLsNCiEaCg==',
+            size: 12,
+            structuredPreview: {
+              type: 'assetMetadata',
+              format: 'KTX2',
+              facts: [{ key: 'width', value: '1024' }],
+              warningCodes: []
+            }
+          }
+        }}
+      />
+    )
+
+    expect(html).toContain('binary-diff-preview__texture-host')
+    expect(html).toContain('Transcoding KTX2 texture')
+    expect(html).not.toContain('https://')
+  })
+
+  it('renders a lifecycle-bound font preview shell without a font URL', () => {
+    const html = renderToStaticMarkup(
+      <BinaryDiffPreview
+        fileName="Interface.otf"
+        loading={false}
+        error={null}
+        preview={{
+          after: {
+            path: 'Fonts/Interface.otf',
+            kind: 'font',
+            mimeType: 'font/otf',
+            dataBase64: 'T1RUTw==',
+            size: 4
+          }
+        }}
+      />
+    )
+
+    expect(html).toContain('Parsing font')
+    expect(html).not.toContain('data:font/otf')
+  })
+
+  it('renders archive entries from Rust structured metadata without extracting files', () => {
+    const html = renderToStaticMarkup(
+      <BinaryDiffPreview
+        fileName="Game.pak"
+        loading={false}
+        error={null}
+        preview={{
+          after: {
+            path: 'Build/Game.pak',
+            kind: 'archive',
+            mimeType: 'application/x-pak',
+            dataBase64: '',
+            size: 128,
+            structuredPreview: {
+              type: 'archive',
+              format: 'Quake PAK',
+              totalEntries: 1,
+              truncated: false,
+              entries: [{ path: 'maps/start.bsp', kind: 'file', size: 64 }],
+              facts: [],
+              warningCodes: []
+            }
+          }
+        }}
+      />
+    )
+
+    expect(html).toContain('Quake PAK')
+    expect(html).toContain('maps/start.bsp')
+    expect(html).toContain('1 entry')
+    expect(html).not.toContain('data:application/x-pak')
+  })
+
+  it('renders engine metadata as localized semantic fields', () => {
+    const html = renderToStaticMarkup(
+      <BinaryDiffPreview
+        fileName="Hero.blend"
+        loading={false}
+        error={null}
+        preview={{
+          after: {
+            path: 'Art/Hero.blend',
+            kind: 'asset',
+            mimeType: 'application/x-blender',
+            dataBase64: '',
+            size: 256,
+            structuredPreview: {
+              type: 'assetMetadata',
+              format: 'Blender',
+              facts: [
+                { key: 'version', value: '400' },
+                { key: 'meshCount', value: '3' }
+              ],
+              warningCodes: []
+            }
+          }
+        }}
+      />
+    )
+
+    expect(html).toContain('Blender')
+    expect(html).toContain('Version')
+    expect(html).toContain('Meshes')
+    expect(html).not.toContain('data:application/x-blender')
+  })
+
   it('decodes PDF Base64 into an independent byte array', () => {
     expect(Array.from(decodePdfBase64('JVBERg=='))).toEqual([37, 80, 68, 70])
   })
