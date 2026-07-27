@@ -174,6 +174,11 @@ export function WorkingTreeDiffContainer({
           setBinaryPreviewLoading(false)
         }
       })
+    // 组件卸载或依赖变化时主动清空预览数据，加速垃圾回收。
+    return () => {
+      setBinaryPreview(null)
+      setBinaryPreviewError(null)
+    }
   }, [applicationMode, currentRevisionId, file, loadRepositoryBinaryPreview, preferences.binaryDiffVisible])
 
   return (

@@ -1,4 +1,5 @@
 import { Binary, FileWarning, LoaderCircle } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { BinaryDiffPreview, BinaryFilePreview } from '../../types'
@@ -27,9 +28,95 @@ interface PreviewCardProps {
 }
 
 /**
+ * 将 Base64 数据转换为 Object URL。
+ *
+ * Object URL 比 data URL 更高效：
+ * 1. 不需要解析整个 Base64 字符串
+ * 2. 浏览器可以直接访问内存中的 Blob
+ * 3. 释放时可以显式调用 URL.revokeObjectURL
+ *
+ * 在 SSR 环境中（如 renderToStaticMarkup）回退到 data URL，
+ * 因为 useEffect 不会在服务端执行。
+ */
+function useObjectUrl(dataBase64: string, mimeType: string): string {
+  const [url, setUrl] = useState(() => {
+    // SSR 环境中直接使用 data URL。
+    if (typeof window === 'undefined' || typeof URL.createObjectURL === 'undefined') {
+      return dataBase64 ? `data:${mimeType};base64,${dataBase64}` : ''
+    }
+    return ''
+  })
+
+  useEffect(() => {
+    if (!dataBase64) {
+      setUrl('')
+      return
+    }
+
+    // 浏览器环境中使用 Object URL。
+    if (typeof URL.createObjectURL !== 'undefined') {
+      try {
+        // 将 Base64 解码为二进制数据。
+        const binaryString = atob(dataBase64)
+        const bytes = new Uint8Array(binaryString.length)
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i)
+        }
+
+        const blob = new Blob([bytes], { type: mimeType })
+        const objectUrl = URL.createObjectURL(blob)
+        setUrl(objectUrl)
+
+        // 组件卸载时释放 Object URL。
+        return () => {
+          URL.revokeObjectURL(objectUrl)
+        }
+      } catch {
+        // Base64 解码失败时回退到 data URL。
+        setUrl(`data:${mimeType};base64,${dataBase64}`)
+      }
+    } else {
+      // 回退到 data URL。
+      setUrl(`data:${mimeType};base64,${dataBase64}`)
+    }
+  }, [dataBase64, mimeType])
+
+  return url
+}
+
+/**
+ * 使用 Object URL 渲染图片预览。
+ *
+ * 比直接使用 data URL 更高效，因为：
+ * 1. 不需要在 HTML 中嵌入整个 Base64 字符串
+ * 2. 浏览器可以更高效地管理内存
+ * 3. 卸载时可以显式释放内存
+ */
+function ImagePreview({ fileName, label, dataBase64, mimeType }: {
+  fileName: string
+  label: string
+  dataBase64: string
+  mimeType: string
+}) {
+  const url = useObjectUrl(dataBase64, mimeType)
+
+  if (!url) {
+    return null
+  }
+
+  return (
+    <img
+      src={url}
+      alt={`${fileName}（${label}）`}
+      draggable={false}
+    />
+  )
+}
+
+/**
  * 渲染一个已经通过 Rust 白名单校验的预览版本。
  *
- * 图片可直接用受控 MIME 的 data URL；PDF、三维模型与 CSV 都在应用内解析，
+ * 图片使用 Object URL 以减少内存占用；PDF、三维模型与 CSV 都在应用内解析，
  * 不依赖 WebView2 原生插件，也不创建可执行链接、表单或脚本层。
  */
 function PreviewCard({ label, fileName, preview }: PreviewCardProps) {
@@ -41,10 +128,11 @@ function PreviewCard({ label, fileName, preview }: PreviewCardProps) {
       </header>
       <div className="binary-diff-preview__canvas">
         {preview.kind === 'image' ? (
-          <img
-            src={`data:${preview.mimeType};base64,${preview.dataBase64}`}
-            alt={`${fileName}（${label}）`}
-            draggable={false}
+          <ImagePreview
+            fileName={fileName}
+            label={label}
+            dataBase64={preview.dataBase64}
+            mimeType={preview.mimeType}
           />
         ) : preview.kind === 'texture' ? (
           <TextureCanvasPreview
