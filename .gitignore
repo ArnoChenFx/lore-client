@@ -9,6 +9,7 @@ graphify-upstream/
 docs/plan/
 docs/note/
 docs/manual/
+docs/key/
 .zed/
 .env
 *.log
