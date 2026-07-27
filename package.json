@@ -11,6 +11,7 @@
     "test:ui": "bun scripts/cdp-smoke.mjs",
     "test:visual": "bun scripts/visual-audit.mjs",
     "release:prepare": "bun scripts/prepare-release.mjs",
+    "version:set": "bun scripts/set-version.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "lint": "oxlint --config .oxlintrc.json src",
