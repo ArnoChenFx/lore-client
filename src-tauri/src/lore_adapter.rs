@@ -6777,13 +6777,22 @@ fn ensure_operation_success(
     ))
 }
 
+/// 为低层 Store 构造远端认证上下文。
+///
+/// 仓库配置中的 `identity` 是创建 Revision 时使用的作者身份；远端 Store 的
+/// Token 则按设备账户绑定中的 user ID 查找。两者属于不同命名空间，不能用提交
+/// 作者覆盖 `global_args` 已解析的账户，否则本地未缓存的二进制内容会在回源时
+/// 失去认证，并被固定 Lore 版本折叠成 `Internal`。
+fn revision_storage_globals(repository_path: &Path) -> Result<LoreGlobalArgs, LoreCommandError> {
+    let repository_path_string = display_path_without_windows_verbatim_prefix(repository_path);
+    global_args(&repository_path_string)
+}
+
 /// 打开指定仓库的只读内容存储，并从事件中恢复公开的 opaque handle。
 fn open_revision_storage(repository_path: &str) -> Result<LoreStore, LoreCommandError> {
     let repository_path = validate_repository_path(repository_path)?;
     let configuration = read_repository_configuration(&repository_path)?;
-    let repository_path_string = display_path_without_windows_verbatim_prefix(&repository_path);
-    let mut globals = global_args(&repository_path_string)?;
-    globals.identity = configuration.identity.unwrap_or_default().into();
+    let globals = revision_storage_globals(&repository_path)?;
     let (remote_config, has_remote_config) = match configuration.remote_url {
         Some(remote_url) => (
             LoreStorageRemoteConfig {
@@ -9411,6 +9420,28 @@ mod tests {
         assert_eq!(preview.mime_type, "image/png");
         assert_eq!(preview.size, 8);
         assert_eq!(preview.data_base64, "iVBORw0KGgo=");
+    }
+
+    #[test]
+    fn revision_storage_prefers_bound_auth_identity_over_commit_identity() {
+        let (repository_path, _cleanup) = create_configuration_test_repository(
+            "revision-storage-auth-identity",
+            "identity = \"commit-author\"\nremote_url = \"lore://127.0.0.1:41337\"\n",
+        );
+        let binding_key = repository_binding_key(&repository_path);
+        auth_account_bindings()
+            .lock()
+            .expect("The auth binding store should be writable")
+            .insert(binding_key.clone(), "remote-account".to_owned());
+
+        let globals = revision_storage_globals(&repository_path)
+            .expect("The revision storage globals should be constructed");
+
+        auth_account_bindings()
+            .lock()
+            .expect("The auth binding store should be writable")
+            .remove(&binding_key);
+        assert_eq!(globals.identity.as_str(), "remote-account");
     }
 
     #[test]
