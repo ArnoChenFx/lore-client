@@ -92,7 +92,12 @@ function useObjectUrl(dataBase64: string, mimeType: string): string {
  * 2. 浏览器可以更高效地管理内存
  * 3. 卸载时可以显式释放内存
  */
-function ImagePreview({ fileName, label, dataBase64, mimeType }: {
+function ImagePreview({
+  fileName,
+  label,
+  dataBase64,
+  mimeType
+}: {
   fileName: string
   label: string
   dataBase64: string
@@ -104,13 +109,7 @@ function ImagePreview({ fileName, label, dataBase64, mimeType }: {
     return null
   }
 
-  return (
-    <img
-      src={url}
-      alt={`${fileName}（${label}）`}
-      draggable={false}
-    />
-  )
+  return <img src={url} alt={`${fileName}（${label}）`} draggable={false} />
 }
 
 /**
@@ -128,12 +127,7 @@ function PreviewCard({ label, fileName, preview }: PreviewCardProps) {
       </header>
       <div className="binary-diff-preview__canvas">
         {preview.kind === 'image' ? (
-          <ImagePreview
-            fileName={fileName}
-            label={label}
-            dataBase64={preview.dataBase64}
-            mimeType={preview.mimeType}
-          />
+          <ImagePreview fileName={fileName} label={label} dataBase64={preview.dataBase64} mimeType={preview.mimeType} />
         ) : preview.kind === 'texture' ? (
           <TextureCanvasPreview
             fileName={fileName}

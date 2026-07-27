@@ -649,7 +649,10 @@ export function RevisionChangesWorkspace({
                 </strong>
                 <span>
                   {primaryFile.binary
-                    ? t('status.binaryFormatsSupported', { path: changeFilePath(primaryFile), size: primaryFile.size ?? t('unknownSize') })
+                    ? t('status.binaryFormatsSupported', {
+                        path: changeFilePath(primaryFile),
+                        size: primaryFile.size ?? t('unknownSize')
+                      })
                     : changeFilePath(primaryFile)}
                 </span>
               </div>

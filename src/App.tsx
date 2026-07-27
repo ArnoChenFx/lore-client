@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 
 import {
   AppGlobalOverlays,
@@ -90,14 +90,17 @@ function App() {
     error: preferencesError,
     update: updatePreferences
   } = useClientPreferences()
+
   /*
-   * 语言必须在本次渲染创建任何 JSX 前同步到运行时。偏好订阅更新会重渲染 App，
-   * 子树因此即时切换语言，而不需要重启或卸载工作区状态。
+   * 语言切换必须在副作用中执行，不能在渲染期间调用，否则会触发
+   * "Cannot update a component while rendering" 警告。
    */
-  setAppLanguage(preferences.language)
-  if (typeof document !== 'undefined') {
-    document.documentElement.lang = preferences.language
-  }
+  useEffect(() => {
+    setAppLanguage(preferences.language)
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang = preferences.language
+    }
+  }, [preferences.language])
   const { preference, resolvedTheme, setPreference, toggleTheme } = useTheme()
   const { layout, resizeSidebar, resizeInspector, resetLayout } = useWorkspaceLayout()
   // 浏览器演示与 Vite 开发构建没有正式签名公钥和发布端点，不执行无意义的更新请求。
