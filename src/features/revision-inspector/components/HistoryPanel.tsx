@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
 import { useDismissiblePopover } from '../../../hooks/useDismissiblePopover'
 import { t } from '../../../i18n'
+import { shouldDisplayRevisionAuthorEmail } from '../../../shared/lib'
 import {
   CheckboxInput,
   ControlInput,
@@ -441,7 +442,9 @@ export function HistoryPanel({
                      * 当前仓库身份补齐旧历史。列表列宽有限，因此视觉上允许省略，
                      * 但 title 始终保留完整邮箱供鼠标用户核对。
                      */}
-                    {revision.authorEmail && <small title={revision.authorEmail}>{revision.authorEmail}</small>}
+                    {shouldDisplayRevisionAuthorEmail(revision.author, revision.authorEmail) && (
+                      <small title={revision.authorEmail}>{revision.authorEmail}</small>
+                    )}
                   </span>
                 </span>
                 <time dateTime={revision.timestamp}>

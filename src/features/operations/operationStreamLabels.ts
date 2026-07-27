@@ -10,6 +10,7 @@ import { t } from '../../i18n'
 const LORE_OPERATION_LABEL_KEYS = {
   'auth.list': 'listAccounts',
   'auth.local-user-info': 'resolveAccountNames',
+  'auth.user-info': 'resolveRevisionAuthors',
   'auth.login-interactive': 'signInWithBrowser',
   'auth.login-with-token': 'signInWithToken',
   'auth.logout': 'signOut',

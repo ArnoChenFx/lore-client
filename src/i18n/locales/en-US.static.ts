@@ -19,6 +19,7 @@ const enUSStatic = {
   alreadyTheCurrentBranch: 'Already the current branch',
   alreadyTheCurrentRevision: 'Already the current revision',
   appearance: 'Appearance',
+  applicationVersion: 'Application version',
   applicationMenu: 'Application menu',
   archiveBranch: 'Archive Branch',
   archiveBranch_2: 'Archive Branch…',
@@ -1228,6 +1229,7 @@ const enUSStatic = {
   loreOperation: {
     listAccounts: 'List Lore Accounts',
     resolveAccountNames: 'Resolve Account Names',
+    resolveRevisionAuthors: 'Resolve Revision Authors',
     signInWithBrowser: 'Sign In with Browser',
     signInWithToken: 'Sign In with Token',
     signOut: 'Sign Out',

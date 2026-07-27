@@ -9,14 +9,30 @@ workspace HEAD, selection, and Revisions ahead of the local workspace.
 A Branch badge means the Branch currently points to that Revision; it does not claim
 historical ownership. Tag badges open Tag actions, not Revision actions.
 
+For a connected and authorized repository, Lore Client submits the author identities
+from the currently loaded history to the Auth service as one batch. A real user ID is
+replaced by the returned username. Free-form identities, unknown user IDs, offline or
+unauthorized repositories, and failed lookups keep the exact historical identity. The
+current viewer's username never replaces another historical author.
+
 Filters include Merge-only, starting Revision, Branch, date, limit, and Branch ancestry.
 Display options control columns and lane mode.
 
 ## Inspector
 
-Overview shows identity, time, parents, and source. Changes is a real parent-child Diff
-with selectable baseline for a Merge Revision. File Tree is the complete immutable file
-set and preserves exact Show in File Tree targets while loading.
+Overview shows identity, time, parents, and source. Author presentation follows one
+stable rule set:
+
+- `Name <email>` shows the name and a separate email; the email supplies Gravatar.
+- An email-only identity shows the complete email once as the author while still using
+  it for Gravatar.
+- A username or identity without an email is shown in full and uses the local initials
+  avatar.
+
+Offline, missing-avatar, and unavailable-crypto cases keep author text and local
+initials. Changes is a real parent-child Diff with selectable baseline for a Merge
+Revision. File Tree is the complete immutable file set and preserves exact Show in File
+Tree targets while loading.
 
 Revision-file menus can open changes, run external Diff, show in the file explorer, open
 history, restore to a selected state, and copy paths.

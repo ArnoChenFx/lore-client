@@ -570,6 +570,39 @@ describe('Lore event adapter', () => {
     })
   })
 
+  it('parses an Auth-resolved revision username through the shared identity rules', () => {
+    const repository = loreEventParsers.parseRepository(repositoryPath, [
+      {
+        tagName: 'repositoryStatusRevision',
+        data: { repository: 'repository-id', branchName: 'main' }
+      }
+    ])
+    const revisions = loreEventParsers.parseRevisions(
+      [
+        {
+          tagName: 'revisionHistoryEntry',
+          data: { revision: 'abcdef1234567890', revisionNumber: 13, parent: [] }
+        },
+        {
+          tagName: 'metadata',
+          data: {
+            key: 'committed-by',
+            value: { tagName: 'string', data: 'user-42' }
+          }
+        }
+      ],
+      repository,
+      [],
+      new Map([['user-42', 'Arno Chen <arno@example.com>']])
+    )
+
+    expect(revisions[0]).toMatchObject({
+      author: 'Arno Chen',
+      authorEmail: 'arno@example.com',
+      initials: 'A'
+    })
+  })
+
   it('does not scale Lore millisecond timestamps as seconds', () => {
     const repository = loreEventParsers.parseRepository(repositoryPath, [
       {

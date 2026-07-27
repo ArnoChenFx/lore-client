@@ -31,6 +31,7 @@ const {
   loadRevisionHistory,
   listAuthIdentities,
   listRemoteRepositories,
+  loreEventParsers,
   publishRepository,
   runConflictAction,
   switchBranch
@@ -504,6 +505,115 @@ describe('repository snapshot branch loading', () => {
       date: 1_743_724_799,
       onlyBranch: true
     })
+  })
+
+  it('resolves revision user IDs in one repository-scoped Auth request and preserves unresolved identities', async () => {
+    const repository = loreEventParsers.parseRepository('E:\\Worlds\\RealLore', [
+      {
+        tagName: 'repositoryStatusRevision',
+        data: {
+          repository: 'repository-id',
+          branchName: 'main',
+          revision: 'tip',
+          remoteAvailable: true,
+          remoteAuthorized: true
+        }
+      }
+    ])
+    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+      if (command === 'lore_revision_history') {
+        return {
+          operation: 'revision.history',
+          status: 0,
+          events: [
+            {
+              tagName: 'revisionHistoryEntry',
+              data: { revision: 'tip', revisionNumber: 2, parent: ['base'] }
+            },
+            {
+              tagName: 'metadata',
+              data: { key: 'committed-by', value: { tagName: 'string', data: 'user-42' } }
+            },
+            {
+              tagName: 'metadata',
+              data: { key: 'created-by', value: { tagName: 'string', data: 'creator-fallback' } }
+            },
+            {
+              tagName: 'revisionHistoryEntry',
+              data: { revision: 'base', revisionNumber: 1, parent: [] }
+            },
+            {
+              tagName: 'metadata',
+              data: { key: 'created-by', value: { tagName: 'string', data: 'Artist Team' } }
+            }
+          ]
+        }
+      }
+      if (command === 'lore_auth_user_info') {
+        expect(args).toEqual({
+          repositoryPath: 'E:\\Worlds\\RealLore',
+          userIds: ['user-42', 'Artist Team']
+        })
+        return {
+          operation: 'auth.user-info',
+          status: 0,
+          events: [
+            {
+              tagName: 'authUserInfo',
+              data: { id: 'user-42', name: 'Arno Chen <arno@example.com>' }
+            }
+          ]
+        }
+      }
+      throw new Error(`The test does not handle command: ${command}`)
+    })
+
+    const revisions = await loadRevisionHistory(repository, [], { onlyBranch: false, limit: 100 })
+
+    expect(revisions[0]).toMatchObject({ author: 'Arno Chen', authorEmail: 'arno@example.com' })
+    expect(revisions[1]).toMatchObject({ author: 'Artist Team', authorEmail: undefined })
+    expect(invokeMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps revision identities when remote author resolution is unavailable', async () => {
+    const repository = loreEventParsers.parseRepository('E:\\Worlds\\RealLore', [
+      {
+        tagName: 'repositoryStatusRevision',
+        data: {
+          repository: 'repository-id',
+          branchName: 'main',
+          revision: 'tip',
+          remoteAvailable: true,
+          remoteAuthorized: true
+        }
+      }
+    ])
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'lore_revision_history') {
+        return {
+          operation: 'revision.history',
+          status: 0,
+          events: [
+            {
+              tagName: 'revisionHistoryEntry',
+              data: { revision: 'tip', revisionNumber: 1, parent: [] }
+            },
+            {
+              tagName: 'metadata',
+              data: { key: 'committed-by', value: { tagName: 'string', data: 'user-42' } }
+            }
+          ]
+        }
+      }
+      if (command === 'lore_auth_user_info') {
+        throw new Error('Auth service unavailable')
+      }
+      throw new Error(`The test does not handle command: ${command}`)
+    })
+
+    await expect(loadRevisionHistory(repository, [], { onlyBranch: false, limit: 100 })).resolves.toEqual([
+      expect.objectContaining({ author: 'user-42', authorEmail: undefined })
+    ])
   })
 
   it('loads remote repository details before Clone', async () => {

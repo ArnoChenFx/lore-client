@@ -34,6 +34,7 @@ import { useTranslation } from 'react-i18next'
 
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
 import { t } from '../../../i18n'
+import { shouldDisplayRevisionAuthorEmail } from '../../../shared/lib'
 import { IconButton, RevisionAuthorAvatar } from '../../../shared/ui'
 import type {
   BinaryFilePreview,
@@ -286,7 +287,9 @@ export function OverviewTab({
           <span>{t('author')}</span>
           <div className="metadata-grid__identity">
             <strong title={revision.author}>{revision.author}</strong>
-            {revision.authorEmail && <small title={revision.authorEmail}>{revision.authorEmail}</small>}
+            {shouldDisplayRevisionAuthorEmail(revision.author, revision.authorEmail) && (
+              <small title={revision.authorEmail}>{revision.authorEmail}</small>
+            )}
           </div>
         </article>
         <article>
@@ -894,7 +897,9 @@ export function Inspector({
                * Inspector 使用同一份历史 DTO 展示邮箱；这里只渲染显式历史值，
                * 不从当前设置推断，避免改变旧 Revision 的作者事实。
                */}
-              {revision.authorEmail && <small title={revision.authorEmail}>{revision.authorEmail}</small>}
+              {shouldDisplayRevisionAuthorEmail(revision.author, revision.authorEmail) && (
+                <small title={revision.authorEmail}>{revision.authorEmail}</small>
+              )}
             </span>
             <span className="inspector__revision-meta">
               <code>{revision.shortId}</code>

@@ -19,6 +19,7 @@ const zhCNStatic = {
   alreadyTheCurrentBranch: '已经是当前分支',
   alreadyTheCurrentRevision: '已经是当前修订',
   appearance: '界面主题',
+  applicationVersion: '软件版本',
   applicationMenu: '应用菜单',
   archiveBranch: '归档分支',
   archiveBranch_2: '归档分支…',
@@ -1145,6 +1146,7 @@ const zhCNStatic = {
   loreOperation: {
     listAccounts: '列出 Lore 账户',
     resolveAccountNames: '解析账户名称',
+    resolveRevisionAuthors: '解析修订作者',
     signInWithBrowser: '使用浏览器登录',
     signInWithToken: '使用 Token 登录',
     signOut: '退出登录',

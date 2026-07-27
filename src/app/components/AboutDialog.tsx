@@ -1,12 +1,29 @@
 import { PanelsTopLeft, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { t } from '../../i18n'
 import { AppIcon } from '../../shared/ui'
 import type { LoreRuntimeInfo } from '../../types'
+import { loadApplicationVersion } from '../appVersion'
 
 /** 应用与嵌入式 Lore Core 的可诊断版本信息。 */
 export function AboutDialog({ runtimeInfo, onClose }: { runtimeInfo: LoreRuntimeInfo | null; onClose: () => void }) {
+  const { t } = useTranslation()
+  const [applicationVersion, setApplicationVersion] = useState<string | null>()
+
+  useEffect(() => {
+    let active = true
+
+    void loadApplicationVersion().then((version) => {
+      // 弹窗可能在原生 IPC 返回前关闭；卸载后不再写入状态，避免保留无效的异步更新。
+      if (active) setApplicationVersion(version)
+    })
+
+    return () => {
+      active = false
+    }
+  }, [])
+
   return (
     <div
       className="dialog-backdrop"
@@ -32,6 +49,10 @@ export function AboutDialog({ runtimeInfo, onClose }: { runtimeInfo: LoreRuntime
           <AppIcon className="about-content__app-icon" label="Lore Client" />
           <p>{t('nativeDesktopClientLoreVersion_58a8')}</p>
           <dl>
+            <div>
+              <dt>{t('applicationVersion')}</dt>
+              <dd>{applicationVersion === undefined ? t('loading') : (applicationVersion ?? '—')}</dd>
+            </div>
             <div>
               <dt>Lore Core</dt>
               <dd>{runtimeInfo?.libraryVersion ?? t('loading')}</dd>

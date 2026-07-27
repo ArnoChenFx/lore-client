@@ -827,6 +827,11 @@ export async function loadRepositorySnapshot(repositoryPath: string, scan = fals
     limit: 100,
     revision: historyAnchor || null
   })
+  const resolvedRevisionAuthors = await resolveRevisionAuthorNames(
+    repositoryPath,
+    history.events,
+    statusRepository.online
+  )
   const tags = await listTags(repositoryPath)
   const config = await loadRepositoryConfig(repositoryPath)
 
@@ -836,7 +841,7 @@ export async function loadRepositorySnapshot(repositoryPath: string, scan = fals
   return {
     repository,
     branches,
-    revisions: parseRevisions(history.events, repository, branches),
+    revisions: parseRevisions(history.events, repository, branches, resolvedRevisionAuthors),
     changes,
     tags,
     conflictSession,
@@ -1794,7 +1799,8 @@ export async function loadRevisionHistory(
     date: query.beforeDate || null,
     onlyBranch: query.onlyBranch
   })
-  return parseRevisions(result.events, repository, branches)
+  const resolvedRevisionAuthors = await resolveRevisionAuthorNames(repository.path, result.events, repository.online)
+  return parseRevisions(result.events, repository, branches, resolvedRevisionAuthors)
 }
 
 /** 使用系统文件管理器定位当前 Lore 工作区。 */
@@ -2305,7 +2311,93 @@ function parseFileHistory(events: LoreEvent[]): FileHistoryEntry[] {
     .filter((entry) => entry.path.length > 0 && entry.revision.length > 0)
 }
 
-function parseRevisions(events: LoreEvent[], repository: Repository, branches: Branch[] = []): Revision[] {
+/**
+ * 批量收集 Revision 历史中可能是 userId 的作者 identity。
+ *
+ * userId 由 Auth 提供方定义，客户端没有稳定正则可以区分它和普通
+ * 自由文本。因此沿用上游 CLI 的做法：去重后整批交给 Auth，只消费
+ * 服务端实际返回的映射。
+ */
+function containsIdentityControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0
+    if (codePoint <= 0x1f || codePoint === 0x7f) return true
+  }
+  return false
+}
+
+function collectRevisionAuthorIdentities(events: LoreEvent[]): string[] {
+  const identities = new Set<string>()
+  let currentMetadata: Map<string, unknown> | null = null
+
+  /** 只提交该 Revision 最终会显示的 identity，与 `parseRevisions` 保持同一优先级。 */
+  const appendCurrentIdentity = () => {
+    if (!currentMetadata) return
+    const identity = readString(currentMetadata.get('committed-by') ?? currentMetadata.get('created-by')).trim()
+    if (identity && identity.length <= 512 && !containsIdentityControlCharacter(identity)) {
+      identities.add(identity)
+    }
+  }
+
+  for (const event of events) {
+    if (event.tagName === 'revisionHistoryEntry') {
+      appendCurrentIdentity()
+      currentMetadata = new Map()
+    } else if (event.tagName === 'metadata' && currentMetadata) {
+      const key = readString(event.data.key)
+      if (key === 'committed-by' || key === 'created-by') {
+        currentMetadata.set(key, readMetadataValue(event.data.value))
+      }
+    }
+  }
+  appendCurrentIdentity()
+  return [...identities]
+}
+
+/**
+ * 尽力把历史 userId 解析为 Auth 用户名。
+ *
+ * 这是不可依赖的显示增强：未绑定账户、离线、无权限、旧服务器
+ * 或部分 ID 不存在时都返回已成功的子集，调用方继续使用原 identity。
+ */
+async function resolveRevisionAuthorNames(
+  repositoryPath: string,
+  events: LoreEvent[],
+  repositoryOnline: boolean
+): Promise<Map<string, string>> {
+  const identities = collectRevisionAuthorIdentities(events)
+  /*
+   * 其他用户的名称必须通过远程 Auth 查询。Status 已明确报告离线或
+   * 未授权时直接保留 identity，避免把预期降级记成一条失败操作。
+   */
+  if (!repositoryOnline || identities.length === 0) return new Map()
+
+  try {
+    const result = await runOperation('lore_auth_user_info', {
+      repositoryPath,
+      userIds: identities
+    })
+    const resolved = new Map<string, string>()
+    for (const event of result.events) {
+      if (event.tagName !== 'authUserInfo') continue
+      const userId = readString(event.data.id).trim()
+      const username = readString(event.data.name).trim()
+      if (userId && username && username !== userId) {
+        resolved.set(userId, username)
+      }
+    }
+    return resolved
+  } catch {
+    return new Map()
+  }
+}
+
+function parseRevisions(
+  events: LoreEvent[],
+  repository: Repository,
+  branches: Branch[] = [],
+  resolvedAuthorNames: ReadonlyMap<string, string> = new Map()
+): Revision[] {
   type PendingRevision = {
     entry: Record<string, unknown>
     metadata: Map<string, unknown>
@@ -2339,7 +2431,13 @@ function parseRevisions(events: LoreEvent[], repository: Repository, branches: B
       metadata.get('committed-by') ?? metadata.get('created-by'),
       t('unknownAuthor')
     )
-    const { author, email: authorEmail } = revisionAuthorFromIdentity(historicalIdentity)
+    /*
+     * Auth 只会为真实 userId 返回名称；未返回的候选值必须继续使用
+     * Revision 中固化的 identity。解析后统一走 `Name <email>` / 纯 email /
+     * 自由文本规则，确保 username 携带邮箱时也能获得 Gravatar。
+     */
+    const displayIdentity = resolvedAuthorNames.get(historicalIdentity) ?? historicalIdentity
+    const { author, email: authorEmail } = revisionAuthorFromIdentity(displayIdentity)
     const message = readString(metadata.get('message'), `Revision #${readNumber(entry.revisionNumber)}`)
     const parents = Array.isArray(entry.parent) ? entry.parent : []
     const parentIds = parents.filter(

@@ -15,4 +15,5 @@ docs/manual/
 .DS_Store
 Thumbs.db
 AGENTS.md
+.graphifyignore
 src-tauri/tauri.release.conf.json

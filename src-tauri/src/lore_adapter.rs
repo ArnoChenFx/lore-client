@@ -14,7 +14,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use glob_match::glob_match;
 use lore::auth::{
     LoreAuthClearArgs, LoreAuthListArgs, LoreAuthLocalUserInfoArgs, LoreAuthLoginInteractiveArgs,
-    LoreAuthLoginWithTokenArgs, LoreAuthLogoutArgs,
+    LoreAuthLoginWithTokenArgs, LoreAuthLogoutArgs, LoreAuthUserInfoArgs,
 };
 use lore::branch::{
     LoreBranchArchiveArgs, LoreBranchCreateArgs, LoreBranchDiffArgs, LoreBranchInfoArgs,
@@ -639,6 +639,35 @@ pub async fn lore_auth_local_user_info(
                     user_ids: to_lore_array(user_ids),
                     // 账户页只需要显示名，任何 Token 内容都不得进入事件流或 IPC。
                     with_token: 0,
+                },
+                callback,
+            ))
+        })
+    })
+    .await
+}
+
+/**
+ * 使用仓库的远程上下文把历史 userId 批量解析为 Auth 用户名。
+ *
+ * 与 `lore_auth_local_user_info` 不同，该命令会使用仓库绑定账户执行
+ * repository-scoped Token 交换，因此可查询其他提交者。上游只为真实
+ * userId 返回 `AuthUserInfo`；自由文本 identity 和未解析 ID 会由前端保留
+ * 原文，不在 Rust 边界猜测身份格式。
+ */
+#[tauri::command]
+pub async fn lore_auth_user_info(
+    repository_path: String,
+    user_ids: Vec<String>,
+) -> Result<LoreOperationResult, LoreCommandError> {
+    let user_ids = normalize_auth_user_ids(user_ids)?;
+    run_lore_task(move || {
+        let globals = global_args(&repository_path)?;
+        run_operation("auth.user-info", move |callback| {
+            lore::runtime().block_on(lore::auth::resolve_user_info(
+                globals,
+                LoreAuthUserInfoArgs {
+                    user_ids: to_lore_array(user_ids),
                 },
                 callback,
             ))
@@ -6056,6 +6085,18 @@ fn validate_auth_user_info_request(
         ));
     }
 
+    Ok((auth_url, normalize_auth_user_ids(user_ids)?))
+}
+
+/**
+ * 统一收紧本地 JWT 解析与远程 Auth 查询的用户 ID 集合。
+ *
+ * Revision identity 是历史中的自由文本，因此不能用窄正则先行判定
+ * userId；这里只阻断控制字符和过大输入，最终是否可解析由 Auth 服务
+ * 回答。上限与 Revision History 的 1,000 条上限对齐，避免 IPC 被滥用
+ * 为无界批量请求。
+ */
+fn normalize_auth_user_ids(user_ids: Vec<String>) -> Result<Vec<String>, LoreCommandError> {
     let mut normalized_user_ids = BTreeSet::new();
     for user_id in user_ids {
         let user_id = user_id.trim();
@@ -6073,8 +6114,14 @@ fn validate_auth_user_info_request(
             "At least one authentication user identity is required",
         ));
     }
+    if normalized_user_ids.len() > 1_000 {
+        return Err(LoreCommandError::new(
+            "auth_identity_limit_exceeded",
+            "At most 1000 authentication user identities can be resolved at once",
+        ));
+    }
 
-    Ok((auth_url, normalized_user_ids.into_iter().collect()))
+    Ok(normalized_user_ids.into_iter().collect())
 }
 
 fn validate_repository_path(repository_path: &str) -> Result<PathBuf, LoreCommandError> {
@@ -8842,6 +8889,24 @@ mod tests {
         )
         .expect_err("Control characters must not enter an Auth identity lookup");
         assert_eq!(unsafe_identity.code, "auth_identity_invalid");
+    }
+
+    #[test]
+    fn repository_auth_user_info_request_deduplicates_candidates_and_enforces_history_limit() {
+        assert_eq!(
+            normalize_auth_user_ids(vec![
+                " user-2 ".to_owned(),
+                "Artist Team".to_owned(),
+                "user-2".to_owned(),
+            ])
+            .expect("Revision author candidates must be normalized"),
+            vec!["Artist Team".to_owned(), "user-2".to_owned()]
+        );
+
+        let error =
+            normalize_auth_user_ids((0..=1_000).map(|index| format!("user-{index}")).collect())
+                .expect_err("A single Auth request must not exceed the history limit");
+        assert_eq!(error.code, "auth_identity_limit_exceeded");
     }
 
     fn revision_history_entry(

@@ -60,3 +60,13 @@ export function revisionAuthorFromIdentity(identity: string): { author: string; 
     email: parts.email || undefined
   }
 }
+
+/**
+ * 判断 Revision 邮箱是否还需作为独立副标题显示。
+ *
+ * 纯 email identity 已经把完整内容放在 `author` 中，`authorEmail` 仍需
+ * 保留给 Gravatar，但界面不应再重复一行相同文本。
+ */
+export function shouldDisplayRevisionAuthorEmail(author: string, email?: string): email is string {
+  return Boolean(email && email !== author)
+}
