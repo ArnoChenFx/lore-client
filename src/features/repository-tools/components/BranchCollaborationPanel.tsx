@@ -21,6 +21,99 @@ interface BranchCollaborationPanelProps {
   ) => Promise<boolean>
 }
 
+interface BranchDiffResultProps {
+  diff: LoreBranchDiff
+}
+
+/**
+ * 把 Lore 的开放字符串动作收敛为少量视觉语义。
+ *
+ * 上游 0.x 仍可能增加新的动作值，因此 DOM 会继续显示原始值；这里只决定徽标颜色，
+ * 未知动作安全降级为中性样式，不能因为前端枚举不完整而隐藏比较结果。
+ */
+function branchDiffActionTone(action: string) {
+  switch (action.toLowerCase()) {
+    case 'add':
+    case 'copy':
+      return 'is-positive'
+    case 'delete':
+    case 'remove':
+      return 'is-negative'
+    default:
+      return 'is-neutral'
+  }
+}
+
+/**
+ * Branch Diff 使用专用的固定列位，不复用带图标列和操作列的通用资源列表。
+ * 文件路径始终占据弹性主列，动作与自动合并状态则停靠在行尾，长路径只在自身列内省略。
+ */
+export function BranchDiffResult({ diff }: BranchDiffResultProps) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="branch-collaboration__diff">
+      <section>
+        <header>
+          <strong>{t('branchChanges')}</strong>
+          <small>{diff.changes.length}</small>
+        </header>
+        {diff.changes.length ? (
+          <ul className="branch-diff-list">
+            {diff.changes.map((change) => (
+              <li key={change.path}>
+                <strong className="branch-diff-list__path" title={change.path}>
+                  {change.path}
+                </strong>
+                <span className="branch-diff-list__badges">
+                  <code className={`branch-diff-action ${branchDiffActionTone(change.action)}`}>{change.action}</code>
+                  {change.automerged && <small className="branch-diff-auto-merge">{t('autoMerged')}</small>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>{t('noBranchChanges')}</p>
+        )}
+      </section>
+      <section>
+        <header>
+          <strong>{t('branchConflicts')}</strong>
+          <small>{diff.conflicts.length}</small>
+        </header>
+        {diff.conflicts.length ? (
+          <ul className="branch-diff-list branch-diff-list--conflicts">
+            {diff.conflicts.map((conflict) => (
+              <li key={conflict.path}>
+                <strong className="branch-diff-list__path" title={conflict.path}>
+                  {conflict.path}
+                </strong>
+                <span className="branch-diff-list__comparison">
+                  <span>
+                    <small>{t('sourceBranch')}</small>
+                    <code className={`branch-diff-action ${branchDiffActionTone(conflict.source.action)}`}>
+                      {conflict.source.action}
+                    </code>
+                  </span>
+                  <span aria-hidden="true">→</span>
+                  <span>
+                    <small>{t('targetBranch')}</small>
+                    <code className={`branch-diff-action ${branchDiffActionTone(conflict.target.action)}`}>
+                      {conflict.target.action}
+                    </code>
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>{t('noBranchConflicts')}</p>
+        )}
+      </section>
+    </div>
+  )
+}
+
 /**
  * Branch 协作页把只读审计、保护与破坏性 Reset 放在同一上下文中。
  *
@@ -274,53 +367,7 @@ export function BranchCollaborationPanel({
           </footer>
         </div>
 
-        {diff && (
-          <div className="branch-collaboration__diff">
-            <section>
-              <header>
-                <strong>{t('branchChanges')}</strong>
-                <small>{diff.changes.length}</small>
-              </header>
-              {diff.changes.length ? (
-                <ul className="resource-list">
-                  {diff.changes.map((change) => (
-                    <li key={change.path}>
-                      <span>
-                        <strong>{change.path}</strong>
-                        <small>{change.action}</small>
-                      </span>
-                      {change.automerged && <small>{t('autoMerged')}</small>}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p>{t('noBranchChanges')}</p>
-              )}
-            </section>
-            <section>
-              <header>
-                <strong>{t('branchConflicts')}</strong>
-                <small>{diff.conflicts.length}</small>
-              </header>
-              {diff.conflicts.length ? (
-                <ul className="resource-list">
-                  {diff.conflicts.map((conflict) => (
-                    <li key={conflict.path}>
-                      <span>
-                        <strong>{conflict.path}</strong>
-                        <small>
-                          {conflict.source.action} → {conflict.target.action}
-                        </small>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p>{t('noBranchConflicts')}</p>
-              )}
-            </section>
-          </div>
-        )}
+        {diff && <BranchDiffResult diff={diff} />}
       </section>
 
       {error && <p className="settings-feedback is-warning">{error}</p>}

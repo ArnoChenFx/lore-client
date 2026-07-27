@@ -10394,13 +10394,121 @@ body.is-resizing-panes {
   border-bottom: 1px solid var(--line);
 }
 
-.branch-collaboration__diff .resource-list {
-  border: 0;
-}
-
 .branch-collaboration__diff p {
   margin: 0;
   padding: 14px 10px;
+}
+
+.branch-diff-list {
+  margin: 0;
+  padding: 0;
+  /*
+   * 应用外壳默认禁用文本选择以维持桌面工具的拖拽体验；Branch Diff 是只读审计结果，
+   * 文件路径、动作与冲突两侧信息都需要允许用户直接框选复制，因此仅在结果列表恢复。
+   */
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+  list-style: none;
+}
+
+.branch-diff-list li {
+  display: grid;
+  min-height: 38px;
+  /*
+   * 路径拿走全部剩余宽度；动作和合并状态保持内容宽度并固定在右侧。
+   * 这套列位刻意独立于 resource-list，避免不存在的图标列把路径压缩到 30px。
+   */
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.branch-diff-list li:last-child {
+  border-bottom: 0;
+}
+
+.branch-diff-list__path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-diff-list__badges,
+.branch-diff-list__comparison,
+.branch-diff-list__comparison > span {
+  display: inline-flex;
+  align-items: center;
+}
+
+.branch-diff-list__badges {
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.branch-diff-action,
+.branch-diff-auto-merge {
+  display: inline-flex;
+  min-height: 20px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.branch-diff-action {
+  min-width: 44px;
+  padding: 3px 7px;
+  background: var(--bg-control);
+  color: var(--text-soft);
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.branch-diff-action.is-positive {
+  border-color: color-mix(in srgb, var(--success) 52%, var(--line));
+  background: var(--status-added-bg);
+  color: var(--success);
+}
+
+.branch-diff-action.is-negative {
+  border-color: color-mix(in srgb, var(--danger) 52%, var(--line));
+  background: var(--status-deleted-bg);
+  color: var(--danger);
+}
+
+.branch-diff-auto-merge {
+  padding: 3px 6px;
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  background: var(--accent-surface);
+  color: var(--text-soft);
+}
+
+.branch-diff-list__comparison {
+  gap: 7px;
+  color: var(--muted);
+}
+
+.branch-diff-list__comparison > span:not([aria-hidden]) {
+  gap: 5px;
+}
+
+.branch-diff-list__comparison small {
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .revision-recovery {
