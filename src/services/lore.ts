@@ -145,6 +145,37 @@ export class LoreOperationError extends Error {
   }
 }
 
+/**
+ * 保留 Rust 结构化错误码的前端错误。
+ *
+ * 认证恢复等控制流必须依据稳定 `code`，不能重新解析已经本地化的人类可读消息。
+ */
+export class LoreCommandClientError extends Error {
+  readonly code: string
+  readonly command: string
+
+  constructor(error: Partial<LoreCommandError>, command: string) {
+    super(localizeCommandError(error, command))
+    this.name = 'LoreCommandClientError'
+    this.code = error.code ?? 'lore_command_failed'
+    this.command = command
+  }
+}
+
+/** 仅稳定错误码或 Lore 标准认证错误事件可以触发全局重新认证流程。 */
+export function isAuthenticationRequiredError(error: unknown): boolean {
+  if (error instanceof LoreCommandClientError) return error.code === 'auth_required'
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    return String(error.code) === 'auth_required'
+  }
+  if (!(error instanceof LoreOperationError)) return false
+  return error.events.some((event) => {
+    const candidate = event.data.error
+    if (typeof candidate !== 'object' || candidate === null || !('message' in candidate)) return false
+    return String(candidate.message).includes('The request does not have valid authentication credentials')
+  })
+}
+
 /** 发布失败仍保留远端创建、配置写入和 Push 三个阶段的真实完成状态。 */
 export class LoreRepositoryPublishError extends Error {
   readonly result: LoreRepositoryPublishResult
@@ -1065,6 +1096,20 @@ export async function clearAuthIdentities(): Promise<LoreOperationResult> {
   return runOperation('lore_auth_clear', {})
 }
 
+/**
+ * 认证账户变化后释放所有已打开仓库的原生上下文。
+ *
+ * 这里只传递仓库路径，不传递 Token 或账户资料；Rust 会重新校验路径，并让下一次
+ * Status 读取按最新 Token Store 与仓库账户绑定重新建立远端连接。
+ */
+export async function refreshRepositoryAuthenticationContexts(repositoryPaths: string[]): Promise<void> {
+  const normalizedPaths = [...new Set(repositoryPaths.map((path) => path.trim()).filter(Boolean))]
+  if (normalizedPaths.length === 0) return
+  await invokeLogged('lore_auth_repository_contexts_refresh', {
+    repositoryPaths: normalizedPaths
+  })
+}
+
 /** 立即切换仓库认证身份；偏好持久化由调用方在命令成功后单独完成。 */
 export async function setRepositoryAuthAccountBinding(
   repositoryPath: string,
@@ -1918,7 +1963,7 @@ async function runOperation(command: string, args: Record<string, unknown>): Pro
 
     // Tauri 会把可序列化的 Rust 错误对象直接交给前端，需要在这里恢复成 Error。
     const commandError = error as Partial<LoreCommandError>
-    throw new Error(localizeCommandError(commandError, command))
+    throw new LoreCommandClientError(commandError, command)
   }
 }
 
@@ -1931,7 +1976,7 @@ async function invokeCommand<T>(command: string, args: Record<string, unknown>):
       throw error
     }
     const commandError = error as Partial<LoreCommandError>
-    throw new Error(localizeCommandError(commandError, command))
+    throw new LoreCommandClientError(commandError, command)
   }
 }
 
@@ -1940,6 +1985,9 @@ async function invokeCommand<T>(command: string, args: Record<string, unknown>):
  * 这里仅覆盖客户端能够给出明确恢复建议的错误；其余错误继续保留上游详情。
  */
 function localizeCommandError(error: Partial<LoreCommandError>, command: string): string {
+  if (error.code === 'auth_required') {
+    return t('remoteAuthenticationRequired')
+  }
   if (error.code === 'binary_preview_invalid_asset') {
     return t('binaryPreviewInvalidAsset')
   }

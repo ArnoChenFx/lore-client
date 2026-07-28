@@ -23,6 +23,7 @@ import {
   repositories as demoRepositories,
   revisions as demoRevisions,
   shouldUseBrowserDependencyGraphFixture,
+  shouldUseBrowserRemoteAuthenticationFixture,
   tags as demoTags
 } from './demo'
 import { BranchOverview } from './features/branches'
@@ -41,6 +42,7 @@ import {
   runRepositoryMutationLifecycle,
   useRepositoryEntryController,
   useRepositoryRefresh,
+  useRemoteAuthenticationRecovery,
   useRepositorySession,
   useRepositorySessionLifecycle,
   useSharedStoreController
@@ -72,9 +74,19 @@ import type { BinaryFilePreview, NavigationView, OperationDetail, Repository, Re
 
 const applicationMode = getApplicationMode()
 const dependencyGraphFixtureEnabled = shouldUseBrowserDependencyGraphFixture(applicationMode)
+const remoteAuthenticationFixtureEnabled = shouldUseBrowserRemoteAuthenticationFixture(applicationMode)
 
-const browserDemoSnapshots: RepositorySnapshot[] = demoRepositories.map((repository) => ({
-  repository,
+const browserDemoSnapshots: RepositorySnapshot[] = demoRepositories.map((repository, index) => ({
+  repository:
+    remoteAuthenticationFixtureEnabled && index < 2
+      ? {
+          ...repository,
+          online: false,
+          remoteState: 'unauthorized',
+          remoteUrl: `lore://127.0.0.1:41337/${repository.name}`,
+          serverUrl: 'lore://127.0.0.1:41337'
+        }
+      : repository,
   branches: demoBranches,
   revisions: demoRevisions,
   changes: demoChanges,
@@ -109,7 +121,7 @@ function App() {
     preferencesReady && preferences.automaticallyCheckForUpdates
   )
   const {
-    snapshots,
+    snapshots: sessionSnapshots,
     activeRepositoryId,
     selectedRevisionId,
     selectedBranchId,
@@ -167,6 +179,18 @@ function App() {
     preferencesError,
     showUpdate
   })
+  const enterOfflineMode = useCallback(() => setServerDialogOpen(false), [setServerDialogOpen])
+  const remoteAuthentication = useRemoteAuthenticationRecovery({
+    applicationMode,
+    snapshots: sessionSnapshots,
+    upsertSnapshot,
+    onEnterOfflineMode: enterOfflineMode
+  })
+  /*
+   * 会话仍保存 Lore 返回的原始认证状态；所有界面统一消费离线投影，确保用户跳过后
+   * 标题栏、工具栏、状态栏与仓库工具不会显示互相冲突的连接状态。
+   */
+  const snapshots = remoteAuthentication.snapshots
   const {
     operations,
     loreOperationStreams,
@@ -191,6 +215,7 @@ function App() {
     finishRepositoryMutation
   } = useRepositoryRefresh({
     enabled: applicationMode === 'tauri',
+    networkEnabled: !activeSnapshot || !remoteAuthentication.isRepositoryNetworkPaused(activeSnapshot.repository),
     repositoryPath: activeRepositoryPath,
     remoteState: activeSnapshot?.repository.remoteState ?? 'local',
     upsertSnapshot,
@@ -286,7 +311,11 @@ function App() {
     beginOperation,
     finishOperation,
     refreshSharedStores: sharedStores.refresh,
-    notify
+    notify,
+    serverDialogOpen,
+    authStateVersion: remoteAuthentication.authStateVersion,
+    onAuthenticationRequired: remoteAuthentication.requestAuthentication,
+    onAuthStateChange: remoteAuthentication.refreshAuthenticationState
   })
   useRepositorySessionLifecycle({
     applicationMode,
@@ -497,7 +526,10 @@ function App() {
     runRepositoryMutation,
     upsertSnapshot,
     pushCurrentRepository,
-    locateRevision: locateRevisionFromTools
+    locateRevision: locateRevisionFromTools,
+    authStateVersion: remoteAuthentication.authStateVersion,
+    onAuthenticationRequired: remoteAuthentication.requestAuthentication,
+    onAuthStateChange: remoteAuthentication.refreshAuthenticationState
   })
   const {
     fileLocks,
@@ -614,6 +646,17 @@ function App() {
                 state: appUpdater.state,
                 onInstall: () => void appUpdater.installUpdate(),
                 onClose: () => setUpdateDialogOpen(false)
+              }
+            : null
+        }
+        remoteAuthentication={
+          remoteAuthentication.authenticationTarget
+            ? {
+                target: remoteAuthentication.authenticationTarget,
+                busy: remoteAuthentication.authenticationBusy,
+                error: remoteAuthentication.authenticationError,
+                onAuthenticate: () => void remoteAuthentication.authenticate(),
+                onContinueOffline: remoteAuthentication.continueOffline
               }
             : null
         }

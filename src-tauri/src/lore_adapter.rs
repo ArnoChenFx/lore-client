@@ -760,7 +760,7 @@ pub async fn lore_auth_login_interactive(
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let remote_url = validate_server_url(&remote_url)?;
     run_lore_task(move || {
-        run_operation("auth.login-interactive", move |callback| {
+        let result = run_operation("auth.login-interactive", move |callback| {
             lore::runtime().block_on(lore::auth::login_interactive(
                 LoreGlobalArgs::default(),
                 LoreAuthLoginInteractiveArgs {
@@ -769,7 +769,11 @@ pub async fn lore_auth_login_interactive(
                 },
                 callback,
             ))
-        })
+        })?;
+        invalidate_authentication_connections_with(&result, || {
+            lore_revision::interface::drop_connections()
+        });
+        Ok(result)
     })
     .await
 }
@@ -805,7 +809,7 @@ pub async fn lore_auth_login_with_token(
         ));
     }
     run_lore_task(move || {
-        run_operation("auth.login-with-token", move |callback| {
+        let result = run_operation("auth.login-with-token", move |callback| {
             lore::runtime().block_on(lore::auth::login_with_token(
                 LoreGlobalArgs::default(),
                 LoreAuthLoginWithTokenArgs {
@@ -816,7 +820,11 @@ pub async fn lore_auth_login_with_token(
                 },
                 callback,
             ))
-        })
+        })?;
+        invalidate_authentication_connections_with(&result, || {
+            lore_revision::interface::drop_connections()
+        });
+        Ok(result)
     })
     .await
 }
@@ -840,7 +848,7 @@ pub async fn lore_auth_logout(
         ));
     }
     run_lore_task(move || {
-        run_operation("auth.logout", move |callback| {
+        let result = run_operation("auth.logout", move |callback| {
             lore::runtime().block_on(lore::auth::logout(
                 LoreGlobalArgs::default(),
                 LoreAuthLogoutArgs {
@@ -851,7 +859,11 @@ pub async fn lore_auth_logout(
                 },
                 callback,
             ))
-        })
+        })?;
+        invalidate_authentication_connections_with(&result, || {
+            lore_revision::interface::drop_connections()
+        });
+        Ok(result)
     })
     .await
 }
@@ -860,12 +872,55 @@ pub async fn lore_auth_logout(
 #[tauri::command]
 pub async fn lore_auth_clear() -> Result<LoreOperationResult, LoreCommandError> {
     run_lore_task(move || {
-        run_operation("auth.clear", move |callback| {
+        let result = run_operation("auth.clear", move |callback| {
             lore::runtime().block_on(lore::auth::clear(
                 LoreGlobalArgs::default(),
                 LoreAuthClearArgs::default(),
                 callback,
             ))
+        })?;
+        invalidate_authentication_connections_with(&result, || {
+            lore_revision::interface::drop_connections()
+        });
+        Ok(result)
+    })
+    .await
+}
+
+/// 认证 Token 发生变化后失效 Lore Transport 的进程级连接缓存。
+///
+/// `invalidate` 参数让单元测试不依赖真实远端服务器。失败的认证操作不能中断已有
+/// 连接；只有 Token Store 已成功变化时才清理全部服务器连接并让后续操作重新鉴权。
+fn invalidate_authentication_connections_with<F>(result: &LoreOperationResult, mut invalidate: F)
+where
+    F: FnMut(),
+{
+    if result.status == 0 {
+        invalidate();
+    }
+}
+
+/// 认证账户变化后，释放前端当前已打开仓库的 Lore Store 上下文。
+///
+/// Transport 连接由认证命令直接失效；这里继续释放路径级 Store 缓存，确保下一次
+/// Status 不会复用认证变化前建立的底层对象。
+#[tauri::command]
+pub async fn lore_auth_repository_contexts_refresh(
+    repository_paths: Vec<String>,
+) -> Result<(), LoreCommandError> {
+    if repository_paths.len() > 1_000 {
+        return Err(LoreCommandError::new(
+            "repository_context_limit_exceeded",
+            "At most 1000 repository authentication contexts can be refreshed at once",
+        ));
+    }
+    run_lore_task(move || {
+        let repository_paths = repository_paths
+            .iter()
+            .map(|path| validate_repository_path(path))
+            .collect::<Result<Vec<_>, _>>()?;
+        release_repository_authentication_contexts_with(&repository_paths, |path| {
+            release_repository_cache(path)
         })
     })
     .await
@@ -5249,6 +5304,37 @@ fn release_repository_cache(repository_path: &Path) -> Result<(), LoreCommandErr
     }
 }
 
+/// 在认证状态变化后释放所有已打开仓库的 Lore 上下文。
+///
+/// 该辅助函数把“遍历、去重、全部尝试”的编排与真实 Lore 调用分离，便于在不连接
+/// 远端服务器的单元测试中验证：一次账户更新不会只刷新当前仓库。
+fn release_repository_authentication_contexts_with<F>(
+    repository_paths: &[PathBuf],
+    mut release: F,
+) -> Result<(), LoreCommandError>
+where
+    F: FnMut(&Path) -> Result<(), LoreCommandError>,
+{
+    let mut released_keys = BTreeSet::new();
+    let mut first_error = None;
+    for repository_path in repository_paths {
+        /*
+         * Windows 路径不区分大小写；复用绑定键规范化规则，避免同一仓库以不同大小写
+         * 或重复 Tab 出现时反复释放。某个仓库失败也继续处理其余仓库，防止局部故障
+         * 让其他账户状态继续陈旧。
+         */
+        if !released_keys.insert(repository_binding_key(repository_path)) {
+            continue;
+        }
+        if let Err(error) = release(repository_path) {
+            if first_error.is_none() {
+                first_error = Some(error);
+            }
+        }
+    }
+    first_error.map_or(Ok(()), Err)
+}
+
 /// 从 Lore 终止事件中提取最具体的错误文本。
 fn operation_failure_message(result: &LoreOperationResult, fallback: &str) -> String {
     result
@@ -8750,6 +8836,76 @@ mod tests {
     use super::*;
 
     const ZERO_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+
+    #[test]
+    fn auth_mutation_releases_every_open_repository_context() {
+        let first = PathBuf::from("C:/repositories/first");
+        let second = PathBuf::from("C:/repositories/second");
+        let mut released = Vec::new();
+
+        release_repository_authentication_contexts_with(
+            &[first.clone(), second.clone(), first.clone()],
+            |path| {
+                released.push(path.to_path_buf());
+                Ok(())
+            },
+        )
+        .expect("Authentication context refresh should succeed");
+
+        assert_eq!(
+            released,
+            vec![first, second],
+            "Every open repository context must be released exactly once after auth changes",
+        );
+    }
+
+    #[test]
+    fn auth_mutation_continues_releasing_contexts_after_one_failure() {
+        let first = PathBuf::from("C:/repositories/first");
+        let second = PathBuf::from("C:/repositories/second");
+        let mut released = Vec::new();
+
+        let error = release_repository_authentication_contexts_with(
+            &[first.clone(), second.clone()],
+            |path| {
+                released.push(path.to_path_buf());
+                if path == first {
+                    Err(LoreCommandError::new(
+                        "repository_cache_release_failed",
+                        "First repository context could not be released",
+                    ))
+                } else {
+                    Ok(())
+                }
+            },
+        )
+        .expect_err("The first release failure should still be reported");
+
+        assert_eq!(error.code, "repository_cache_release_failed");
+        assert_eq!(
+            released,
+            vec![first, second],
+            "A failed repository must not prevent later contexts from being released",
+        );
+    }
+
+    #[test]
+    fn successful_auth_mutation_invalidates_cached_transport_connections() {
+        let result = LoreOperationResult {
+            operation: "auth.test",
+            status: 0,
+            duration_ms: 0,
+            events: Vec::new(),
+        };
+        let mut invalidation_count = 0;
+
+        invalidate_authentication_connections_with(&result, || invalidation_count += 1);
+
+        assert_eq!(
+            invalidation_count, 1,
+            "A successful auth mutation must invalidate cached transport connections",
+        );
+    }
 
     #[test]
     fn explicit_empty_publish_account_bypasses_repository_binding() {

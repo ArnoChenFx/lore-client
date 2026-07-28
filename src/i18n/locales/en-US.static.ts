@@ -693,8 +693,22 @@ const enUSStatic = {
   relativePath: 'Relative path',
   remainingUnchangedContent: 'Remaining unchanged content',
   remote: 'Remote',
+  remoteAccess: 'LORE REMOTE ACCESS',
   remoteAuthorized: 'Remote authorized',
   remoteAuthenticationRequired: 'Remote authentication required',
+  remoteAuthenticationExpired: 'Remote authentication expired',
+  remoteAuthenticationExpiredDescription:
+    'The server rejected the current credentials. Reauthenticate to refresh every related account and repository state without restarting the app.',
+  authenticationStillRequired:
+    'Authentication completed, but the server still rejects this account. Check its permissions and retry, or continue offline.',
+  authenticationVerificationFailed:
+    'Authentication completed, but the repository connection could not be verified. Retry or continue offline for now.',
+  affectedRepositories: 'Affected repositories',
+  continueOfflineDescription:
+    'Skipping does not remove accounts, tokens, or repository bindings. This server stays paused for the current session while local features remain available.',
+  skipAndContinueOffline: 'Skip and continue offline',
+  reauthenticate: 'Reauthenticate',
+  authenticating: 'Authenticating…',
   remoteAvailable: 'Remote available',
   remoteBranchAdvanced: 'Remote branch advanced',
   remoteBranches: 'Remote branches',

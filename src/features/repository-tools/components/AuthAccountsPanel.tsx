@@ -7,6 +7,7 @@ import type { LoreAuthIdentity, Repository, RepositoryAuthAccountBinding } from 
 
 interface AuthAccountsPanelProps {
   remoteUrl: string
+  refreshVersion?: number
   disabled: boolean
   repositories: Repository[]
   bindings: RepositoryAuthAccountBinding[]
@@ -51,6 +52,7 @@ export function consolidateAuthIdentities(identities: LoreAuthIdentity[]): LoreA
 /** 设备级账户中心：JWT 留在 Lore Token Store，界面只管理脱敏账户与仓库绑定。 */
 export function AuthAccountsPanel({
   remoteUrl,
+  refreshVersion = 0,
   disabled,
   repositories,
   bindings,
@@ -99,9 +101,9 @@ export function AuthAccountsPanel({
 
   useEffect(() => {
     void refresh()
-    // 账户列表是设备级缓存，只在面板挂载时自动读取一次。
+    // 外部认证入口通过版本号触发重读；refresh 本身只闭包当前选择，不作为依赖。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [refreshVersion])
 
   const interactiveLogin = async () => {
     setPending(true)
@@ -232,23 +234,25 @@ export function AuthAccountsPanel({
 
           {(addingAccount || !selectedAccount) && (
             <div className="auth-account-manager__login">
-              <label>
-                <span>{t('remoteServer')}</span>
+              <label htmlFor="auth-account-remote-server">{t('remoteServer')}</label>
+              {/* 输入框与按钮必须处于独立的同一行，帮助文字换行时不能改变按钮的纵向位置。 */}
+              <div className="auth-account-manager__remote-controls">
                 <TextInput
+                  id="auth-account-remote-server"
                   value={remoteDraft}
                   placeholder="lore://127.0.0.1:41337"
                   onChange={(event) => setRemoteDraft(event.target.value)}
                 />
-                <small>{t('accountRemoteServerHint')}</small>
-              </label>
-              <TextButton
-                variant="primary"
-                disabled={disabled || pending || !remoteDraft.trim()}
-                onClick={() => void interactiveLogin()}
-              >
-                {pending ? <LoaderCircle className="spin" size={14} /> : <LogIn size={14} />}
-                {t('signInWithBrowser')}
-              </TextButton>
+                <TextButton
+                  variant="primary"
+                  disabled={disabled || pending || !remoteDraft.trim()}
+                  onClick={() => void interactiveLogin()}
+                >
+                  {pending ? <LoaderCircle className="spin" size={14} /> : <LogIn size={14} />}
+                  {t('signInWithBrowser')}
+                </TextButton>
+              </div>
+              <small className="auth-account-manager__remote-hint">{t('accountRemoteServerHint')}</small>
               <form
                 onSubmit={(event) => {
                   event.preventDefault()

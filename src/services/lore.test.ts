@@ -4,6 +4,8 @@ import i18n from '../i18n'
 import type { LoreEvent } from '../types'
 import {
   DEFAULT_SERVER_URL,
+  isAuthenticationRequiredError,
+  LoreCommandClientError,
   loreEventParsers,
   parseFileDependencies,
   parseFileLocks,
@@ -26,6 +28,22 @@ describe('Lore event adapter', () => {
     expect(resolveDefaultServerUrl('   ')).toBe('lore://127.0.0.1:41337')
     expect(resolveDefaultServerUrl(' lore://192.0.2.1:41337 ')).toBe('lore://192.0.2.1:41337')
     expect(DEFAULT_SERVER_URL).toBeTruthy()
+  })
+
+  it('preserves structured authentication errors for recovery control flow', () => {
+    const authenticationError = new LoreCommandClientError(
+      { code: 'auth_required', message: 'The Lore server requires authentication' },
+      'lore_repository_list'
+    )
+    const unrelatedError = new LoreCommandClientError(
+      { code: 'repository_unavailable', message: 'The repository is unavailable' },
+      'lore_repository_list'
+    )
+
+    expect(authenticationError.code).toBe('auth_required')
+    expect(isAuthenticationRequiredError(authenticationError)).toBe(true)
+    expect(isAuthenticationRequiredError(unrelatedError)).toBe(false)
+    expect(isAuthenticationRequiredError(new Error('authentication'))).toBe(false)
   })
 
   it('converts a complete revision diff into stable files and line statistics', () => {

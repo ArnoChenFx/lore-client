@@ -1,10 +1,11 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { t } from '../../i18n'
 import {
   cloneRepository,
   DEFAULT_SERVER_URL,
   initializeRepository,
+  isAuthenticationRequiredError,
   listAuthIdentities,
   listRemoteRepositories,
   loadRemoteRepositoryInfo,
@@ -46,6 +47,10 @@ interface UseRepositoryEntryControllerOptions {
   finishOperation: FinishOperation
   refreshSharedStores: () => Promise<void>
   notify: AppNotify
+  serverDialogOpen: boolean
+  authStateVersion: number
+  onAuthenticationRequired: (serverUrl: string) => void
+  onAuthStateChange: (serverUrl?: string) => Promise<unknown>
 }
 
 /**
@@ -67,7 +72,11 @@ export function useRepositoryEntryController({
   beginOperation,
   finishOperation,
   refreshSharedStores,
-  notify
+  notify,
+  serverDialogOpen,
+  authStateVersion,
+  onAuthenticationRequired,
+  onAuthStateChange
 }: UseRepositoryEntryControllerOptions) {
   const [remoteBrowserUrl, setRemoteBrowserUrl] = useState(DEFAULT_SERVER_URL)
   const [remoteRepositories, setRemoteRepositories] = useState<RemoteRepository[]>([])
@@ -82,6 +91,7 @@ export function useRepositoryEntryController({
   const [initializationError, setInitializationError] = useState<string | null>(null)
   // 打开、初始化与其他仓库写操作共享同一语义 Busy 状态，避免窗口外壳维护领域过程状态。
   const [busyAction, setBusyAction] = useState<string | null>(null)
+  const observedAuthStateVersion = useRef(authStateVersion)
 
   /** 激活仓库时只同步服务器浏览的建议起点，不把临时草稿写回仓库配置。 */
   const activateSnapshot = useCallback(
@@ -239,34 +249,13 @@ export function useRepositoryEntryController({
         })
       )
     } catch (error) {
-      /*
-       * MissingToken 会直接进入 Lore 原生认证，并在成功后重试同一个列表请求，
-       * 避免用户完成浏览器登录后还要再次点击刷新。
-       */
-      if (typeof error === 'object' && error !== null && 'code' in error && String(error.code) === 'auth_required') {
-        try {
-          await loginAuthInteractive(remoteBrowserUrl)
-          const identities = await listAuthIdentities()
-          setServerAuthIdentities(identities)
-          setServerAuthUserId('')
-          const repositories = await listRemoteRepositories(remoteBrowserUrl)
-          setRemoteRepositories(repositories)
-          setServerError(null)
-          finishOperation(
-            operation,
-            true,
-            operationMessage('status.repositoriesLoaded', {
-              count: repositories.length
-            })
-          )
-          return
-        } catch (authError) {
-          const message = readErrorMessage(authError)
-          setRemoteRepositories([])
-          setServerError(message)
-          finishOperation(operation, false, message)
-          return
-        }
+      /* MissingToken 交给全局恢复弹层，让用户可以重新认证或明确回到离线模式。 */
+      if (isAuthenticationRequiredError(error)) {
+        setRemoteRepositories([])
+        setServerError(t('remoteAuthenticationRequired'))
+        onAuthenticationRequired(remoteBrowserUrl)
+        finishOperation(operation, false, operationMessage('remoteAuthenticationRequired'))
+        return
       }
       setRemoteRepositories([])
       const message = readErrorMessage(error)
@@ -275,7 +264,15 @@ export function useRepositoryEntryController({
     } finally {
       setServerLoading(false)
     }
-  }, [applicationMode, beginOperation, finishOperation, remoteBrowserUrl, serverAuthUserId, setServerDialogOpen])
+  }, [
+    applicationMode,
+    beginOperation,
+    finishOperation,
+    onAuthenticationRequired,
+    remoteBrowserUrl,
+    serverAuthUserId,
+    setServerDialogOpen
+  ])
 
   /** 用户可显式更新当前服务器凭据；完成后自动刷新目录。 */
   const authenticateServer = useCallback(async () => {
@@ -287,13 +284,48 @@ export function useRepositoryEntryController({
       setServerAuthIdentities(await listAuthIdentities())
       setServerAuthUserId('')
       setRemoteRepositories(await listRemoteRepositories(remoteBrowserUrl))
+      await onAuthStateChange(remoteBrowserUrl)
     } catch (error) {
       setRemoteRepositories([])
+      if (isAuthenticationRequiredError(error)) onAuthenticationRequired(remoteBrowserUrl)
       setServerError(readErrorMessage(error))
     } finally {
       setServerLoading(false)
     }
-  }, [applicationMode, remoteBrowserUrl, serverLoading])
+  }, [applicationMode, onAuthenticationRequired, onAuthStateChange, remoteBrowserUrl, serverLoading])
+
+  /*
+   * 认证可能从全局恢复弹层或账户中心完成。服务器目录保持打开时自动重读账户与目录，
+   * 让同一应用会话中的所有认证入口立即收敛，不要求用户再次点击刷新。
+   */
+  useEffect(() => {
+    if (authStateVersion === observedAuthStateVersion.current) return
+    if (!serverDialogOpen || applicationMode !== 'tauri') {
+      observedAuthStateVersion.current = authStateVersion
+      return
+    }
+    /* 忙碌时不吞掉版本变化；loading 结束后 effect 会再次执行并完成刷新。 */
+    if (serverLoading) return
+    observedAuthStateVersion.current = authStateVersion
+    void (async () => {
+      try {
+        setServerLoading(true)
+        setServerAuthIdentities(await listAuthIdentities())
+        setServerAuthUserId('')
+        setRemoteRepositories(await listRemoteRepositories(remoteBrowserUrl))
+        setServerError(null)
+      } catch (error) {
+        if (isAuthenticationRequiredError(error)) {
+          setServerError(t('remoteAuthenticationRequired'))
+          onAuthenticationRequired(remoteBrowserUrl)
+        } else {
+          setServerError(readErrorMessage(error))
+        }
+      } finally {
+        setServerLoading(false)
+      }
+    })()
+  }, [applicationMode, authStateVersion, onAuthenticationRequired, remoteBrowserUrl, serverDialogOpen, serverLoading])
 
   /** Clone 弹层打开前读取远端详情，并同步刷新可选 Shared Store。 */
   const prepareRemoteClone = useCallback(
@@ -311,6 +343,7 @@ export function useRepositoryEntryController({
         void refreshSharedStores()
         finishOperation(operation, true, details.defaultBranch || details.name)
       } catch (error) {
+        if (isAuthenticationRequiredError(error)) onAuthenticationRequired(remoteBrowserUrl)
         const message = readErrorMessage(error)
         finishOperation(operation, false, message)
         notify(t('unableToLoadRemoteRepositoryDetails'), message, 'warning')
@@ -318,7 +351,16 @@ export function useRepositoryEntryController({
         setServerLoading(false)
       }
     },
-    [applicationMode, beginOperation, finishOperation, notify, refreshSharedStores, remoteBrowserUrl, serverAuthUserId]
+    [
+      applicationMode,
+      beginOperation,
+      finishOperation,
+      notify,
+      onAuthenticationRequired,
+      refreshSharedStores,
+      remoteBrowserUrl,
+      serverAuthUserId
+    ]
   )
 
   const performClone = useCallback(
@@ -349,6 +391,7 @@ export function useRepositoryEntryController({
         finishOperation(operation, true, clone.destinationPath)
         notify(t('repositoryCloned'), clone.destinationPath, 'success')
       } catch (error) {
+        if (isAuthenticationRequiredError(error)) onAuthenticationRequired(remoteBrowserUrl)
         const message = readErrorMessage(error)
         finishOperation(operation, false, message)
         notify(t('repositoryCloneFailed'), message, 'warning')
@@ -362,6 +405,7 @@ export function useRepositoryEntryController({
       beginOperation,
       finishOperation,
       notify,
+      onAuthenticationRequired,
       remoteBrowserUrl,
       selectedRemote,
       serverAuthUserId,

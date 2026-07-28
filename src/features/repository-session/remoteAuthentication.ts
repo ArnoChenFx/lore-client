@@ -1,0 +1,267 @@
+import { useCallback, useMemo, useState } from 'react'
+
+import {
+  listAuthIdentities,
+  loadRepositorySnapshot,
+  loginAuthInteractive,
+  refreshRepositoryAuthenticationContexts
+} from '../../services/lore'
+import { readErrorMessage } from '../../shared/lib'
+import type { ApplicationMode, Repository, RepositorySnapshot } from '../../types'
+
+export interface RemoteAuthenticationTarget {
+  serverUrl: string
+  repositoryNames: string[]
+}
+
+export interface AuthenticationRefreshResult {
+  snapshots: RepositorySnapshot[]
+  failedCount: number
+}
+
+interface AuthenticationRefreshDependencies {
+  refreshContexts: (repositoryPaths: string[]) => Promise<void>
+  loadSnapshot: (repositoryPath: string, includeChanges: boolean) => Promise<RepositorySnapshot>
+}
+
+interface UseRemoteAuthenticationRecoveryOptions {
+  applicationMode: ApplicationMode
+  snapshots: RepositorySnapshot[]
+  upsertSnapshot: (snapshot: RepositorySnapshot) => void
+  onEnterOfflineMode: () => void
+}
+
+/**
+ * 统一得到远端服务器根地址。
+ *
+ * 新快照应始终携带 `serverUrl`；正则回退只服务于旧快照或迁移中的 DTO，避免把
+ * 带仓库名的完整远端地址误当成另一台服务器。
+ */
+export function repositoryServerUrl(repository: Pick<Repository, 'remoteUrl' | 'serverUrl'>): string {
+  if (repository.serverUrl?.trim()) return repository.serverUrl.trim()
+  const remoteUrl = repository.remoteUrl?.trim() ?? ''
+  return remoteUrl.match(/^([a-z][a-z0-9+.-]*:\/\/[^/]+)/i)?.[1] ?? remoteUrl
+}
+
+/** 服务器键只用于当前会话去重，不改变传给 Lore 的原始 URL。 */
+export function remoteServerKey(serverUrl: string): string {
+  return serverUrl.trim().replace(/\/+$/, '').toLocaleLowerCase()
+}
+
+/** 按服务器聚合需要认证的仓库，避免同一凭据失效时连续弹出多个对话框。 */
+export function collectRemoteAuthenticationTargets(
+  snapshots: RepositorySnapshot[],
+  pausedServerKeys: ReadonlySet<string>
+): RemoteAuthenticationTarget[] {
+  const targets = new Map<string, RemoteAuthenticationTarget>()
+  for (const snapshot of snapshots) {
+    if (snapshot.repository.remoteState !== 'unauthorized') continue
+    const serverUrl = repositoryServerUrl(snapshot.repository)
+    const key = remoteServerKey(serverUrl)
+    if (!key || pausedServerKeys.has(key)) continue
+    const target = targets.get(key) ?? { serverUrl, repositoryNames: [] }
+    if (!target.repositoryNames.includes(snapshot.repository.name)) {
+      target.repositoryNames.push(snapshot.repository.name)
+    }
+    targets.set(key, target)
+  }
+  return [...targets.values()]
+}
+
+/**
+ * 用户主动跳过认证后只改变当前会话的展示与联网策略。
+ *
+ * 原始快照仍保留 `unauthorized` 证据，便于显式重试时恢复；返回的新对象只让所有
+ * 消费 UI 统一显示离线，并阻止状态栏、标题栏和工具栏出现彼此矛盾的认证状态。
+ */
+export function projectPausedRepositoriesOffline(
+  snapshots: RepositorySnapshot[],
+  pausedServerKeys: ReadonlySet<string>
+): RepositorySnapshot[] {
+  return snapshots.map((snapshot) => {
+    const key = remoteServerKey(repositoryServerUrl(snapshot.repository))
+    if (!key || !pausedServerKeys.has(key) || snapshot.repository.remoteState === 'local') return snapshot
+    return {
+      ...snapshot,
+      repository: {
+        ...snapshot.repository,
+        online: false,
+        remoteState: 'offline'
+      }
+    }
+  })
+}
+
+/**
+ * 认证变化后的原子刷新顺序：先失效所有原生上下文，再读取并发布每个仓库的新快照。
+ *
+ * 依赖参数只用于单元测试验证跨 IPC 顺序；生产调用始终使用 Lore 服务层实现。某个
+ * Context 释放失败时 Rust 已继续尝试其他仓库，因此这里仍读取全部快照，不让一个
+ * 损坏或已删除的仓库阻塞其他 Tab 恢复。
+ */
+export async function refreshRepositoryAuthenticationState(
+  snapshots: RepositorySnapshot[],
+  upsertSnapshot: (snapshot: RepositorySnapshot) => void,
+  dependencies: AuthenticationRefreshDependencies = {
+    refreshContexts: refreshRepositoryAuthenticationContexts,
+    loadSnapshot: loadRepositorySnapshot
+  }
+): Promise<AuthenticationRefreshResult> {
+  try {
+    await dependencies.refreshContexts(snapshots.map((snapshot) => snapshot.repository.path))
+  } catch {
+    // 继续读取真实 Status，由各仓库的新快照明确呈现仍未恢复的状态。
+  }
+  const results = await Promise.allSettled(
+    snapshots.map((snapshot) => dependencies.loadSnapshot(snapshot.repository.path, false))
+  )
+  const refreshedSnapshots: RepositorySnapshot[] = []
+  let failedCount = 0
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      refreshedSnapshots.push(result.value)
+      upsertSnapshot(result.value)
+    } else {
+      failedCount += 1
+    }
+  }
+  return { snapshots: refreshedSnapshots, failedCount }
+}
+
+/**
+ * 编排远端认证恢复与会话级离线降级。
+ *
+ * Token 始终由 Lore Token Store 管理；本 Hook 只保存服务器键、忙碌状态和错误文本。
+ * 认证或账户绑定改变后会重读所有相关仓库快照，保证标题栏、状态栏、工具栏、账户页
+ * 与后台通知订阅都消费同一份真实连接状态。
+ */
+export function useRemoteAuthenticationRecovery({
+  applicationMode,
+  snapshots,
+  upsertSnapshot,
+  onEnterOfflineMode
+}: UseRemoteAuthenticationRecoveryOptions) {
+  const [pausedServerKeys, setPausedServerKeys] = useState<Set<string>>(() => new Set())
+  const [requestedTarget, setRequestedTarget] = useState<RemoteAuthenticationTarget | null>(null)
+  const [authenticationBusy, setAuthenticationBusy] = useState(false)
+  const [authenticationError, setAuthenticationError] = useState<string | null>(null)
+  const [authStateVersion, setAuthStateVersion] = useState(0)
+
+  const detectedTargets = useMemo(
+    () => collectRemoteAuthenticationTargets(snapshots, pausedServerKeys),
+    [pausedServerKeys, snapshots]
+  )
+  const requestedKey = requestedTarget ? remoteServerKey(requestedTarget.serverUrl) : ''
+  const authenticationTarget =
+    requestedTarget && !pausedServerKeys.has(requestedKey) ? requestedTarget : (detectedTargets[0] ?? null)
+
+  const refreshAuthenticationState = useCallback(
+    async (serverUrl?: string): Promise<AuthenticationRefreshResult> => {
+      const requestedServerKey = serverUrl ? remoteServerKey(serverUrl) : ''
+      const relevantSnapshots = snapshots.filter((snapshot) => {
+        const key = remoteServerKey(repositoryServerUrl(snapshot.repository))
+        return key && (!requestedServerKey || key === requestedServerKey)
+      })
+      const refreshed = await refreshRepositoryAuthenticationState(relevantSnapshots, upsertSnapshot)
+      /*
+       * 版本号必须在原生上下文失效与快照重读之后再推进，避免账户页、服务器目录和
+       * 仓库工具在同一时刻抢先读取旧上下文。
+       */
+      setAuthStateVersion((current) => current + 1)
+      /*
+       * 离线暂停必须最后解除。账户页登录可能需要等待原生连接释放和 Status 重读；若在
+       * 等待期间先暴露旧 unauthorized 快照，全局检测器会误判为新的失效并再次弹窗。
+       * React 会把已发布的新快照与这里的暂停更新一起提交，因此有效登录直接恢复在线；
+       * 新快照仍未授权时则会在验证完成后正常进入恢复流程。
+       */
+      setPausedServerKeys((current) => {
+        if (current.size === 0) return current
+        const next = new Set(current)
+        if (requestedServerKey) next.delete(requestedServerKey)
+        else next.clear()
+        return next
+      })
+      return refreshed
+    },
+    [snapshots, upsertSnapshot]
+  )
+
+  /** 服务器目录等无本地仓库入口也可以显式请求同一个全局认证对话框。 */
+  const requestAuthentication = useCallback((serverUrl: string) => {
+    const normalizedUrl = serverUrl.trim()
+    if (!normalizedUrl) return
+    const key = remoteServerKey(normalizedUrl)
+    setPausedServerKeys((current) => {
+      if (!current.has(key)) return current
+      const next = new Set(current)
+      next.delete(key)
+      return next
+    })
+    setAuthenticationError(null)
+    setRequestedTarget({ serverUrl: normalizedUrl, repositoryNames: [] })
+  }, [])
+
+  const authenticate = useCallback(async () => {
+    if (applicationMode !== 'tauri' || !authenticationTarget || authenticationBusy) return
+    const target = authenticationTarget
+    try {
+      setAuthenticationBusy(true)
+      setAuthenticationError(null)
+      await loginAuthInteractive(target.serverUrl)
+      /*
+       * Auth List 的结果用于推动账户中心刷新；远端是否真正恢复则必须以各仓库 Status
+       * 为准。显示名解析失败不会影响这里的连接验证。
+       */
+      await listAuthIdentities()
+      const refreshed = await refreshAuthenticationState(target.serverUrl)
+      if (refreshed.snapshots.some((snapshot) => snapshot.repository.remoteState === 'unauthorized')) {
+        setAuthenticationError('authentication_still_required')
+        return
+      }
+      if (target.repositoryNames.length > 0 && refreshed.snapshots.length === 0 && refreshed.failedCount > 0) {
+        setAuthenticationError('authentication_verification_failed')
+        return
+      }
+      setRequestedTarget((current) =>
+        current && remoteServerKey(current.serverUrl) === remoteServerKey(target.serverUrl) ? null : current
+      )
+    } catch (error) {
+      setAuthenticationError(readErrorMessage(error))
+    } finally {
+      setAuthenticationBusy(false)
+    }
+  }, [applicationMode, authenticationBusy, authenticationTarget, refreshAuthenticationState])
+
+  const continueOffline = useCallback(() => {
+    if (!authenticationTarget || authenticationBusy) return
+    const key = remoteServerKey(authenticationTarget.serverUrl)
+    setPausedServerKeys((current) => new Set(current).add(key))
+    setRequestedTarget((current) => (current && remoteServerKey(current.serverUrl) === key ? null : current))
+    setAuthenticationError(null)
+    onEnterOfflineMode()
+  }, [authenticationBusy, authenticationTarget, onEnterOfflineMode])
+
+  const projectedSnapshots = useMemo(
+    () => projectPausedRepositoriesOffline(snapshots, pausedServerKeys),
+    [pausedServerKeys, snapshots]
+  )
+
+  const isRepositoryNetworkPaused = useCallback(
+    (repository: Pick<Repository, 'remoteUrl' | 'serverUrl'>) =>
+      pausedServerKeys.has(remoteServerKey(repositoryServerUrl(repository))),
+    [pausedServerKeys]
+  )
+
+  return {
+    snapshots: projectedSnapshots,
+    authenticationTarget,
+    authenticationBusy,
+    authenticationError,
+    authStateVersion,
+    authenticate,
+    continueOffline,
+    requestAuthentication,
+    refreshAuthenticationState,
+    isRepositoryNetworkPaused
+  }
+}

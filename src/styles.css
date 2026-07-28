@@ -7063,6 +7063,88 @@ body.is-resizing-panes {
   padding: 16px;
 }
 
+/*
+ * 认证恢复是阻塞远端但不阻塞本地工作的全局决策。对话框保持紧凑并用普通中性表面，
+ * 只有主认证按钮消费品牌色；离线说明使用边框分组，不引入新的主题分支或内阴影。
+ */
+.remote-authentication-backdrop {
+  z-index: 140;
+}
+
+.remote-authentication-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.remote-authentication-dialog__body > p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.remote-authentication-dialog__body dl {
+  display: grid;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-subtle);
+}
+
+.remote-authentication-dialog__body dl > div {
+  display: grid;
+  min-height: 38px;
+  grid-template-columns: 118px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.remote-authentication-dialog__body dl > div:last-child {
+  border-bottom: 0;
+}
+
+.remote-authentication-dialog__body dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.remote-authentication-dialog__body dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.remote-authentication-dialog__offline-hint {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-raised);
+}
+
+.remote-authentication-dialog__offline-hint svg {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.remote-authentication-dialog__error {
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 58%, var(--line));
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--bg-panel));
+  color: var(--danger) !important;
+}
+
 .task-dialog__footer {
   display: flex;
   min-height: 48px;
@@ -11177,33 +11259,33 @@ body.is-resizing-panes {
 .auth-account-manager__login {
   display: grid;
   align-content: start;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 9px;
+  gap: 5px;
 }
 
-.auth-account-manager__login > label,
 .auth-account-manager__login form label {
   display: grid;
   gap: 5px;
 }
 
-.auth-account-manager__login > label small,
+.auth-account-manager__remote-hint,
 .auth-account-manager__login form small {
   color: var(--muted);
   font-size: 10px;
 }
 
-.auth-account-manager__login > button {
-  align-self: end;
-  margin-bottom: 17px;
+.auth-account-manager__remote-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 9px;
+  min-width: 0;
 }
 
 .auth-account-manager__login form {
   display: grid;
-  grid-column: 1 / -1;
   grid-template-columns: minmax(120px, 0.45fr) minmax(180px, 1fr);
   gap: 9px;
-  margin-top: 8px;
+  margin-top: 12px;
   padding-top: 14px;
   border-top: 1px solid var(--line);
 }
@@ -11279,14 +11361,13 @@ body.is-resizing-panes {
   }
 
   .auth-account-manager__repositories > label,
-  .auth-account-manager__login,
+  .auth-account-manager__remote-controls,
   .auth-account-manager__login form {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .auth-account-manager__login > button {
+  .auth-account-manager__remote-controls > button {
     justify-self: start;
-    margin-bottom: 0;
   }
 
   .composition-form__grid,

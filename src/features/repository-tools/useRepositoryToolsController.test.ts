@@ -192,7 +192,7 @@ describe('repository tools controller helpers', () => {
     ).toBeNull()
   })
 
-  it('retries publishing only for the stable authentication failure', () => {
+  it('recognizes only the stable publishing authentication failure', () => {
     const createResult = {
       status: 1,
       operation: 'repository.create.remote',

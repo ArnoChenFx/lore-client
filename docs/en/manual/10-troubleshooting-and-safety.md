@@ -18,14 +18,16 @@ initialization over damaged Lore metadata. Back up the directory before recovery
 - Use `lore://host:port`.
 - The server browser address is temporary; repository actions use Configuration.
 - Check network, VPN, firewall, and account permissions.
-- Refresh and reauthenticate under Repository Tools → Accounts.
+- Use **Reauthenticate** in the recovery dialog, or sign in under Repository Tools → Accounts.
 
 An open remote repository retries read-only snapshots with capped exponential backoff and
 resubscribes after its notification stream ends. Returning the window to the foreground
 or restoring network connectivity triggers an immediate probe. These probes never run
 Sync or another write operation. A **Remote authentication required** state stops automatic
-network retries until you sign in again because the pinned Lore version does not silently
-refresh expired credentials.
+network retries and opens a recovery dialog. **Reauthenticate** refreshes account data and
+every open repository on that server. **Skip and continue offline** pauses that server for
+the current session without deleting credentials or bindings; local work remains available,
+and a later explicit sign-in or account change resumes verification without an app restart.
 
 Directory browsing success does not grant access to every repository or write operation.
 

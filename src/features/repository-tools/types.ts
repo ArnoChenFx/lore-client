@@ -117,6 +117,8 @@ export interface RepositoryToolsDialogProps {
   onRestoreRevision?: (message: string) => Promise<boolean>
   onLocateRevision?: (revision: string) => void
   onListAuthIdentities?: () => Promise<LoreAuthIdentity[]>
+  /** 外部认证入口完成后递增，使已打开的账户页立即重读 Token Store 的脱敏投影。 */
+  authStateVersion?: number
   accountRepositories?: Repository[]
   authAccountBindings?: RepositoryAuthAccountBinding[]
   onSetAuthAccountBinding?: (repository: Repository, identity?: LoreAuthIdentity) => Promise<boolean>

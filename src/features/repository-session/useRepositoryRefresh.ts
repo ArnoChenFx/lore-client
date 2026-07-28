@@ -42,6 +42,8 @@ export function getRepositoryRecoveryDelay(attempt: number, random: () => number
 
 interface UseRepositoryRefreshOptions {
   enabled: boolean
+  /** 用户主动离线时只暂停后台远端恢复；显式本地扫描仍须可用。 */
+  networkEnabled?: boolean
   repositoryPath: string
   remoteState: RepositoryRemoteState
   upsertSnapshot: (snapshot: RepositorySnapshot) => void
@@ -56,6 +58,7 @@ interface UseRepositoryRefreshOptions {
  */
 export function useRepositoryRefresh({
   enabled,
+  networkEnabled = true,
   repositoryPath,
   remoteState,
   upsertSnapshot,
@@ -112,7 +115,7 @@ export function useRepositoryRefresh({
   }, [loadAndUpsertSnapshot, repositoryPath])
 
   useEffect(() => {
-    if (!enabled || !repositoryPath || !shouldAutomaticallyRecoverRepository(remoteState)) return
+    if (!enabled || !networkEnabled || !repositoryPath || !shouldAutomaticallyRecoverRepository(remoteState)) return
 
     let disposed = false
     let attempt = 0
@@ -154,10 +157,10 @@ export function useRepositoryRefresh({
       window.removeEventListener('focus', recoverImmediately)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [enabled, loadAndUpsertSnapshot, remoteState, repositoryPath])
+  }, [enabled, loadAndUpsertSnapshot, networkEnabled, remoteState, repositoryPath])
 
   useEffect(() => {
-    if (!enabled || !repositoryPath || remoteState !== 'online') return
+    if (!enabled || !networkEnabled || !repositoryPath || remoteState !== 'online') return
 
     let disposed = false
     let disconnect: (() => Promise<void>) | undefined
@@ -254,7 +257,7 @@ export function useRepositoryRefresh({
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       if (disconnect) void disconnect()
     }
-  }, [enabled, loadAndUpsertSnapshot, remoteState, repositoryPath])
+  }, [enabled, loadAndUpsertSnapshot, networkEnabled, remoteState, repositoryPath])
 
   return {
     refreshingRepositoryPaths,

@@ -240,6 +240,9 @@ interface UseRepositoryToolsControllerOptions {
   repositorySnapshots: RepositorySnapshot[]
   authAccountBindings: RepositoryAuthAccountBinding[]
   onAuthAccountBindingsChange: (bindings: RepositoryAuthAccountBinding[]) => void
+  authStateVersion: number
+  onAuthenticationRequired: (serverUrl: string) => void
+  onAuthStateChange: (serverUrl?: string) => Promise<unknown>
   defaultIdentity: string
   busyAction: string | null
   initialDependencyQuery?: LoreDependencyGraphQuery | null
@@ -263,6 +266,9 @@ export function useRepositoryToolsController({
   repositorySnapshots,
   authAccountBindings,
   onAuthAccountBindingsChange,
+  authStateVersion,
+  onAuthenticationRequired,
+  onAuthStateChange,
   defaultIdentity,
   busyAction,
   initialDependencyQuery = null,
@@ -890,15 +896,9 @@ export function useRepositoryToolsController({
             if (!selectedUserId || !isPublishAuthenticationError(error)) {
               throw error
             }
-            /*
-             * 与服务器目录的 MissingToken 流程保持一致：选中账户的缓存凭据过期或
-             * 不再有效时，交给 Lore 打开系统浏览器更新 Token Store，然后自动重试
-             * 同一个尚未完成 Create 的发布请求。第二次失败会原样进入完整错误反馈。
-             */
-            await loginAuthInteractive(normalizedServerUrl)
-            const refreshedIdentities = await listAuthIdentities()
-            setPublishAuthIdentities(refreshedIdentities)
-            return publish()
+            /* 发布认证失败同样交给全局决策，不能绕过用户选择直接打开系统浏览器。 */
+            onAuthenticationRequired(normalizedServerUrl)
+            throw error
           }
         },
         operationMessage('status.repositoryPublishedAndPushed', {
@@ -914,6 +914,7 @@ export function useRepositoryToolsController({
       defaultIdentity,
       notify,
       onAuthAccountBindingsChange,
+      onAuthenticationRequired,
       publishAuthIdentities,
       runRepositoryMutation
     ]
@@ -921,11 +922,12 @@ export function useRepositoryToolsController({
 
   /** 账户是设备级资源；登录、退出和列表不得要求先打开本地仓库。 */
   const runAuthAction = useCallback(
-    async (action: () => Promise<unknown>): Promise<boolean> => {
+    async (action: () => Promise<unknown>, serverUrl?: string): Promise<boolean> => {
       if (applicationMode !== 'tauri') return false
       try {
         setLoading(true)
         await action()
+        await onAuthStateChange(serverUrl)
         return true
       } catch (error) {
         notify(t('accountOperationFailed'), readErrorMessage(error), 'warning')
@@ -934,7 +936,7 @@ export function useRepositoryToolsController({
         setLoading(false)
       }
     },
-    [applicationMode, notify]
+    [applicationMode, notify, onAuthStateChange]
   )
 
   const dialogProps = useMemo<RepositoryToolsDialogProps | null>(() => {
@@ -1035,6 +1037,7 @@ export function useRepositoryToolsController({
         close()
       },
       onListAuthIdentities: () => listAuthIdentities(),
+      authStateVersion,
       accountRepositories: repositorySnapshots.map((snapshot) => snapshot.repository),
       authAccountBindings,
       onSetAuthAccountBinding: async (targetRepository, identity) => {
@@ -1052,6 +1055,7 @@ export function useRepositoryToolsController({
             })
           }
           onAuthAccountBindingsChange(nextBindings)
+          await onAuthStateChange(targetRepository.serverUrl ?? targetRepository.remoteUrl)
           return true
         } catch (error) {
           notify(t('unableToUpdateRepositoryAccount'), readErrorMessage(error), 'warning')
@@ -1060,9 +1064,9 @@ export function useRepositoryToolsController({
           setLoading(false)
         }
       },
-      onLoginAuthInteractive: (remoteUrl) => runAuthAction(() => loginAuthInteractive(remoteUrl)),
+      onLoginAuthInteractive: (remoteUrl) => runAuthAction(() => loginAuthInteractive(remoteUrl), remoteUrl),
       onLoginAuthWithToken: (remoteUrl, token, tokenType, authUrl) =>
-        runAuthAction(() => loginAuthWithToken(remoteUrl, token, tokenType, authUrl)),
+        runAuthAction(() => loginAuthWithToken(remoteUrl, token, tokenType, authUrl), remoteUrl),
       onLogoutAuthIdentity: (identity) => {
         if (
           !confirmLocalized(
@@ -1130,6 +1134,7 @@ export function useRepositoryToolsController({
     }
   }, [
     activeSnapshot,
+    authStateVersion,
     authAccountBindings,
     addActiveLayer,
     addActiveLink,
@@ -1151,6 +1156,7 @@ export function useRepositoryToolsController({
     locateRevision,
     notify,
     onAuthAccountBindingsChange,
+    onAuthStateChange,
     open,
     previewActiveRepositoryView,
     publishActiveRepository,

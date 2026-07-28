@@ -4160,9 +4160,20 @@ try {
     results.sidebarAccountShortcut === '账户',
     `The sidebar account shortcut did not open the Accounts tool: ${results.sidebarAccountShortcut}`
   )
+  // 窄窗口会让远端服务器帮助文字换行，曾因此把相邻登录按钮向下推移。
+  await cdp.send('Emulation.setDeviceMetricsOverride', {
+    width: 900,
+    height: 650,
+    deviceScaleFactor: 1,
+    mobile: false
+  })
+  await delay(40)
   results.accountCenter = await cdp.evaluate(`(() => {
     const input = document.querySelector(
-      ".auth-account-manager__login > label input"
+      ".auth-account-manager__remote-controls input"
+    );
+    const browserSignInButton = document.querySelector(
+      ".auth-account-manager__remote-controls > button"
     );
     const manager = document.querySelector(".auth-account-manager");
     const sidebar = document.querySelector(".auth-account-manager__sidebar");
@@ -4170,26 +4181,45 @@ try {
     const addButton = document.querySelector(
       '.auth-account-manager__sidebar button[aria-label="添加账户"]'
     );
+    const inputRect = input?.getBoundingClientRect();
+    const browserSignInButtonRect =
+      browserSignInButton?.getBoundingClientRect();
     return {
       editable: input instanceof HTMLInputElement && !input.readOnly,
       value: input instanceof HTMLInputElement ? input.value : "",
       hasDeviceHint:
-        input?.closest("label")?.textContent?.includes("登录不依赖本地仓库") ??
+        input?.closest(".auth-account-manager__login")?.textContent?.includes("登录不依赖本地仓库") ??
         false,
       hasTwoPaneLayout:
         manager instanceof HTMLElement &&
         sidebar instanceof HTMLElement &&
         detail instanceof HTMLElement,
-      hasAddAccount: addButton instanceof HTMLButtonElement
+      hasAddAccount: addButton instanceof HTMLButtonElement,
+      // 浏览器登录按钮与服务器输入框属于同一操作行，必须同时对齐上下边缘。
+      browserSignInAligned:
+        inputRect !== undefined &&
+        browserSignInButtonRect !== undefined &&
+        Math.abs(inputRect.top - browserSignInButtonRect.top) <= 1 &&
+        Math.abs(inputRect.bottom - browserSignInButtonRect.bottom) <= 1,
+      browserSignInOffset:
+        inputRect !== undefined && browserSignInButtonRect !== undefined
+          ? {
+              top: browserSignInButtonRect.top - inputRect.top,
+              bottom: browserSignInButtonRect.bottom - inputRect.bottom
+            }
+          : null
     };
   })()`)
   assert(
     results.accountCenter.editable &&
       results.accountCenter.hasDeviceHint &&
       results.accountCenter.hasTwoPaneLayout &&
-      results.accountCenter.hasAddAccount,
+      results.accountCenter.hasAddAccount &&
+      results.accountCenter.browserSignInAligned,
     `Accounts did not expose the device-level account center: ${JSON.stringify(results.accountCenter)}`
   )
+  await cdp.send('Emulation.clearDeviceMetricsOverride')
+  await delay(40)
   await cdp.evaluate(`document.querySelector('button[aria-label="关闭仓库工具"]')?.click()`)
   await delay(40)
   await cdp.evaluate(`Array.from(document.querySelectorAll(".tree-row"))

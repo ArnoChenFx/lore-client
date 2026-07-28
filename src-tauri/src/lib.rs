@@ -34,6 +34,7 @@ pub fn run() {
             lore_adapter::lore_auth_login_with_token,
             lore_adapter::lore_auth_logout,
             lore_adapter::lore_auth_clear,
+            lore_adapter::lore_auth_repository_contexts_refresh,
             lore_adapter::lore_auth_repository_binding_set,
             lore_adapter::lore_repository_probe,
             lore_adapter::lore_repository_initialize,

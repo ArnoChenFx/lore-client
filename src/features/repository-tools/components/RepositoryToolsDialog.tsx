@@ -125,6 +125,7 @@ export function RepositoryToolsDialog({
   onRestoreRevision = async () => false,
   onLocateRevision = () => undefined,
   onListAuthIdentities = async () => [],
+  authStateVersion = 0,
   accountRepositories = [],
   authAccountBindings = [],
   onSetAuthAccountBinding = async () => false,
@@ -1460,6 +1461,7 @@ export function RepositoryToolsDialog({
             {tab === 'accounts' && (
               <AuthAccountsPanel
                 remoteUrl={repository.remoteUrl ?? ''}
+                refreshVersion={authStateVersion}
                 disabled={loading || !compositionAvailable}
                 onList={onListAuthIdentities}
                 repositories={accountRepositories ?? [repository]}

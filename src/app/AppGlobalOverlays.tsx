@@ -1,7 +1,12 @@
 import type { ComponentProps } from 'react'
 
 import { OperationCenter } from '../features/operations'
-import { CloneDialog, InitializeRepositoryDialog, ServerDialog } from '../features/repository-session'
+import {
+  CloneDialog,
+  InitializeRepositoryDialog,
+  RemoteAuthenticationDialog,
+  ServerDialog
+} from '../features/repository-session'
 import { AboutDialog } from './components/AboutDialog'
 import { CommandPalette } from './components/CommandPalette'
 import { SearchDialog } from './components/SearchDialog'
@@ -18,6 +23,7 @@ interface AppGlobalOverlaysProps {
   operations: ComponentProps<typeof OperationCenter> | null
   about: ComponentProps<typeof AboutDialog> | null
   update: ComponentProps<typeof UpdateDialog> | null
+  remoteAuthentication: ComponentProps<typeof RemoteAuthenticationDialog> | null
 }
 
 /**
@@ -35,7 +41,8 @@ export function AppGlobalOverlays({
   search,
   operations,
   about,
-  update
+  update,
+  remoteAuthentication
 }: AppGlobalOverlaysProps) {
   return (
     <>
@@ -48,6 +55,7 @@ export function AppGlobalOverlays({
       {operations && <OperationCenter {...operations} />}
       {about && <AboutDialog {...about} />}
       {update && <UpdateDialog {...update} />}
+      {remoteAuthentication && <RemoteAuthenticationDialog {...remoteAuthentication} />}
     </>
   )
 }

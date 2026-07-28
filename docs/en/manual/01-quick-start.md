@@ -34,7 +34,7 @@ does not automatically configure a remote.
 
 1. Open **Browse remote repositories**.
 2. Enter `lore://host:port` in **Browse server address**, then press Enter or **Refresh**.
-3. If authentication is required, the client opens the system browser and retries the directory automatically after sign-in. With multiple saved accounts, you can first choose one under **Authentication account**.
+3. If authentication is required, choose **Reauthenticate** in the recovery dialog to open the system browser; the client refreshes the directory and every affected repository state after sign-in. Choose **Skip and continue offline** to close the server browser and keep using local features without restarting. With multiple saved accounts, you can first choose one under **Authentication account**.
 4. Inspect the names and IDs, then click **Clone** on a repository.
 5. Enter a **Local directory name** and choose a **Target parent directory**.
 6. Leave Advanced options collapsed for the first Clone and click **Start Clone**.

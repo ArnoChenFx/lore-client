@@ -2192,18 +2192,27 @@ async function auditLightThemeComponents(cdp) {
   const repositoryAccountCenter = await cdp.evaluate(`(() => {
     const content = document.querySelector(".tools-dialog__body");
     const remote = document.querySelector(
-      ".auth-account-manager__login > label input"
+      ".auth-account-manager__remote-controls input"
+    );
+    const browserSignInButton = document.querySelector(
+      ".auth-account-manager__remote-controls > button"
     );
     const manager = document.querySelector(
       ".auth-account-manager"
     );
     if (!(content instanceof HTMLElement) ||
         !(remote instanceof HTMLInputElement) ||
+        !(browserSignInButton instanceof HTMLButtonElement) ||
         !(manager instanceof HTMLElement)) return null;
+    const remoteRect = remote.getBoundingClientRect();
+    const browserSignInButtonRect = browserSignInButton.getBoundingClientRect();
     return {
       editable: !remote.readOnly,
       hasDeviceHint:
-        remote.closest("label")?.textContent?.includes("登录不依赖本地仓库") ?? false,
+        remote.closest(".auth-account-manager__login")?.textContent?.includes("登录不依赖本地仓库") ?? false,
+      browserSignInAligned:
+        Math.abs(remoteRect.top - browserSignInButtonRect.top) <= 1 &&
+        Math.abs(remoteRect.bottom - browserSignInButtonRect.bottom) <= 1,
       horizontalOverflow: content.scrollWidth > content.clientWidth + 1,
       verticalOverflow: manager.scrollHeight > manager.clientHeight + 1,
       twoPaneColumns: getComputedStyle(manager).gridTemplateColumns.split(" ").length === 2,
@@ -2213,6 +2222,7 @@ async function auditLightThemeComponents(cdp) {
   if (
     !repositoryAccountCenter?.editable ||
     !repositoryAccountCenter?.hasDeviceHint ||
+    !repositoryAccountCenter?.browserSignInAligned ||
     repositoryAccountCenter?.horizontalOverflow ||
     repositoryAccountCenter?.verticalOverflow ||
     !repositoryAccountCenter?.twoPaneColumns ||
@@ -2998,6 +3008,79 @@ async function auditLightThemeComponents(cdp) {
   return checkpoints
 }
 
+/**
+ * 用显式浏览器夹具覆盖真实认证恢复弹层。
+ *
+ * 认证失效依赖 Lore Status，纯前端审计无法自然制造；查询参数只在 browser-demo
+ * 生效，使这里能够同时验证深浅主题、最低分辨率、文本尺寸和跳过后的离线投影。
+ */
+async function auditRemoteAuthenticationDialog(cdp) {
+  const fixtureUrl = `${applicationUrl}?remote-authentication-fixture=1`
+  await cdp.send('Page.navigate', { url: fixtureUrl })
+  await waitForApplication(cdp)
+  await cdp.send('Emulation.setDeviceMetricsOverride', {
+    width: 1280,
+    height: 720,
+    deviceScaleFactor: 1,
+    mobile: false,
+    screenWidth: 1280,
+    screenHeight: 720
+  })
+
+  const checkpoints = []
+  for (const theme of ['dark', 'light']) {
+    await cdp.evaluate(`(() => {
+      document.documentElement.dataset.theme = ${JSON.stringify(theme)};
+      document.documentElement.style.colorScheme = ${JSON.stringify(theme)};
+    })()`)
+    await delay(60)
+    const layout = await cdp.evaluate(`(() => {
+      const dialog = document.querySelector('.remote-authentication-dialog');
+      if (!(dialog instanceof HTMLElement)) return null;
+      const bounds = dialog.getBoundingClientRect();
+      const visibleTextSizes = [...dialog.querySelectorAll('*')]
+        .filter((element) => {
+          const style = getComputedStyle(element);
+          return style.display !== 'none' && style.visibility !== 'hidden' && element.textContent?.trim();
+        })
+        .map((element) => Number.parseFloat(getComputedStyle(element).fontSize))
+        .filter(Number.isFinite);
+      return {
+        theme: document.documentElement.dataset.theme,
+        withinViewport:
+          bounds.left >= 0 && bounds.top >= 0 && bounds.right <= innerWidth && bounds.bottom <= innerHeight,
+        horizontalOverflow: document.body.scrollWidth > innerWidth,
+        minimumFontSize: Math.min(...visibleTextSizes),
+        buttonCount: dialog.querySelectorAll('footer button').length,
+        repositoryNamesVisible:
+          dialog.textContent?.includes('meridian-world') && dialog.textContent?.includes('solstice-tools')
+      };
+    })()`)
+    if (
+      !layout?.withinViewport ||
+      layout.horizontalOverflow ||
+      layout.minimumFontSize < 10 ||
+      layout.buttonCount !== 2 ||
+      !layout.repositoryNamesVisible
+    ) {
+      throw new Error(`Remote authentication dialog visual audit failed: ${JSON.stringify(layout)}`)
+    }
+    await captureScreenshotEvidence(cdp, `ui-${theme}-remote-authentication.png`)
+    checkpoints.push(layout)
+  }
+
+  await clickMatchingButton(cdp, '.remote-authentication-dialog footer button', '跳过并离线使用')
+  await delay(60)
+  const offlineResult = await cdp.evaluate(`({
+    dialogVisible: Boolean(document.querySelector('.remote-authentication-dialog')),
+    statusShowsOffline: document.querySelector('.statusbar')?.textContent?.includes('离线') ?? false
+  })`)
+  if (offlineResult.dialogVisible || !offlineResult.statusShowsOffline) {
+    throw new Error(`Remote authentication offline fallback failed: ${JSON.stringify(offlineResult)}`)
+  }
+  return { checkpoints, offlineResult }
+}
+
 try {
   await mkdir(outputDirectory, { recursive: true })
   const target = await waitForDebugTarget()
@@ -3015,7 +3098,14 @@ try {
   results.push(await auditViewport(cdp, 1920, 1080, 'light'))
   const darkSettingsCheckpoints = await auditDarkSettingsCategories(cdp)
   const componentCheckpoints = await auditLightThemeComponents(cdp)
-  console.log(JSON.stringify({ passed: true, results, darkSettingsCheckpoints, componentCheckpoints }, null, 2))
+  const remoteAuthenticationCheckpoints = await auditRemoteAuthenticationDialog(cdp)
+  console.log(
+    JSON.stringify(
+      { passed: true, results, darkSettingsCheckpoints, componentCheckpoints, remoteAuthenticationCheckpoints },
+      null,
+      2
+    )
+  )
   cdp.socket.close()
 } catch (error) {
   if (browserDiagnostic) {
