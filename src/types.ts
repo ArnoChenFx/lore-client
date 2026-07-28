@@ -477,14 +477,14 @@ export type StructuredAssetPreview =
 /**
  * 从工作区文件或不可变 Revision Store 按需读取的单个二进制预览。
  *
- * Rust 边界负责路径、类型和大小校验；组件只把受控 MIME 与 Base64 内容转换为
- * `data:` URL，不接触 Lore 内容地址或平台绝对路径。
+ * Rust 边界负责路径、类型和大小校验；Raw IPC 直接返回字节，组件不接触 Lore
+ * 内容地址或平台绝对路径，也不在 React 状态中保留体积膨胀约 1/3 的 Base64 字符串。
  */
 export interface BinaryFilePreview {
   path: string
   kind: BinaryPreviewKind
   mimeType: string
-  dataBase64: string
+  data: Uint8Array
   size: number
   /** 只有 KTX2、归档和引擎资产携带；普通媒体继续使用受控原始载荷。 */
   structuredPreview?: StructuredAssetPreview | null

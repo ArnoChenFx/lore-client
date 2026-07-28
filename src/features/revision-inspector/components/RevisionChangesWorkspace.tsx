@@ -27,10 +27,12 @@ import {
   changeFilePath,
   countUnifiedDiffLines,
   isChangeDirectoryObjectId,
+  LatestTaskQueue,
   parseUnifiedDiff,
   resolveSelectedChangeFiles,
   selectChangeContext,
   selectChangeFile,
+  settleTasksSequentially,
   type ChangeViewMode
 } from '../../../shared/lib'
 import { BinaryDiffPreview, DiffOptionsControl, PaneResizer, SelectInput } from '../../../shared/ui'
@@ -43,6 +45,7 @@ import type {
 } from '../../../types'
 
 interface RevisionChangesWorkspaceProps {
+  repositoryPath: string
   revision: Revision
   files: ChangeFile[]
   diffs: WorkingTreeDiff[]
@@ -63,11 +66,51 @@ interface RevisionChangesWorkspaceProps {
 
 const DEFAULT_BROWSER_WIDTH = 220
 
+/**
+ * Revision 的轻量变更清单就绪后默认选择第一项。
+ *
+ * 选择本身不绕过内容视图开关：父控制器只有在 Diff 面板可见时才读取文本补丁，
+ * 二进制预览也同时受 Diff 与二进制显示偏好约束。仓库和 Revision 上下文仍会参与
+ * 请求校验，确保自动选择不会让上一仓库的结果写回当前视图。
+ */
+export function createDefaultRevisionChangeSelection(
+  files: ChangeFile[],
+  viewMode: ChangeViewMode = 'flat'
+): {
+  selectedObjectIds: string[]
+  primaryObjectId: string
+} {
+  /*
+   * Tree 会先按目录层级和名称排序，不能继续把后端平铺数组的首项当成视觉首文件。
+   * 目录本身不能显示文件 Diff，因此跳过目录行并选择第一条真实文件行。
+   */
+  const firstFile =
+    viewMode === 'tree'
+      ? buildChangeTreeRows(files, new Set(), 'revision').find((row) => row.kind === 'file')?.file
+      : files[0]
+  const firstObjectId = firstFile ? changeFileObjectId(firstFile.id) : ''
+  return {
+    selectedObjectIds: firstObjectId ? [firstObjectId] : [],
+    primaryObjectId: firstObjectId
+  }
+}
+
 export interface RevisionWorkspaceSelectionRequest {
   nonce: number
+  repositoryPath: string
+  revisionId: string
   fileIds: string[]
   primaryFileId: string
   mode?: ChangeViewMode
+}
+
+/** 防止父组件 effect 尚未清空的旧定位请求在新 Repository 的子 effect 中抢先执行。 */
+export function isRevisionWorkspaceSelectionRequestCurrent(
+  request: RevisionWorkspaceSelectionRequest,
+  repositoryPath: string,
+  revisionId: string
+): boolean {
+  return request.repositoryPath === repositoryPath && request.revisionId === revisionId
 }
 
 const statusLabels = {
@@ -84,6 +127,7 @@ const statusLabels = {
  * 因而选择目录不会连带高亮子项，选择文件也不会反推父目录。
  */
 export function RevisionChangesWorkspace({
+  repositoryPath,
   revision,
   files,
   diffs,
@@ -105,21 +149,29 @@ export function RevisionChangesWorkspace({
   const [query, setQuery] = useState('')
   const [collapsedDirectories, setCollapsedDirectories] = useState<Set<string>>(() => new Set())
   /*
-   * 文件集合若在首次渲染时已经就绪，立即建立主选择，避免标题栏先短暂显示
-   * “未选择文件”；后续 Revision 或惰性清单变化仍由下方 effect 重新同步。
+   * 轻量变更清单到达后默认建立第一项主选择。完整内容是否读取仍由 Diff 可见性
+   * 控制；自动选择只恢复桌面客户端的即时浏览体验，不允许旧上下文结果写回。
    */
-  const initialFileObjectId = files[0] ? changeFileObjectId(files[0].id) : ''
-  const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>(() =>
-    initialFileObjectId ? [initialFileObjectId] : []
+  const initialSelection = createDefaultRevisionChangeSelection(files, viewMode)
+  const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>(initialSelection.selectedObjectIds)
+  const [primaryObjectId, setPrimaryObjectId] = useState(initialSelection.primaryObjectId)
+  const [contentSelectionAuthorized, setContentSelectionAuthorized] = useState(
+    Boolean(initialSelection.primaryObjectId)
   )
-  const [primaryObjectId, setPrimaryObjectId] = useState(initialFileObjectId)
   const [browserWidth, setBrowserWidth] = useState(preferences.revisionChangesBrowserWidth)
   const [binaryPreview, setBinaryPreview] = useState<BinaryDiffPreviewData | null>(null)
   const [binaryPreviewLoading, setBinaryPreviewLoading] = useState(false)
   const [binaryPreviewError, setBinaryPreviewError] = useState<string | null>(null)
   const [workspaceElement, setWorkspaceElement] = useState<HTMLDivElement | null>(null)
   const selectionAnchorRef = useRef<string | null>(null)
+  /*
+   * Revision 清单到达时读取最新视图模式；模式切换本身不进入默认选择 effect，
+   * 因而不会破坏“平铺/树视图切换保留现有文件选区”的桌面语义。
+   */
+  const viewModeRef = useRef(viewMode)
+  viewModeRef.current = viewMode
   const previewRequestCounter = useRef(0)
+  const previewQueue = useRef(new LatestTaskQueue())
   const diffVisible = preferences.revisionChangesDiffVisible
   const showDiffSourceSelector = revision.parentIds.length > 1 && Boolean(onDiffSourceRevisionChange)
 
@@ -151,23 +203,33 @@ export function RevisionChangesWorkspace({
   const previewableKind = primaryFile ? binaryPreviewKind(changeFilePath(primaryFile)) : null
 
   useEffect(() => {
+    const queue = previewQueue.current
+    queue.activate()
+    return () => {
+      previewRequestCounter.current += 1
+      queue.dispose()
+    }
+  }, [])
+
+  useEffect(() => {
     if (!preferencesReady) return
     setViewMode(preferences.revisionChangesView)
     setBrowserWidth(preferences.revisionChangesBrowserWidth)
   }, [preferences.revisionChangesBrowserWidth, preferences.revisionChangesView, preferencesReady])
 
   useEffect(() => {
-    const firstObjectId = files[0] ? changeFileObjectId(files[0].id) : ''
-    setSelectedObjectIds(firstObjectId ? [firstObjectId] : [])
-    setPrimaryObjectId(firstObjectId)
-    selectionAnchorRef.current = firstObjectId || null
+    const nextSelection = createDefaultRevisionChangeSelection(files, viewModeRef.current)
+    setSelectedObjectIds(nextSelection.selectedObjectIds)
+    setPrimaryObjectId(nextSelection.primaryObjectId)
+    setContentSelectionAuthorized(Boolean(nextSelection.primaryObjectId))
+    selectionAnchorRef.current = nextSelection.primaryObjectId || null
     setCollapsedDirectories(new Set())
   }, [files, revision.id])
 
   /** 把稳定主要选择上报给 App，使后端只读取这一条路径的真实 unified diff。 */
   useEffect(() => {
-    onPrimaryFileChange?.(primaryFile)
-  }, [onPrimaryFileChange, primaryFile])
+    onPrimaryFileChange?.(contentSelectionAuthorized ? primaryFile : null)
+  }, [contentSelectionAuthorized, onPrimaryFileChange, primaryFile])
 
   /**
    * 只为主选择读取可预览的前后版本。
@@ -176,12 +238,20 @@ export function RevisionChangesWorkspace({
    * 通过序号丢弃旧请求，避免旧内容短暂覆盖当前 Revision 选择。
    */
   useEffect(() => {
+    const queue = previewQueue.current
     previewRequestCounter.current += 1
     const requestId = previewRequestCounter.current
+    queue.cancelPending()
     setBinaryPreview(null)
     setBinaryPreviewError(null)
 
-    if (!diffVisible || !preferences.binaryDiffVisible || !primaryFile || !previewableKind) {
+    if (
+      !contentSelectionAuthorized ||
+      !diffVisible ||
+      !preferences.binaryDiffVisible ||
+      !primaryFile ||
+      !previewableKind
+    ) {
       setBinaryPreviewLoading(false)
       return
     }
@@ -194,19 +264,19 @@ export function RevisionChangesWorkspace({
     const path = changeFilePath(primaryFile)
     const requests: Array<{
       side: keyof BinaryDiffPreviewData
-      promise: Promise<BinaryFilePreview>
+      load: () => Promise<BinaryFilePreview>
     }> = []
     const sourceRevision = diffSourceRevision ?? revision.parentIds[0]
     if (primaryFile.status !== 'added' && sourceRevision) {
       requests.push({
         side: 'before',
-        promise: onLoadBinaryPreview(path, sourceRevision)
+        load: () => onLoadBinaryPreview(path, sourceRevision)
       })
     }
     if (primaryFile.status !== 'deleted') {
       requests.push({
         side: 'after',
-        promise: onLoadBinaryPreview(path, revision.id)
+        load: () => onLoadBinaryPreview(path, revision.id)
       })
     }
     if (requests.length === 0) {
@@ -216,7 +286,8 @@ export function RevisionChangesWorkspace({
     }
 
     setBinaryPreviewLoading(true)
-    void Promise.allSettled(requests.map((request) => request.promise))
+    void queue
+      .run(() => settleTasksSequentially(requests.map((request) => request.load)))
       .then((results) => {
         if (requestId !== previewRequestCounter.current) return
         const next: BinaryDiffPreviewData = {}
@@ -243,10 +314,12 @@ export function RevisionChangesWorkspace({
       })
     // 组件卸载或依赖变化时主动清空预览数据，加速垃圾回收。
     return () => {
+      queue.cancelPending()
       setBinaryPreview(null)
       setBinaryPreviewError(null)
     }
   }, [
+    contentSelectionAuthorized,
     diffVisible,
     onLoadBinaryPreview,
     preferences.binaryDiffVisible,
@@ -260,6 +333,9 @@ export function RevisionChangesWorkspace({
 
   useEffect(() => {
     if (!selectionRequest) return
+    if (!isRevisionWorkspaceSelectionRequestCurrent(selectionRequest, repositoryPath, revision.id)) {
+      return
+    }
     const requestedIds = selectionRequest.fileIds
       .filter((fileId) => files.some((file) => file.id === fileId))
       .map(changeFileObjectId)
@@ -269,12 +345,13 @@ export function RevisionChangesWorkspace({
 
     setSelectedObjectIds(requestedIds)
     setPrimaryObjectId(primaryId)
+    setContentSelectionAuthorized(Boolean(primaryId))
     selectionAnchorRef.current = primaryId || null
     if (selectionRequest.mode) {
       setViewMode(selectionRequest.mode)
       updatePreferences({ revisionChangesView: selectionRequest.mode })
     }
-  }, [files, selectionRequest, updatePreferences])
+  }, [files, repositoryPath, revision.id, selectionRequest, updatePreferences])
 
   /**
    * Revision 文件列表宽度以像素保存，拖动时同时保证文件树和 Diff
@@ -323,6 +400,7 @@ export function RevisionChangesWorkspace({
     setSelectedObjectIds(next.selectedIds)
     selectionAnchorRef.current = next.anchorId
     setPrimaryObjectId(next.selectedIds.includes(objectId) ? objectId : (next.selectedIds.at(-1) ?? ''))
+    setContentSelectionAuthorized(true)
   }
 
   const openContextMenu = (
@@ -339,6 +417,7 @@ export function RevisionChangesWorkspace({
     // “在文件树中显示”等动作的实际目标会与源列表的视觉主选不一致。
     setSelectedObjectIds(nextSelection.selectedIds)
     setPrimaryObjectId(nextSelection.primaryId)
+    setContentSelectionAuthorized(true)
     selectionAnchorRef.current = nextSelection.anchorId
     onOpenContextMenu(
       targetAlreadySelected && resolvedSelectedFiles.length > 0 ? resolvedSelectedFiles : targetFiles,
@@ -478,6 +557,7 @@ export function RevisionChangesWorkspace({
               event.preventDefault()
               setSelectedObjectIds(orderedObjectIds)
               setPrimaryObjectId(orderedObjectIds[0] ?? '')
+              setContentSelectionAuthorized(orderedObjectIds.length > 0)
               selectionAnchorRef.current = orderedObjectIds[0] ?? null
             }
           }}

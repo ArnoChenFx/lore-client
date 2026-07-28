@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { sanitizeLogMessage } from './logging'
+import { isExpectedIpcControlFlowError, sanitizeLogMessage } from './logging'
 
 describe('application logging', () => {
   it('redacts credentials while preserving diagnostic context', () => {
@@ -32,5 +32,10 @@ describe('application logging', () => {
 
     expect(message.length).toBeLessThanOrEqual(4_012)
     expect(message.endsWith('…[TRUNCATED]')).toBe(true)
+  })
+
+  it('treats superseded heavy reads as expected control flow', () => {
+    expect(isExpectedIpcControlFlowError({ code: 'heavy_read_superseded' })).toBe(true)
+    expect(isExpectedIpcControlFlowError({ code: 'revision_tree_read_failed' })).toBe(false)
   })
 })

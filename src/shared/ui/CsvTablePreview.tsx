@@ -8,7 +8,7 @@ import { CSV_PREVIEW_MAX_COLS, CSV_PREVIEW_MAX_ROWS, decodeCsvPreviewText, parse
 interface CsvTablePreviewProps {
   fileName: string
   label: string
-  dataBase64: string
+  data: Uint8Array
 }
 
 /**
@@ -16,16 +16,16 @@ interface CsvTablePreviewProps {
  *
  * 只展示有限行/列，避免巨型表格拉垮 Inspector；单元格纯文本渲染，不解释公式。
  */
-export function CsvTablePreview({ fileName, label, dataBase64 }: CsvTablePreviewProps) {
+export function CsvTablePreview({ fileName, label, data }: CsvTablePreviewProps) {
   const { t } = useTranslation()
   const parsed = useMemo(() => {
     try {
-      const text = decodeCsvPreviewText(dataBase64)
+      const text = decodeCsvPreviewText(data)
       return { table: parseCsvPreview(text), error: null as string | null }
     } catch {
       return { table: null, error: t('csvContentValidUtf8_7481') }
     }
-  }, [dataBase64, t])
+  }, [data, t])
 
   if (parsed.error || !parsed.table) {
     return (

@@ -747,11 +747,13 @@ export function Inspector({
       onTabChange('changes')
       setSelectionRequest({
         nonce: Date.now(),
+        repositoryPath,
+        revisionId: revision?.id ?? '',
         fileIds: [file.id],
         primaryFileId: file.id
       })
     },
-    [onTabChange]
+    [onTabChange, repositoryPath, revision?.id]
   )
 
   /** 把已经解析完成的定位结果写入文件树选区，或给出精确的缺失路径。 */
@@ -927,6 +929,7 @@ export function Inspector({
           )}
           {activeTab === 'changes' && (
             <RevisionChangesWorkspace
+              repositoryPath={repositoryPath}
               revision={revision}
               files={files}
               diffs={diffs}

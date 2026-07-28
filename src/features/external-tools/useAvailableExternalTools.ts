@@ -13,6 +13,16 @@ export interface AvailableExternalTools {
 }
 
 /**
+ * 为两组小型工具配置生成稳定内容签名。
+ *
+ * 偏好服务在持久化 activeRepositoryPath 时会重新归一化整个 DTO，数组引用因此变化；
+ * 直接依赖引用会把每次 Repository 标签切换误判为工具配置修改。
+ */
+export function externalToolConfigurationKey(preferences: ExternalToolPreferences): string {
+  return JSON.stringify([preferences.externalDiffTools, preferences.externalMergeTools])
+}
+
+/**
  * 只把参数模板完整的工具交给 Rust 探测。
  *
  * Diff 与 Merge 必须分别按自己的模板验证，不能通过 ID 反查所属列表；用户导入的
@@ -54,11 +64,28 @@ export function selectAvailableExternalTools(
 export function useAvailableExternalTools(preferences: ExternalToolPreferences): AvailableExternalTools {
   const [availableExternalToolIds, setAvailableExternalToolIds] = useState<string[]>([])
   const requestCounter = useRef(0)
+  const toolConfigurationKey = externalToolConfigurationKey(preferences)
+  /*
+   * activeRepositoryPath 等无关偏好会频繁更新顶层对象；只以两组工具配置的引用生成
+   * 稳定投影，避免每次 Repository 标签切换都重新调用原生可执行文件探测。
+   */
+  const toolPreferencesCache = useRef<{ key: string; value: ExternalToolPreferences } | null>(null)
+  if (toolPreferencesCache.current?.key !== toolConfigurationKey) {
+    toolPreferencesCache.current = {
+      key: toolConfigurationKey,
+      value: {
+        externalDiffTools: preferences.externalDiffTools,
+        externalMergeTools: preferences.externalMergeTools
+      }
+    }
+  }
+  // 内容未变化时复用上一份等价数组，隔离偏好归一化产生的新引用。
+  const toolPreferences = toolPreferencesCache.current.value
 
   useEffect(() => {
     const requestId = ++requestCounter.current
     let disposed = false
-    const candidates = collectExternalToolCandidates(preferences)
+    const candidates = collectExternalToolCandidates(toolPreferences)
 
     if (candidates.length === 0) {
       setAvailableExternalToolIds([])
@@ -82,11 +109,11 @@ export function useAvailableExternalTools(preferences: ExternalToolPreferences):
     return () => {
       disposed = true
     }
-  }, [preferences])
+  }, [toolPreferences])
 
   const available = useMemo(
-    () => selectAvailableExternalTools(preferences, availableExternalToolIds),
-    [availableExternalToolIds, preferences]
+    () => selectAvailableExternalTools(toolPreferences, availableExternalToolIds),
+    [availableExternalToolIds, toolPreferences]
   )
 
   return {

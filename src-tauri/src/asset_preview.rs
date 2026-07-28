@@ -6,13 +6,14 @@
 
 use serde::Serialize;
 use std::collections::BTreeMap;
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use std::path::Path;
 
 const MAX_DIRECTORY_ENTRIES: usize = 500;
 const MAX_DECLARED_ENTRIES: usize = 100_000;
 const MAX_PATH_BYTES: usize = 4_096;
 const MAX_UNITY_BLOCK_INFO_BYTES: usize = 4 * 1024 * 1024;
+const MAX_BLENDER_DECOMPRESSED_BYTES: usize = 64 * 1024 * 1024;
 
 /// 归档目录中可安全展示的一项；路径始终只是文本，不会用于文件系统访问。
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -311,6 +312,30 @@ fn parse_ktx2_metadata(bytes: &[u8]) -> Result<StructuredAssetPreview, AssetPrev
         return Err(AssetPreviewError::invalid(
             "KTX2",
             "invalid dimensions or face count",
+        ));
+    }
+    const MAX_TEXTURE_DIMENSION: u32 = 8_192;
+    // 按最坏的四字节 RGBA 估算，把基础层单份 GPU backing store 控制在约 256 MiB。
+    const MAX_BASE_LEVEL_TEXELS: u64 = 64 * 1024 * 1024;
+    let base_level_texels = [width, height.max(1), depth.max(1), layers.max(1), faces]
+        .into_iter()
+        .try_fold(1u64, |total, dimension| {
+            total.checked_mul(u64::from(dimension))
+        })
+        .ok_or_else(|| AssetPreviewError::invalid("KTX2", "decoded texture dimensions overflow"))?;
+    if width > MAX_TEXTURE_DIMENSION
+        || height.max(1) > MAX_TEXTURE_DIMENSION
+        || base_level_texels > MAX_BASE_LEVEL_TEXELS
+    {
+        return Err(AssetPreviewError::invalid(
+            "KTX2",
+            format!(
+                "decoded texture footprint is too large: {}x{}x{} layers={} faces={faces}",
+                width,
+                height.max(1),
+                depth.max(1),
+                layers.max(1)
+            ),
         ));
     }
     Ok(metadata(
@@ -908,18 +933,34 @@ fn parse_godot_resource(bytes: &[u8]) -> Result<StructuredAssetPreview, AssetPre
 }
 
 fn parse_blender(bytes: &[u8]) -> Result<StructuredAssetPreview, AssetPreviewError> {
-    // Blender 5.0+ 可以使用 zstd 压缩存储；检测并解压后再解析。
+    // Blender 5.0+ 可以使用 zstd 压缩存储。不能使用 decode_all：损坏或恶意文件
+    // 可以声明超大解压结果。局部缓冲在解析结束后立即释放，不在全局状态中常驻容量。
     const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
-    let decompressed;
-    let bytes = if bytes.len() >= 4 && bytes[..4] == ZSTD_MAGIC {
-        decompressed = zstd::decode_all(Cursor::new(bytes)).map_err(|error| {
+    if bytes.len() < 4 || bytes[..4] != ZSTD_MAGIC {
+        return parse_uncompressed_blender(bytes);
+    }
+
+    let decoder = zstd::Decoder::new(Cursor::new(bytes)).map_err(|error| {
+        AssetPreviewError::invalid("Blender", format!("zstd decompression failed: {error}"))
+    })?;
+    let mut decompressed = Vec::new();
+    decoder
+        .take((MAX_BLENDER_DECOMPRESSED_BYTES + 1) as u64)
+        .read_to_end(&mut decompressed)
+        .map_err(|error| {
             AssetPreviewError::invalid("Blender", format!("zstd decompression failed: {error}"))
         })?;
-        decompressed.as_slice()
-    } else {
-        bytes
-    };
+    if decompressed.len() > MAX_BLENDER_DECOMPRESSED_BYTES {
+        return Ok(metadata(
+            "Blender",
+            vec![fact("fileSize", bytes.len()), fact("compression", "zstd")],
+            vec!["blenderMetadataDecompressionLimited"],
+        ));
+    }
+    parse_uncompressed_blender(&decompressed)
+}
 
+fn parse_uncompressed_blender(bytes: &[u8]) -> Result<StructuredAssetPreview, AssetPreviewError> {
     if bytes.len() < 12 || &bytes[..7] != b"BLENDER" {
         return Err(AssetPreviewError::invalid("Blender", "header is missing"));
     }
@@ -1248,7 +1289,8 @@ pub fn prepare_preview_payload(
     if source_format == image::ImageFormat::OpenExr {
         // EXR 是线性 HDR；Reinhard 映射加 sRGB Gamma 能在普通 Diff 画布中保留高光层次，
         // 避免直接截断到 8 位后整片过曝。Alpha 单独钳制，不参与色调映射。
-        let source = image.to_rgba32f();
+        // 消费 DynamicImage，若解码器已经返回 Rgba32F 就直接复用其像素缓冲，避免克隆。
+        let source = image.into_rgba32f();
         let mapped = image::RgbaImage::from_fn(source.width(), source.height(), |x, y| {
             let pixel = source.get_pixel(x, y).0;
             let map = |value: f32| {
@@ -1277,6 +1319,39 @@ fn image_preview_limits() -> image::Limits {
     limits.max_image_height = Some(16_384);
     limits.max_alloc = Some(256 * 1024 * 1024);
     limits
+}
+
+/// 对绕过 `image::Limits` 的自定义解码路径执行同等的单缓冲分配预算。
+fn ensure_decoded_image_allocation(
+    width: u32,
+    height: u32,
+    bytes_per_pixel: usize,
+    file_name: &str,
+) -> Result<usize, AssetPreviewError> {
+    const MAX_IMAGE_DIMENSION: u32 = 16_384;
+    const MAX_DECODED_BUFFER_BYTES: usize = 256 * 1024 * 1024;
+
+    let pixel_count = (width as usize)
+        .checked_mul(height as usize)
+        .ok_or_else(|| {
+            AssetPreviewError::decode_failed(format!(
+                "Decoded image dimensions overflow for {file_name}: {width}x{height}"
+            ))
+        })?;
+    let allocation = pixel_count.checked_mul(bytes_per_pixel).ok_or_else(|| {
+        AssetPreviewError::decode_failed(format!(
+            "Decoded image allocation overflows for {file_name}: {width}x{height}"
+        ))
+    })?;
+    if width > MAX_IMAGE_DIMENSION
+        || height > MAX_IMAGE_DIMENSION
+        || allocation > MAX_DECODED_BUFFER_BYTES
+    {
+        return Err(AssetPreviewError::decode_failed(format!(
+            "Decoded image {file_name} exceeds the preview memory budget: {width}x{height}, {allocation} bytes"
+        )));
+    }
+    Ok(pixel_count)
 }
 
 /// 兼容部分工具导出的 24 位色表 TGA 描述符。
@@ -1341,6 +1416,10 @@ fn decode_exr_single_channel(
         .all_channels()
         .first_valid_layer()
         .all_attributes()
+        // 单文件预览受全局重读门串行保护；并行解压不会提高交互吞吐，反而会让
+        // 短命像素块落入多个 Rayon 工作线程的原生分配器缓存。Windows 不会主动
+        // 归还这些线程堆的提交页，连续切换 EXR 时便表现为只涨不降的 Private Bytes。
+        .non_parallel()
         .from_buffered(std::io::BufReader::new(Cursor::new(bytes)))
         .map_err(|error| {
             AssetPreviewError::decode_failed(format!(
@@ -1378,7 +1457,7 @@ fn decode_exr_single_channel(
 
     // exr crate 的 FlatSamples 直接存储原始像素值。
     // 读取像素并转换为 Rgba32f → 色调映射在调用方完成。
-    let pixel_count = (width as usize) * (height as usize);
+    let pixel_count = ensure_decoded_image_allocation(width, height, 16, file_name)?;
     let mut rgba = Vec::with_capacity(pixel_count * 4);
 
     match &channel_list[target_idx].sample_data {
@@ -1439,6 +1518,21 @@ mod tests {
         assert!(facts
             .iter()
             .any(|entry| entry.key == "mipLevels" && entry.value == "9"));
+    }
+
+    #[test]
+    fn rejects_ktx2_headers_with_an_excessive_gpu_footprint() {
+        let mut bytes = b"\xABKTX 20\xBB\r\n\x1A\n".to_vec();
+        for value in [37u32, 1, 16_384, 16_384, 0, 0, 6, 1, 1] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+
+        assert_eq!(
+            parse_ktx2_metadata(&bytes)
+                .expect_err("A multi-gigabyte decoded cubemap must be rejected from its header")
+                .code,
+            "binary_preview_invalid_asset"
+        );
     }
 
     #[test]
@@ -1790,6 +1884,17 @@ mod tests {
                 .expect_err("Content above the limit must fail before reading")
                 .code,
             "binary_preview_too_large"
+        );
+    }
+
+    #[test]
+    fn decoded_exr_allocation_rejects_pixel_buffers_above_the_memory_budget() {
+        assert!(ensure_decoded_image_allocation(4096, 4096, 16, "safe.exr").is_ok());
+        assert_eq!(
+            ensure_decoded_image_allocation(8192, 8192, 16, "oversized.exr")
+                .expect_err("A one GiB RGBA32F buffer must be rejected before allocation")
+                .code,
+            "binary_preview_decode_failed"
         );
     }
 

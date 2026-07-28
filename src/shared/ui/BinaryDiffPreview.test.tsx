@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import i18n from '../../i18n'
 import { BinaryDiffPreview } from './BinaryDiffPreview'
-import { decodePdfBase64 } from './PdfCanvasPreview'
+import { copyPdfData } from './PdfCanvasPreview'
 
 describe('binary diff preview', () => {
   beforeEach(async () => {
@@ -21,14 +21,14 @@ describe('binary diff preview', () => {
             path: 'Content/Sky.png',
             kind: 'image',
             mimeType: 'image/png',
-            dataBase64: 'AA==',
+            data: new Uint8Array([0]),
             size: 1
           },
           after: {
             path: 'Content/Sky.png',
             kind: 'image',
             mimeType: 'image/png',
-            dataBase64: 'AQ==',
+            data: new Uint8Array([1]),
             size: 1
           }
         }}
@@ -40,8 +40,7 @@ describe('binary diff preview', () => {
     expect(html).toContain('class="binary-diff-preview has-comparison"')
     // 旧 `.binary-preview` 属于另一块演示画布，不能让真实 Diff 复用并覆盖其布局。
     expect(html).not.toContain('class="binary-preview')
-    expect(html).toContain('data:image/png;base64,AA==')
-    expect(html).toContain('data:image/png;base64,AQ==')
+    expect(html).not.toContain('data:image/png')
   })
 
   it('renders PDFs on an in-app canvas without a WebView2-blocked iframe', () => {
@@ -55,7 +54,7 @@ describe('binary diff preview', () => {
             path: 'Docs/Design.pdf',
             kind: 'pdf',
             mimeType: 'application/pdf',
-            dataBase64: 'JVBERg==',
+            data: new Uint8Array([37, 80, 68, 70]),
             size: 5
           }
         }}
@@ -80,7 +79,7 @@ describe('binary diff preview', () => {
             path: 'Content/Meshes/Hero.fbx',
             kind: 'model',
             mimeType: 'model/fbx',
-            dataBase64: 'AA==',
+            data: new Uint8Array([0]),
             size: 1
           }
         }}
@@ -96,7 +95,7 @@ describe('binary diff preview', () => {
   })
 
   it('uses an in-app table for CSV without a data URL', () => {
-    const csvBase64 = btoa('name,value\nalpha,1\nbeta,2\n')
+    const csvData = new TextEncoder().encode('name,value\nalpha,1\nbeta,2\n')
     const html = renderToStaticMarkup(
       <BinaryDiffPreview
         fileName="Stats.csv"
@@ -107,7 +106,7 @@ describe('binary diff preview', () => {
             path: 'Data/Stats.csv',
             kind: 'csv',
             mimeType: 'text/csv',
-            dataBase64: csvBase64,
+            data: csvData,
             size: 28
           }
         }}
@@ -132,7 +131,7 @@ describe('binary diff preview', () => {
             path: 'Audio/Theme.ogg',
             kind: 'audio',
             mimeType: 'audio/ogg',
-            dataBase64: 'T2dnUw==',
+            data: new TextEncoder().encode('OggS'),
             size: 4
           }
         }}
@@ -140,7 +139,7 @@ describe('binary diff preview', () => {
     )
 
     expect(html).toContain('<audio controls="" preload="metadata"')
-    expect(html).toContain('data:audio/ogg;base64,T2dnUw==')
+    expect(html).not.toContain('src=')
     expect(html).not.toContain(' autoplay=')
   })
 
@@ -155,7 +154,7 @@ describe('binary diff preview', () => {
             path: 'Textures/Sky.ktx2',
             kind: 'texture',
             mimeType: 'image/ktx2',
-            dataBase64: 'q0tUWCAyMLsNCiEaCg==',
+            data: new Uint8Array([0xab, 0x4b, 0x54, 0x58]),
             size: 12,
             structuredPreview: {
               type: 'assetMetadata',
@@ -184,7 +183,7 @@ describe('binary diff preview', () => {
             path: 'Fonts/Interface.otf',
             kind: 'font',
             mimeType: 'font/otf',
-            dataBase64: 'T1RUTw==',
+            data: new TextEncoder().encode('OTTO'),
             size: 4
           }
         }}
@@ -206,7 +205,7 @@ describe('binary diff preview', () => {
             path: 'Build/Game.pak',
             kind: 'archive',
             mimeType: 'application/x-pak',
-            dataBase64: '',
+            data: new Uint8Array(),
             size: 128,
             structuredPreview: {
               type: 'archive',
@@ -239,7 +238,7 @@ describe('binary diff preview', () => {
             path: 'Art/Hero.blend',
             kind: 'asset',
             mimeType: 'application/x-blender',
-            dataBase64: '',
+            data: new Uint8Array(),
             size: 256,
             structuredPreview: {
               type: 'assetMetadata',
@@ -261,7 +260,10 @@ describe('binary diff preview', () => {
     expect(html).not.toContain('data:application/x-blender')
   })
 
-  it('decodes PDF Base64 into an independent byte array', () => {
-    expect(Array.from(decodePdfBase64('JVBERg=='))).toEqual([37, 80, 68, 70])
+  it('copies PDF Raw IPC data into an independent byte array', () => {
+    const source = new Uint8Array([37, 80, 68, 70])
+    const copy = copyPdfData(source)
+    expect(Array.from(copy)).toEqual([37, 80, 68, 70])
+    expect(copy).not.toBe(source)
   })
 })

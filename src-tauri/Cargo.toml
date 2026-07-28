@@ -14,16 +14,17 @@ tauri-build = { version = "2", features = [] }
 toml_edit = "0.25.13"
 
 [dependencies]
-base64 = "0.22"
 # 仅用于把浏览器无法直接显示的 TGA/TIFF 转成 PNG；不引入完整编解码全家桶。
 image = { version = "0.25", default-features = false, features = ["dds", "exr", "png", "tga", "tiff"] }
-exr = "1.74"
+# Diff 预览只解码单张受限尺寸纹理。EXR 默认的 Rayon 并行解码会把短命像素块
+# 分散到全局工作线程的分配器缓存，在 Windows 上每次刷新都抬高数百 MiB Private Bytes。
+exr = { version = "1.74", default-features = false }
 zstd = "0.13"
 glob-match = "0.2.1"
-lore = { git = "https://github.com/EpicGames/lore.git", rev = "b47b23da6a377fa6f906c22bd88b5386aa204cb1" }
+lore = { git = "https://github.com/EpicGames/lore.git", rev = "f9c3a7268e64b57e861ce41292a48aae6cae63a3" }
 # 认证变更需要调用 Lore 顶层 crate 尚未暴露的 Transport 连接失效入口；
 # 依赖必须与 `lore` 锁定到完全相同的提交，避免协议实现漂移或重复版本。
-lore-revision = { git = "https://github.com/EpicGames/lore.git", rev = "b47b23da6a377fa6f906c22bd88b5386aa204cb1" }
+lore-revision = { git = "https://github.com/EpicGames/lore.git", rev = "f9c3a7268e64b57e861ce41292a48aae6cae63a3" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }

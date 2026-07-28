@@ -10,7 +10,6 @@ use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use glob_match::glob_match;
 use lore::auth::{
     LoreAuthClearArgs, LoreAuthListArgs, LoreAuthLocalUserInfoArgs, LoreAuthLoginInteractiveArgs,
@@ -85,6 +84,15 @@ use crate::client_preferences::RepositoryAuthAccountBinding;
 /// Tauri 启动后安装的应用句柄，只用于把 Lore 回调实时转发给 WebView。
 static EVENT_APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 static OPERATION_STREAM_COUNTER: AtomicU64 = AtomicU64::new(1);
+/// 完整树、Diff 与预览共享一个进程级异步读取门；等待许可时不得占用 blocking 线程。
+static HEAVY_READ_LOCK: OnceLock<tauri::async_runtime::Mutex<()>> = OnceLock::new();
+static WORKSPACE_DIFF_READ_LANE: HeavyReadLane = HeavyReadLane::new();
+static REVISION_FILES_READ_LANE: HeavyReadLane = HeavyReadLane::new();
+static FILE_PREVIEW_READ_LANE: HeavyReadLane = HeavyReadLane::new();
+static REVISION_DIFF_READ_LANE: HeavyReadLane = HeavyReadLane::new();
+static REVISION_CHANGES_READ_LANE: HeavyReadLane = HeavyReadLane::new();
+/// 通知 Subscribe/Unsubscribe 共享异步门，避免标签切换把 blocking pool 填满。
+static NOTIFICATION_LIFECYCLE_LOCK: OnceLock<tauri::async_runtime::Mutex<()>> = OnceLock::new();
 /// 运行期只保留 Lore Token Store 的脱敏索引；真实 Token 从不进入客户端偏好或 IPC。
 static AUTH_ACCOUNT_BINDINGS: OnceLock<Mutex<HashMap<String, BoundAuthAccount>>> = OnceLock::new();
 
@@ -399,17 +407,27 @@ pub struct LoreRevisionFile {
 /// 前端可直接渲染的受控二进制文件内容。
 ///
 /// `kind` 与 `mime_type` 都由扩展名白名单产生，调用方不能通过 IPC 注入任意 MIME；
-/// `data_base64` 在 20 MB 原始字节上限内生成，避免一次预览挤占桌面进程大量内存。
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+/// `data` 只在 Rust 内存中短暂存在，命令通过 Tauri Raw IPC 传输，禁止再次编码 Base64。
+#[derive(Clone, Debug)]
 pub struct LoreFilePreview {
     pub path: String,
     pub kind: &'static str,
     pub mime_type: &'static str,
-    pub data_base64: String,
+    pub data: Vec<u8>,
     pub size: u64,
     /// 归档目录与引擎资产元数据由 Rust 解析，React 不接触不可信二进制结构。
     pub structured_preview: Option<StructuredAssetPreview>,
+}
+
+/** Raw IPC 二进制信封前部的轻量 JSON 元数据。 */
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LoreFilePreviewMetadata {
+    path: String,
+    kind: &'static str,
+    mime_type: &'static str,
+    size: u64,
+    structured_preview: Option<StructuredAssetPreview>,
 }
 
 /// Revision 相对第一父 Revision 的轻量文件变化。
@@ -1245,6 +1263,10 @@ pub async fn lore_lock_file_status(
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let branch = validate_branch_name(&branch)?;
     let paths = validate_repository_relative_paths(paths)?;
+    /*
+     * 文件锁状态只查询调用方给出的少量路径，不会构造完整 Tree、Diff 或二进制载荷。
+     * 它不能进入全局重型读取通道，否则另一个仓库的新查询会把当前合法请求淘汰。
+     */
     run_lore_task(move || {
         let globals = global_args(&repository_path)?;
         run_operation("lock.file-status", move |callback| {
@@ -1447,7 +1469,7 @@ pub async fn lore_file_dependency_list(
 pub async fn lore_notification_subscribe(repository_path: String) -> Result<i32, LoreCommandError> {
     let normalized_path =
         display_path_without_windows_verbatim_prefix(&validate_repository_path(&repository_path)?);
-    run_lore_task(move || {
+    run_notification_lore_task(move || {
         let globals = global_args(&normalized_path)?;
         let callback_path = normalized_path.clone();
         let callback: LoreEventCallback = Some(Box::new(move |event: &LoreEvent| {
@@ -1469,7 +1491,7 @@ pub async fn lore_notification_unsubscribe(
 ) -> Result<i32, LoreCommandError> {
     let repository_path =
         display_path_without_windows_verbatim_prefix(&validate_repository_path(&repository_path)?);
-    run_lore_task(move || {
+    run_notification_lore_task(move || {
         let globals = global_args(&repository_path)?;
         let callback: LoreEventCallback = Some(Box::new(|_event: &LoreEvent| {}));
         Ok(lore::runtime().block_on(lore::notification::unsubscribe(
@@ -3429,7 +3451,7 @@ pub async fn lore_workspace_diff(
     ignore_whitespace_eol: Option<bool>,
     ignore_whitespace_inline: Option<bool>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
-    run_lore_task(move || {
+    run_heavy_lore_task(&WORKSPACE_DIFF_READ_LANE, move || {
         let globals = global_args(&repository_path)?;
         let paths = validate_repository_relative_paths(paths)?;
         run_operation("file.diff", move |callback| {
@@ -3461,7 +3483,7 @@ pub async fn lore_revision_files(
     revision: String,
 ) -> Result<Vec<LoreRevisionFile>, LoreCommandError> {
     let revision = validate_revision(&revision)?;
-    run_lore_task(move || {
+    run_heavy_lore_task(&REVISION_FILES_READ_LANE, move || {
         collect_revision_tree_files(&repository_path, &revision).map(|files| {
             files
                 .into_iter()
@@ -3484,11 +3506,15 @@ pub async fn lore_file_preview(
     repository_path: String,
     path: String,
     revision: Option<String>,
-) -> Result<LoreFilePreview, LoreCommandError> {
+) -> Result<tauri::ipc::Response, LoreCommandError> {
     let revision = revision
         .map(|value| validate_revision(&value))
         .transpose()?;
-    run_lore_task(move || build_file_preview(&repository_path, &path, revision.as_deref())).await
+    run_heavy_lore_task(&FILE_PREVIEW_READ_LANE, move || {
+        build_file_preview(&repository_path, &path, revision.as_deref())
+            .and_then(encode_file_preview_response)
+    })
+    .await
 }
 
 /// 读取目标 Revision 相对来源 Revision 的完整 unified diff。
@@ -3510,7 +3536,7 @@ pub async fn lore_revision_diff(
         .map(|revision| validate_revision(&revision))
         .transpose()?;
     let target_revision = validate_revision(&target_revision)?;
-    run_lore_task(move || {
+    run_heavy_lore_task(&REVISION_DIFF_READ_LANE, move || {
         let paths = validate_optional_diff_paths(paths)?;
         let context_lines = context_lines.unwrap_or(3).min(100);
 
@@ -3541,8 +3567,9 @@ pub async fn lore_revision_diff(
 
                 /*
                  * Lore 文本 Diff 对“空串 → 空串”没有 hunk，因此新增或删除的零字节
-                 * 文件不会产生 fileDiff。不可变树集合差可以补全这些结构变化，
-                 * 又不会把当前工作区的未跟踪文件带入历史视图。
+                 * 文件不会产生 fileDiff。这里恢复 Lore Diff 加完整不可变树结构补全的
+                 * 原有语义；不能仅凭 paths 非空跳过，否则多路径和空白忽略模式都会
+                 * 静默漏掉结构变化。前端已经改为真实选择后才发起该重读。
                  */
                 let source_files = collect_revision_tree_files(&repository_path, &source_revision)?;
                 let target_files = collect_revision_tree_files(&repository_path, &target_revision)?;
@@ -3579,7 +3606,7 @@ pub async fn lore_revision_changes(
         .map(|revision| validate_revision(&revision))
         .transpose()?;
     let target_revision = validate_revision(&target_revision)?;
-    run_lore_task(move || {
+    run_heavy_lore_task(&REVISION_CHANGES_READ_LANE, move || {
         let target_files = collect_revision_tree_files(&repository_path, &target_revision)?;
         let source_files = source_revision
             .as_deref()
@@ -6226,6 +6253,80 @@ where
         })?
 }
 
+/**
+ * 串行执行会构造完整文件树、补丁或二进制载荷的读取。
+ *
+ * 普通 Lore 读仍可并行；只有已知会在 Rust、Serde 与 WebView 边界同时持有大对象的
+ * 命令经过该门。前端 latest-only 队列负责淘汰中间意图，这里作为进程级最后防线，
+ * 保证不同面板或未来调用方也不能把多个数百 MiB 解码峰值叠加起来。
+ */
+async fn run_heavy_lore_task<T>(
+    lane: &'static HeavyReadLane,
+    task: impl FnOnce() -> Result<T, LoreCommandError> + Send + 'static,
+) -> Result<T, LoreCommandError>
+where
+    T: Send + 'static,
+{
+    let ticket = lane.reserve();
+    let _permit = HEAVY_READ_LOCK
+        .get_or_init(|| tauri::async_runtime::Mutex::new(()))
+        .lock()
+        .await;
+
+    /*
+     * 同一通道只执行首个活动任务和最新等待意图。已进入 blocking pool 的任务无法
+     * 安全强制取消；但所有仍在异步门外等待的旧请求可以在创建 OS 线程前结束。
+     */
+    if !lane.is_latest(ticket) {
+        return Err(LoreCommandError::new(
+            "heavy_read_superseded",
+            "The heavy Lore read was superseded by a newer request",
+        ));
+    }
+
+    run_lore_task(task).await
+}
+
+/**
+ * 在进入 blocking pool 前串行化通知生命周期调用。
+ *
+ * Subscribe 与 Unsubscribe 会进入 Lore runtime；快速切换 Repository 时，前端队列是
+ * 第一层防线，此处仍作为原生边界兜底，确保异常调用方也不会让数百条阻塞线程同时
+ * 等待 Lore 内部资源。
+ */
+async fn run_notification_lore_task<T>(
+    task: impl FnOnce() -> Result<T, LoreCommandError> + Send + 'static,
+) -> Result<T, LoreCommandError>
+where
+    T: Send + 'static,
+{
+    let notification_lock =
+        NOTIFICATION_LIFECYCLE_LOCK.get_or_init(|| tauri::async_runtime::Mutex::new(()));
+    let _notification_guard = notification_lock.lock().await;
+    run_lore_task(task).await
+}
+
+/** 为一种重读维护单调意图序号，使异步门只放行该通道最新的等待请求。 */
+struct HeavyReadLane {
+    latest_ticket: AtomicU64,
+}
+
+impl HeavyReadLane {
+    const fn new() -> Self {
+        Self {
+            latest_ticket: AtomicU64::new(0),
+        }
+    }
+
+    fn reserve(&self) -> u64 {
+        self.latest_ticket.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    fn is_latest(&self, ticket: u64) -> bool {
+        self.latest_ticket.load(Ordering::SeqCst) == ticket
+    }
+}
+
 /// 验证并规范化仓库路径，同时配置适合桌面客户端的短期 Store 复用。
 fn global_args(repository_path: &str) -> Result<LoreGlobalArgs, LoreCommandError> {
     let repository_path = validate_repository_path(repository_path)?;
@@ -7084,6 +7185,46 @@ fn collect_revision_tree_files(
     repository_path: &str,
     revision: &str,
 ) -> Result<Vec<RevisionTreeFile>, LoreCommandError> {
+    collect_revision_tree_files_filtered(repository_path, revision, None)
+}
+
+/// 只沿目标路径的祖先目录遍历不可变树，避免读取单个文件时枚举整个大型仓库。
+fn collect_revision_tree_files_at_paths(
+    repository_path: &str,
+    revision: &str,
+    paths: &[String],
+) -> Result<Vec<RevisionTreeFile>, LoreCommandError> {
+    let requested_paths = paths.iter().cloned().collect::<BTreeSet<_>>();
+    collect_revision_tree_files_filtered(repository_path, revision, Some(&requested_paths))
+}
+
+/// 判断目录是否是目标文件的祖先，或文件是否与目标路径精确相等。
+fn should_visit_revision_tree_node(
+    kind: u64,
+    path: &str,
+    requested_paths: Option<&BTreeSet<String>>,
+) -> bool {
+    let Some(requested_paths) = requested_paths else {
+        return true;
+    };
+    match kind {
+        // LoreNodeType::Directory
+        0 => requested_paths.iter().any(|target| {
+            target
+                .strip_prefix(path)
+                .is_some_and(|suffix| suffix.starts_with('/'))
+        }),
+        // LoreNodeType::File
+        1 => requested_paths.contains(path),
+        _ => false,
+    }
+}
+
+fn collect_revision_tree_files_filtered(
+    repository_path: &str,
+    revision: &str,
+    requested_paths: Option<&BTreeSet<String>>,
+) -> Result<Vec<RevisionTreeFile>, LoreCommandError> {
     let repository_id = read_revision_repository_id(repository_path)?;
     let store = open_revision_storage(repository_path)?;
     let load_args = (|| {
@@ -7196,14 +7337,17 @@ fn collect_revision_tree_files(
 
                 match kind {
                     // LoreNodeType::Directory
-                    0 => pending_directories.push((node_id, path)),
+                    0 if should_visit_revision_tree_node(kind, &path, requested_paths) => {
+                        pending_directories.push((node_id, path));
+                    }
                     // LoreNodeType::File
-                    1 => files.push(RevisionTreeFile {
-                        path,
-                        size: data["size"].as_u64().unwrap_or_default(),
-                        address: data["address"].as_str().unwrap_or_default().to_owned(),
-                        repository: listed_repository.clone(),
-                    }),
+                    1 if should_visit_revision_tree_node(kind, &path, requested_paths) => files
+                        .push(RevisionTreeFile {
+                            path,
+                            size: data["size"].as_u64().unwrap_or_default(),
+                            address: data["address"].as_str().unwrap_or_default().to_owned(),
+                            repository: listed_repository.clone(),
+                        }),
                     // LoreNodeType::Link 是一个已提交对象，但不是本仓库普通文件。
                     _ => {}
                 }
@@ -7217,6 +7361,192 @@ fn collect_revision_tree_files(
     close_revision_tree(tree_handle);
     close_revision_storage(store);
     read_result
+}
+
+#[derive(Default)]
+struct StorageGetCapture {
+    contents: BTreeMap<u64, Vec<u8>>,
+    error: Option<String>,
+}
+
+/** 按 Header 的精确长度预分配单个 Store 内容缓冲，避免分块到达时反复扩容。 */
+fn prepare_storage_get_buffer(
+    capture: &mut StorageGetCapture,
+    id: u64,
+    size_content: u64,
+) -> Result<(), String> {
+    let size = usize::try_from(size_content)
+        .map_err(|_| format!("Storage item {id} is too large for this platform"))?;
+    capture.contents.insert(id, vec![0; size]);
+    Ok(())
+}
+
+/**
+ * 在 Lore callback 有效期内把借用字节直接复制到最终缓冲。
+ *
+ * 不能先调用 `serialize_lore_event`：Serde JSON 会把每个字节扩展成一个独立
+ * `Value::Number`，几百 KiB 的资产就会制造几十 MiB 临时堆并持续抬高 Windows
+ * Private Bytes。这个专用路径只保留一份连续 `Vec<u8>`。
+ */
+fn copy_storage_get_chunk(
+    capture: &mut StorageGetCapture,
+    id: u64,
+    offset: u64,
+    bytes: &[u8],
+) -> Result<(), String> {
+    let start = usize::try_from(offset)
+        .map_err(|_| format!("Storage item {id} has an invalid chunk offset"))?;
+    let end = start
+        .checked_add(bytes.len())
+        .ok_or_else(|| format!("Storage item {id} chunk range overflowed"))?;
+    let target = capture
+        .contents
+        .get_mut(&id)
+        .ok_or_else(|| format!("Storage item {id} returned data before its header"))?;
+    if end > target.len() {
+        return Err(format!(
+            "Storage item {id} returned a chunk beyond its declared content size"
+        ));
+    }
+    target[start..end].copy_from_slice(bytes);
+    Ok(())
+}
+
+/**
+ * 执行低层 Store Get，同时让二进制载荷绕过通用 JSON 事件收集器。
+ *
+ * Header、完成状态与错误仍保留为普通事件，因而既不改变结构化错误语义，也不丢失
+ * 操作流诊断；只有体积最大的 `StorageGetData` 被直接聚合为连续字节。
+ */
+fn run_storage_get_operation(
+    handle: LoreStore,
+    items: Vec<LoreStorageGetItem>,
+) -> Result<(LoreOperationResult, BTreeMap<u64, Vec<u8>>), LoreCommandError> {
+    const OPERATION: &str = "storage.get";
+    let operation_id = format!(
+        "lore-operation-{}",
+        OPERATION_STREAM_COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+    emit_operation_stream(LoreOperationStreamEvent {
+        operation_id: operation_id.clone(),
+        operation: OPERATION,
+        phase: "queued",
+        event: None,
+        status: None,
+        duration_ms: None,
+        cancellable: false,
+    });
+    let started_at = Instant::now();
+    emit_operation_stream(LoreOperationStreamEvent {
+        operation_id: operation_id.clone(),
+        operation: OPERATION,
+        phase: "running",
+        event: None,
+        status: None,
+        duration_ms: None,
+        cancellable: false,
+    });
+
+    let events = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let capture = Arc::new(Mutex::new(StorageGetCapture::default()));
+    let event_target = Arc::clone(&events);
+    let capture_target = Arc::clone(&capture);
+    let callback_operation_id = operation_id.clone();
+    let callback: LoreEventCallback = Some(Box::new(move |event: &LoreEvent| {
+        let payload_handled = match event {
+            LoreEvent::StorageGetHeader(data) => {
+                if let Ok(mut target) = capture_target.lock() {
+                    if target.error.is_none() {
+                        target.error =
+                            prepare_storage_get_buffer(&mut target, data.id, data.size_content)
+                                .err();
+                    }
+                }
+                false
+            }
+            LoreEvent::StorageGetData(data) => {
+                if let Ok(mut target) = capture_target.lock() {
+                    if target.error.is_none() {
+                        // SAFETY: Lore 明确保证该借用视图在当前 callback 调用期间有效。
+                        let bytes = unsafe { data.bytes.as_slice() };
+                        target.error =
+                            copy_storage_get_chunk(&mut target, data.id, data.offset, bytes).err();
+                    }
+                }
+                true
+            }
+            _ => false,
+        };
+        if payload_handled {
+            return;
+        }
+
+        let serialized = serialize_lore_event(event);
+        if let Some(summary) = operation_stream_summary(&serialized) {
+            emit_operation_stream(LoreOperationStreamEvent {
+                operation_id: callback_operation_id.clone(),
+                operation: OPERATION,
+                phase: "streaming",
+                event: Some(summary),
+                status: None,
+                duration_ms: None,
+                cancellable: false,
+            });
+        }
+        if let Ok(mut target) = event_target.lock() {
+            target.push(serialized);
+        }
+    }));
+
+    let status = lore::runtime().block_on(lore::storage::get::get(
+        LoreGlobalArgs::default(),
+        LoreStorageGetArgs {
+            handle,
+            items: LoreArray::from_vec(items),
+        },
+        callback,
+    ));
+    let events = {
+        let mut target = events.lock().map_err(|_| {
+            LoreCommandError::new(
+                "event_collector_poisoned",
+                "The Lore event collector state is poisoned",
+            )
+        })?;
+        std::mem::take(&mut *target)
+    };
+    let capture = {
+        let mut target = capture.lock().map_err(|_| {
+            LoreCommandError::new(
+                "storage_capture_poisoned",
+                "The Lore storage payload collector state is poisoned",
+            )
+        })?;
+        std::mem::take(&mut *target)
+    };
+    if let Some(error) = capture.error {
+        return Err(LoreCommandError::new("storage_payload_invalid", error));
+    }
+
+    let duration_ms = started_at.elapsed().as_millis();
+    emit_operation_stream(LoreOperationStreamEvent {
+        operation_id,
+        operation: OPERATION,
+        phase: if status == 0 { "succeeded" } else { "failed" },
+        event: None,
+        status: Some(status),
+        duration_ms: Some(duration_ms),
+        cancellable: false,
+    });
+    Ok((
+        LoreOperationResult {
+            operation: OPERATION,
+            status,
+            duration_ms,
+            events,
+        },
+        capture.contents,
+    ))
 }
 
 /// 从内容寻址 Store 批量读取根修订中文本文件的真实字节。
@@ -7249,7 +7579,10 @@ fn read_revision_file_contents_matching(
                     id: (index + 1) as u64,
                     partition,
                     address,
-                    streaming: 0,
+                    // 直接接收 Store 叶片并写入预分配的最终 Vec。非流式模式会先在
+                    // Lore 内部重组一份完整 Bytes，再由 callback 复制一次；频繁预览
+                    // 二进制文件时，这套双缓冲会持续抬高原生分配器高水位。
+                    streaming: 1,
                     local_cache: 0,
                 },
             ))
@@ -7269,41 +7602,15 @@ fn read_revision_file_contents_matching(
         .into_iter()
         .map(|(_, _, item)| item)
         .collect::<Vec<_>>();
-    let result = run_operation("storage.get", move |callback| {
-        lore::runtime().block_on(lore::storage::get::get(
-            LoreGlobalArgs::default(),
-            LoreStorageGetArgs {
-                handle: store,
-                items: LoreArray::from_vec(items),
-            },
-            callback,
-        ))
-    });
+    let result = run_storage_get_operation(store, items);
 
-    let read_result = result.and_then(|result| {
+    let read_result = result.and_then(|(result, mut content_by_id)| {
         ensure_operation_success(&result, "Read revision file content")?;
         let mut contents = BTreeMap::new();
-        for event in result
-            .events
-            .iter()
-            .filter(|event| event["tagName"] == "storageGetData")
-        {
-            let Some(id) = event["data"]["id"].as_u64() else {
-                continue;
-            };
-            let Some(path) = path_by_id.get(&id) else {
-                continue;
-            };
-            let bytes = event["data"]["bytes"]
-                .as_array()
-                .map(|values| {
-                    values
-                        .iter()
-                        .filter_map(|value| value.as_u64().map(|byte| byte as u8))
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            contents.insert(path.clone(), bytes);
+        for (id, path) in path_by_id {
+            if let Some(bytes) = content_by_id.remove(&id) {
+                contents.insert(path, bytes);
+            }
         }
         Ok(contents)
     });
@@ -7599,7 +7906,51 @@ fn is_known_binary_revision_path(path: &str) -> bool {
     )
 }
 
-/// 构造单文件预览 DTO；内容来源在进入 Base64 编码前始终留在 Rust 适配层。
+/**
+ * 把轻量 JSON 元数据与原始载荷组成 Raw IPC 信封。
+ *
+ * 前四字节是小端元数据长度，随后依次是 UTF-8 JSON 和受控二进制载荷。Tauri 会把
+ * Raw 响应直接交给 WebView 的 `ArrayBuffer`，避免 Rust Base64、JSON 字符串与前端
+ * `atob` 在同一时刻保留多份大对象。
+ */
+fn encode_file_preview_response(
+    preview: LoreFilePreview,
+) -> Result<tauri::ipc::Response, LoreCommandError> {
+    let LoreFilePreview {
+        path,
+        kind,
+        mime_type,
+        data,
+        size,
+        structured_preview,
+    } = preview;
+    let metadata = serde_json::to_vec(&LoreFilePreviewMetadata {
+        path,
+        kind,
+        mime_type,
+        size,
+        structured_preview,
+    })
+    .map_err(|error| {
+        LoreCommandError::new(
+            "binary_preview_encode_failed",
+            format!("Failed to encode binary preview metadata: {error}"),
+        )
+    })?;
+    let metadata_length = u32::try_from(metadata.len()).map_err(|_| {
+        LoreCommandError::new(
+            "binary_preview_encode_failed",
+            "Binary preview metadata exceeded the IPC envelope limit",
+        )
+    })?;
+    let mut envelope = Vec::with_capacity(4 + metadata.len() + data.len());
+    envelope.extend_from_slice(&metadata_length.to_le_bytes());
+    envelope.extend_from_slice(&metadata);
+    envelope.extend_from_slice(&data);
+    Ok(tauri::ipc::Response::new(envelope))
+}
+
+/// 构造单文件预览 DTO；内容在 Rust 边界内保持连续原始字节，不再生成 Base64。
 fn build_file_preview(
     repository_path: &str,
     path: &str,
@@ -7619,7 +7970,11 @@ fn build_file_preview(
     })?;
 
     let bytes = if let Some(revision) = revision {
-        let files = collect_revision_tree_files(repository_path, revision)?;
+        let files = collect_revision_tree_files_at_paths(
+            repository_path,
+            revision,
+            std::slice::from_ref(&normalized_path),
+        )?;
         let file = files
             .iter()
             .find(|file| file.path == normalized_path)
@@ -7656,7 +8011,7 @@ fn build_file_preview(
         })?
     };
     ensure_binary_preview_size(bytes.len() as u64)?;
-    // size 报告原始资产字节；纹理转码后的 PNG 只进入 data_base64。
+    // size 报告原始资产字节；纹理转码后的 PNG 只进入 Raw IPC data。
     let original_size = bytes.len() as u64;
     let structured_preview = build_structured_preview(&relative_path, &bytes)
         .map_err(|error| LoreCommandError::new(error.code, error.message))?;
@@ -7667,7 +8022,7 @@ fn build_file_preview(
         path: normalized_path,
         kind,
         mime_type,
-        data_base64: BASE64_STANDARD.encode(&preview_bytes),
+        data: preview_bytes,
         size: original_size,
         structured_preview,
     })
@@ -7708,11 +8063,11 @@ fn build_initial_revision_diff(
     _context_lines: u32,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let started_at = Instant::now();
-    let files = collect_revision_tree_files(repository_path, target_revision)?;
-    let files = files
-        .into_iter()
-        .filter(|file| paths.is_empty() || paths.contains(&file.path))
-        .collect::<Vec<_>>();
+    let files = if paths.is_empty() {
+        collect_revision_tree_files(repository_path, target_revision)?
+    } else {
+        collect_revision_tree_files_at_paths(repository_path, target_revision, paths)?
+    };
     let contents = read_revision_file_contents(repository_path, &files)?;
     let events = files
         .iter()
@@ -7925,15 +8280,17 @@ fn run_operation(
     let callback_operation_id = operation_id.clone();
     let callback: LoreEventCallback = Some(Box::new(move |event: &LoreEvent| {
         let serialized = serialize_lore_event(event);
-        emit_operation_stream(LoreOperationStreamEvent {
-            operation_id: callback_operation_id.clone(),
-            operation,
-            phase: "streaming",
-            event: Some(serialized.clone()),
-            status: None,
-            duration_ms: None,
-            cancellable: false,
-        });
+        if let Some(summary) = operation_stream_summary(&serialized) {
+            emit_operation_stream(LoreOperationStreamEvent {
+                operation_id: callback_operation_id.clone(),
+                operation,
+                phase: "streaming",
+                event: Some(summary),
+                status: None,
+                duration_ms: None,
+                cancellable: false,
+            });
+        }
         if let Ok(mut target) = event_target.lock() {
             target.push(serialized);
         }
@@ -7984,6 +8341,35 @@ fn serialize_lore_event(event: &LoreEvent) -> Value {
             }
         })
     })
+}
+
+///
+/// 操作中心只消费进度数字；完整 Diff、Tree Child 和内容地址已经包含在最终 IPC 结果
+/// 中，不能再原样克隆并通过 Tauri Event 传输一次。这里只允许有限数字键，既保留
+/// Clone/Push 等长操作的实时进度，也让单个流事件拥有稳定且很小的内存上限。
+fn operation_stream_summary(event: &Value) -> Option<Value> {
+    const PROGRESS_KEYS: [&str; 6] = ["current", "processed", "total", "count", "bytes", "size"];
+    const PROGRESS_SIGNALS: [&str; 5] = ["current", "processed", "total", "count", "bytes"];
+
+    let tag_name = event["tagName"].as_str()?;
+    let data = event["data"].as_object()?;
+    if !PROGRESS_SIGNALS
+        .iter()
+        .any(|key| data.get(*key).is_some_and(Value::is_number))
+    {
+        return None;
+    }
+
+    let mut summary = serde_json::Map::new();
+    for key in PROGRESS_KEYS {
+        if let Some(value) = data.get(key).filter(|value| value.is_number()) {
+            summary.insert(key.to_owned(), value.clone());
+        }
+    }
+    Some(serde_json::json!({
+        "tagName": tag_name,
+        "data": summary
+    }))
 }
 
 /// 从 Status 事件提取当前、staged 与 incoming Revision。
@@ -8405,7 +8791,11 @@ fn materialize_external_diff_side(
             let normalized_path = relative_path
                 .to_string_lossy()
                 .replace(std::path::MAIN_SEPARATOR, "/");
-            let files = collect_revision_tree_files(repository_path, &revision)?;
+            let files = collect_revision_tree_files_at_paths(
+                repository_path,
+                &revision,
+                std::slice::from_ref(&normalized_path),
+            )?;
             let file = files
                 .iter()
                 .find(|file| file.path == normalized_path)
@@ -8579,12 +8969,16 @@ fn materialize_external_merge_revision(
         let normalized_path = relative_path
             .to_string_lossy()
             .replace(std::path::MAIN_SEPARATOR, "/");
-        collect_revision_tree_files(repository_path, &revision)?
-            .iter()
-            .find(|file| file.path == normalized_path)
-            .map(|file| read_revision_file_content(repository_path, file))
-            .transpose()?
-            .unwrap_or_default()
+        collect_revision_tree_files_at_paths(
+            repository_path,
+            &revision,
+            std::slice::from_ref(&normalized_path),
+        )?
+        .iter()
+        .find(|file| file.path == normalized_path)
+        .map(|file| read_revision_file_content(repository_path, file))
+        .transpose()?
+        .unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -8836,6 +9230,39 @@ mod tests {
     use super::*;
 
     const ZERO_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+
+    #[test]
+    fn storage_payload_capture_reassembles_fragments_without_json_values() {
+        let mut capture = StorageGetCapture::default();
+        prepare_storage_get_buffer(&mut capture, 7, 6)
+            .expect("The declared storage payload should fit in memory");
+
+        copy_storage_get_chunk(&mut capture, 7, 3, &[4, 5, 6])
+            .expect("A later storage fragment should fit the declared payload");
+        copy_storage_get_chunk(&mut capture, 7, 0, &[1, 2, 3])
+            .expect("An earlier storage fragment should fit the declared payload");
+
+        assert_eq!(
+            capture.contents.get(&7),
+            Some(&vec![1, 2, 3, 4, 5, 6]),
+            "Storage fragments must be copied directly into one contiguous byte buffer",
+        );
+    }
+
+    #[test]
+    fn storage_payload_capture_rejects_out_of_bounds_fragments() {
+        let mut capture = StorageGetCapture::default();
+        prepare_storage_get_buffer(&mut capture, 9, 3)
+            .expect("The declared storage payload should fit in memory");
+
+        let error = copy_storage_get_chunk(&mut capture, 9, 2, &[3, 4])
+            .expect_err("A fragment beyond the declared payload must be rejected");
+
+        assert!(
+            error.contains("beyond its declared content size"),
+            "The invalid fragment should retain a diagnostic reason",
+        );
+    }
 
     #[test]
     fn auth_mutation_releases_every_open_repository_context() {
@@ -9509,7 +9936,10 @@ mod tests {
         assert_eq!(preview.kind, "image");
         assert_eq!(preview.mime_type, "image/png");
         assert_eq!(preview.size, 8);
-        assert_eq!(preview.data_base64, "iVBORw0KGgo=");
+        assert_eq!(
+            preview.data,
+            [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]
+        );
     }
 
     #[test]
@@ -9948,6 +10378,64 @@ mod tests {
     }
 
     #[test]
+    fn targeted_revision_tree_walk_prunes_unrelated_directories_and_files() {
+        let paths = BTreeSet::from(["Content/Characters/Hero.glb".to_owned()]);
+
+        assert!(should_visit_revision_tree_node(0, "Content", Some(&paths)));
+        assert!(should_visit_revision_tree_node(
+            0,
+            "Content/Characters",
+            Some(&paths)
+        ));
+        assert!(!should_visit_revision_tree_node(0, "Scripts", Some(&paths)));
+        assert!(should_visit_revision_tree_node(
+            1,
+            "Content/Characters/Hero.glb",
+            Some(&paths)
+        ));
+        assert!(!should_visit_revision_tree_node(
+            1,
+            "Content/Characters/Villain.glb",
+            Some(&paths)
+        ));
+        assert!(should_visit_revision_tree_node(0, "Scripts", None));
+    }
+
+    #[test]
+    fn operation_stream_drops_large_non_progress_payloads() {
+        let event = serde_json::json!({
+            "tagName": "fileDiff",
+            "data": {
+                "path": "Content/Hero.txt",
+                "patch": "x".repeat(1024 * 1024)
+            }
+        });
+
+        assert!(operation_stream_summary(&event).is_none());
+    }
+
+    #[test]
+    fn operation_stream_keeps_only_bounded_progress_metrics() {
+        let event = serde_json::json!({
+            "tagName": "cloneProgress",
+            "data": {
+                "current": 4,
+                "total": 10,
+                "bytes": 8192,
+                "patch": "must not cross the stream boundary"
+            }
+        });
+
+        assert_eq!(
+            operation_stream_summary(&event),
+            Some(serde_json::json!({
+                "tagName": "cloneProgress",
+                "data": { "current": 4, "total": 10, "bytes": 8192 }
+            }))
+        );
+    }
+
+    #[test]
     fn revision_diff_adds_empty_new_files_without_text_hunks() {
         let source = vec![RevisionTreeFile {
             path: "existing.txt".to_owned(),
@@ -9979,6 +10467,19 @@ mod tests {
                 }
             })],
         );
+
+        /*
+         * Inspector 的单文件请求同样必须补全空文件；之前按“paths 非空”跳过扫描
+         * 会让这类结构变化在右侧 Diff 中完全消失。
+         */
+        let mut targeted_events = Vec::new();
+        supplement_structural_diff_events(
+            &mut targeted_events,
+            &source,
+            &target,
+            &["empty.txt".to_owned()],
+        );
+        assert_eq!(targeted_events, events);
     }
 
     #[test]

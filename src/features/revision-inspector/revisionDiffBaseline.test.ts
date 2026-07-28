@@ -57,25 +57,34 @@ describe('chooseRevisionDiffBaseline', () => {
 
   it('loads every merge Revision parent through the production scheduling semantics', async () => {
     const requestedSources: Array<string | null> = []
+    let activeLoads = 0
+    let maximumActiveLoads = 0
     const result = await loadRevisionDiffBaseline(['first-parent', 'second-parent'], async (sourceRevision) => {
       requestedSources.push(sourceRevision)
-      return sourceRevision === 'second-parent'
-        ? [
-            {
-              id: 'src/merged.ts',
-              path: 'src',
-              name: 'merged.ts',
-              status: 'added',
-              staged: false,
-              additions: 0,
-              deletions: 0,
-              binary: false
-            }
-          ]
-        : []
+      activeLoads += 1
+      maximumActiveLoads = Math.max(maximumActiveLoads, activeLoads)
+      await Promise.resolve()
+      const changes =
+        sourceRevision === 'second-parent'
+          ? [
+              {
+                id: 'src/merged.ts',
+                path: 'src',
+                name: 'merged.ts',
+                status: 'added' as const,
+                staged: false,
+                additions: 0,
+                deletions: 0,
+                binary: false
+              }
+            ]
+          : []
+      activeLoads -= 1
+      return changes
     })
 
     expect(requestedSources).toEqual(['first-parent', 'second-parent'])
+    expect(maximumActiveLoads).toBe(1)
     expect(result.sourceRevision).toBe('second-parent')
     expect(result.changes[0]?.name).toBe('merged.ts')
   })

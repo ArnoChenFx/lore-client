@@ -60,18 +60,9 @@ export function binaryPreviewKind(path: string): BinaryPreviewKind | null {
   return previewKindsByExtension[fileName.slice(dotIndex + 1).toLocaleLowerCase()] ?? null
 }
 
-/**
- * 把 IPC Base64 还原为独立字节数组，供 PDF.js / Three.js 接管所有权。
- *
- * 不生成 data URL 或 Blob URL，避免把可解析内容交给 WebView 原生查看器。
- */
-export function decodeBinaryPreviewBase64(dataBase64: string): Uint8Array {
-  const binary = atob(dataBase64.replaceAll(/\s/g, ''))
-  const bytes = new Uint8Array(binary.length)
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index)
-  }
-  return bytes
+/** 为会转移或接管 ArrayBuffer 的解析器创建独立字节所有权。 */
+export function copyBinaryPreviewData(data: Uint8Array): Uint8Array {
+  return data.slice()
 }
 
 /** 统一格式化预览真实字节大小，避免图片与 PDF 卡片各自维护单位换算。 */

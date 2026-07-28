@@ -50,8 +50,7 @@ import {
   verifyRepositoryFragment,
   verifyRepositoryPath
 } from '../../services/lore'
-import { readErrorMessage } from '../../shared/lib'
-import { changeFilePath } from '../../shared/lib'
+import { changeFilePath, LatestTaskQueue, readErrorMessage } from '../../shared/lib'
 import type {
   ApplicationMode,
   LoreDependencyGraphQuery,
@@ -294,16 +293,29 @@ export function useRepositoryToolsController({
   const [loading, setLoading] = useState(false)
   const resourceRequestCounter = useRef(0)
   const lockRequestCounter = useRef(0)
+  const fileLockStatusQueue = useRef(new LatestTaskQueue())
+  const resourceRepositoryPathRef = useRef(activeSnapshot?.repository.path ?? '')
 
   useEffect(() => {
+    const queue = fileLockStatusQueue.current
+    queue.activate()
+    return () => queue.dispose()
+  }, [])
+
+  const releaseRepositoryToolResources = useCallback(() => {
     /*
-     * Repository Tools 可以在多项目标签间保持打开。切换仓库时先清空上一仓库的
-     * 远端说明和发布账户快照，避免新仓库资源返回前短暂显示上一仓库的数据。
+     * 这些数组和图只服务当前打开的工具页，不属于仓库会话快照。关闭工具或切换
+     * Repository 后立即断开引用，避免完整 Layer、Link、依赖图和 View 规则被隐藏
+     * 在 React 状态中长期保留。
      */
+    setLayers([])
+    setLinks([])
+    setDependencyQuery(null)
+    setRepositoryView(null)
     setConnectedRemoteDescription('')
     setConnectedRemoteName('')
     setPublishAuthIdentities([])
-  }, [activeSnapshot?.repository.path])
+  }, [])
 
   /** 读取协作锁时使用独立序号，工具页全量 Query 与工作区路径 Status 不得互相覆盖。 */
   const loadLocks = useCallback(
@@ -317,10 +329,12 @@ export function useRepositoryToolsController({
       setFileLockState('loading')
       try {
         const result = paths
-          ? await loadFileLockStatus(
-              activeSnapshot.repository.path,
-              activeSnapshot.repository.branch,
-              normalizeRepositoryToolPaths(paths)
+          ? await fileLockStatusQueue.current.run(() =>
+              loadFileLockStatus(
+                activeSnapshot.repository.path,
+                activeSnapshot.repository.branch,
+                normalizeRepositoryToolPaths(paths)
+              )
             )
           : await queryFileLocks(activeSnapshot.repository.path, activeSnapshot.repository.branch)
         if (requestId === lockRequestCounter.current) {
@@ -365,7 +379,8 @@ export function useRepositoryToolsController({
     resourceRequestCounter.current += 1
     setTab(null)
     setLoading(false)
-  }, [])
+    releaseRepositoryToolResources()
+  }, [releaseRepositoryToolResources])
 
   const open = useCallback(
     async (nextTab: RepositoryToolTab) => {
@@ -476,6 +491,22 @@ export function useRepositoryToolsController({
     },
     [activeSnapshot, applicationMode, authAccountBindings, loadLocks, notify, openRepository]
   )
+
+  useEffect(() => {
+    const repositoryPath = activeSnapshot?.repository.path ?? ''
+    if (resourceRepositoryPathRef.current === repositoryPath) return
+
+    resourceRepositoryPathRef.current = repositoryPath
+    resourceRequestCounter.current += 1
+    setLoading(false)
+    releaseRepositoryToolResources()
+
+    /*
+     * Repository Tools 允许在仓库标签间保持打开。释放旧仓库资源后重新执行当前页签
+     * 的惰性读取；路径守卫保证普通快照刷新不会重复加载大型工具数据。
+     */
+    if (tab) void open(tab)
+  }, [activeSnapshot?.repository.path, open, releaseRepositoryToolResources, tab])
 
   const setActiveBranchProtected = useCallback(
     async (branch: string, protectedValue: boolean) => {

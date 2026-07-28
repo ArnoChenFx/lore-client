@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ChangeFile, Revision, RevisionFile } from '../../types'
-import { projectRevisionInspector } from './useRevisionInspectorData'
+import {
+  isRevisionDiffRequestCurrent,
+  projectRevisionInspector,
+  revisionInspectorRetention
+} from './useRevisionInspectorData'
 
 const revision: Revision = {
   id: 'revision-2',
@@ -40,6 +44,45 @@ const treeFile: RevisionFile = {
 }
 
 describe('revision inspector projection', () => {
+  it('rejects a diff request retained from another repository tab', () => {
+    expect(
+      isRevisionDiffRequestCurrent({
+        repositoryPath: 'E:\\Repos\\current',
+        selectedRevisionId: 'revision-2',
+        loadedRepositoryPath: 'E:\\Repos\\previous',
+        loadedRevisionId: 'revision-2',
+        primaryPath: 'src/file.ts',
+        primaryFileBinary: false
+      })
+    ).toBe(false)
+    expect(
+      isRevisionDiffRequestCurrent({
+        repositoryPath: 'E:\\Repos\\current',
+        selectedRevisionId: 'revision-2',
+        loadedRepositoryPath: 'E:\\Repos\\current',
+        loadedRevisionId: 'revision-2',
+        primaryPath: 'src/file.ts',
+        primaryFileBinary: false
+      })
+    ).toBe(true)
+    expect(
+      isRevisionDiffRequestCurrent({
+        repositoryPath: 'E:\\Repos\\current',
+        selectedRevisionId: 'revision-2',
+        loadedRepositoryPath: 'E:\\Repos\\current',
+        loadedRevisionId: 'revision-2',
+        primaryPath: 'Content/texture.png',
+        primaryFileBinary: true
+      })
+    ).toBe(false)
+  })
+
+  it('releases large resources when their inspector tab is inactive', () => {
+    expect(revisionInspectorRetention('overview')).toEqual({ changes: false, files: false })
+    expect(revisionInspectorRetention('changes')).toEqual({ changes: true, files: false })
+    expect(revisionInspectorRetention('tree')).toEqual({ changes: false, files: true })
+  })
+
   it('hides stale async results from a previously selected revision', () => {
     const projection = projectRevisionInspector({
       applicationMode: 'tauri',

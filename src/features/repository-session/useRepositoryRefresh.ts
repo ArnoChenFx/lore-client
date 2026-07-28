@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { connectRepositoryNotifications, loadRepositorySnapshot } from '../../services/lore'
+import { LatestTaskQueue } from '../../shared/lib'
 import type { LoreRepositoryNotification, RepositoryRemoteState, RepositorySnapshot } from '../../types'
 
 const REFRESH_NOTIFICATION_TAGS = new Set([
@@ -28,6 +29,35 @@ export function shouldAutomaticallyRecoverRepository(remoteState: RepositoryRemo
 
 const RECOVERY_BASE_DELAY_MS = 1_000
 const RECOVERY_MAX_DELAY_MS = 30_000
+/** 首次实时通知只在仓库连续保持活动后建立；快照读取不受该窗口影响。 */
+export const REPOSITORY_NOTIFICATION_STABLE_DELAY_MS = 3_000
+
+/**
+ * 将活动 Repository 的通知连接收敛为“一个建立中连接 + 一个最新目标”。
+ *
+ * Tauri invoke 不能在进入 Rust 后取消；若每次标签切换都直接执行 Subscribe，旧 effect
+ * 即使已经 disposed，也会先注册 WebView listener 并占用 blocking worker。该协调器让
+ * 中间 Repository 意图在执行真实连接前被淘汰，同时保留首个活动连接的正常清理机会。
+ */
+export class RepositoryNotificationConnectionQueue {
+  private readonly queue = new LatestTaskQueue()
+
+  activate() {
+    this.queue.activate()
+  }
+
+  connect<T>(task: () => Promise<T>): Promise<T> {
+    return this.queue.run(task)
+  }
+
+  cancelPending() {
+    this.queue.cancelPending()
+  }
+
+  dispose() {
+    this.queue.dispose()
+  }
+}
 
 /**
  * 生成带轻微抖动的有上限指数退避，防止多个仓库或多个客户端同时轰击刚恢复的服务。
@@ -67,7 +97,14 @@ export function useRepositoryRefresh({
   const mutationInFlight = useRef(false)
   const snapshotRefreshPaths = useRef(new Set<string>())
   const notificationRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const notificationConnectionQueue = useRef(new RepositoryNotificationConnectionQueue())
   const [refreshingRepositoryPaths, setRefreshingRepositoryPaths] = useState<Set<string>>(() => new Set())
+
+  useEffect(() => {
+    const queue = notificationConnectionQueue.current
+    queue.activate()
+    return () => queue.dispose()
+  }, [])
 
   const tryBeginRepositoryMutation = useCallback(() => {
     if (mutationInFlight.current) return false
@@ -162,6 +199,7 @@ export function useRepositoryRefresh({
   useEffect(() => {
     if (!enabled || !networkEnabled || !repositoryPath || remoteState !== 'online') return
 
+    const connectionQueue = notificationConnectionQueue.current
     let disposed = false
     let disconnect: (() => Promise<void>) | undefined
     let connecting = false
@@ -207,13 +245,15 @@ export function useRepositoryRefresh({
       if (disposed || disconnect || connecting) return
       connecting = true
       try {
-        const cleanup = await connectRepositoryNotifications(repositoryPath, (notification) => {
-          if (isRepositoryNotificationDisconnected(notification)) {
-            void handleDisconnected()
-            return
-          }
-          if (isRepositoryRefreshNotification(notification)) refreshAfterNotification()
-        })
+        const cleanup = await connectionQueue.connect(() =>
+          connectRepositoryNotifications(repositoryPath, (notification) => {
+            if (isRepositoryNotificationDisconnected(notification)) {
+              void handleDisconnected()
+              return
+            }
+            if (isRepositoryRefreshNotification(notification)) refreshAfterNotification()
+          })
+        )
         if (disposed) {
           void cleanup()
         } else {
@@ -222,6 +262,8 @@ export function useRepositoryRefresh({
           checkedSnapshotAfterLoss = false
         }
       } catch {
+        // 被新 Repository 意图替代的旧 effect 已经 disposed，不得再读取旧快照或重试。
+        if (disposed) return
         /* 通知是附加能力；失败后退避重试，但不打断本地工作流或连续弹 Toast。 */
         if (!checkedSnapshotAfterLoss) {
           checkedSnapshotAfterLoss = true
@@ -240,13 +282,23 @@ export function useRepositoryRefresh({
       if (document.visibilityState === 'visible') reconnectImmediately()
     }
 
-    void connect()
+    /*
+     * 通知是附加能力，不需要在 Repository 标签刚被选中的同一帧建立。先经过 3 秒
+     * 稳定窗口：快速切换只会反复取消尚未执行的计时器，既不注册 WebView
+     * listener，也不进入 Lore Subscribe；用户停留后才连接最终 Repository。
+     */
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null
+      void connect()
+    }, REPOSITORY_NOTIFICATION_STABLE_DELAY_MS)
     window.addEventListener('online', reconnectImmediately)
     window.addEventListener('focus', reconnectImmediately)
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
       disposed = true
+      // 队列中尚未进入 Tauri 的旧 Repository 连接必须随 effect 一并释放。
+      connectionQueue.cancelPending()
       if (reconnectTimer) clearTimeout(reconnectTimer)
       if (notificationRefreshTimer.current) {
         clearTimeout(notificationRefreshTimer.current)

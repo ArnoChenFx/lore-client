@@ -3,7 +3,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
 import { t } from '../../../i18n'
 import { loadBinaryFilePreview, loadWorkingTreeDiff } from '../../../services/lore'
-import { binaryPreviewKind, changeFilePath, createDemoWorkingTreeDiff, readErrorMessage } from '../../../shared/lib'
+import {
+  binaryPreviewKind,
+  changeFilePath,
+  createDemoWorkingTreeDiff,
+  LatestTaskQueue,
+  readErrorMessage,
+  settleTasksSequentially
+} from '../../../shared/lib'
 import type {
   ApplicationMode,
   BinaryDiffPreview,
@@ -48,6 +55,18 @@ export function WorkingTreeDiffContainer({
   const [binaryPreviewError, setBinaryPreviewError] = useState<string | null>(null)
   const diffRequestCounter = useRef(0)
   const binaryPreviewRequestCounter = useRef(0)
+  const diffQueue = useRef(new LatestTaskQueue())
+  const binaryPreviewQueue = useRef(new LatestTaskQueue())
+
+  useEffect(() => {
+    const queues = [diffQueue.current, binaryPreviewQueue.current]
+    queues.forEach((queue) => queue.activate())
+    return () => {
+      diffRequestCounter.current += 1
+      binaryPreviewRequestCounter.current += 1
+      queues.forEach((queue) => queue.dispose())
+    }
+  }, [])
 
   const loadRepositoryBinaryPreview = useCallback(
     (path: string, revision?: string): Promise<BinaryFilePreview> =>
@@ -59,6 +78,7 @@ export function WorkingTreeDiffContainer({
   useEffect(() => {
     diffRequestCounter.current += 1
     const requestId = diffRequestCounter.current
+    diffQueue.current.cancelPending()
     setDiff(null)
     setDiffError(null)
 
@@ -82,7 +102,8 @@ export function WorkingTreeDiffContainer({
     }
 
     setDiffLoading(true)
-    void loadWorkingTreeDiff(repositoryPath, [changeFilePath(file)], preferences.diff)
+    void diffQueue.current
+      .run(() => loadWorkingTreeDiff(repositoryPath, [changeFilePath(file)], preferences.diff))
       .then((diffs) => {
         if (requestId !== diffRequestCounter.current) return
         setDiff(
@@ -110,8 +131,10 @@ export function WorkingTreeDiffContainer({
    * 新增文件没有 before，删除文件没有 after；快速切换时旧请求不会覆盖新文件。
    */
   useEffect(() => {
+    const queue = binaryPreviewQueue.current
     binaryPreviewRequestCounter.current += 1
     const requestId = binaryPreviewRequestCounter.current
+    queue.cancelPending()
     setBinaryPreview(null)
     setBinaryPreviewError(null)
 
@@ -128,18 +151,18 @@ export function WorkingTreeDiffContainer({
 
     const requests: Array<{
       side: keyof BinaryDiffPreview
-      promise: Promise<BinaryFilePreview>
+      load: () => Promise<BinaryFilePreview>
     }> = []
     if (file.status !== 'added' && currentRevisionId) {
       requests.push({
         side: 'before',
-        promise: loadRepositoryBinaryPreview(path, currentRevisionId)
+        load: () => loadRepositoryBinaryPreview(path, currentRevisionId)
       })
     }
     if (file.status !== 'deleted') {
       requests.push({
         side: 'after',
-        promise: loadRepositoryBinaryPreview(path)
+        load: () => loadRepositoryBinaryPreview(path)
       })
     }
     if (requests.length === 0) {
@@ -149,7 +172,8 @@ export function WorkingTreeDiffContainer({
     }
 
     setBinaryPreviewLoading(true)
-    void Promise.allSettled(requests.map((request) => request.promise))
+    void queue
+      .run(() => settleTasksSequentially(requests.map((request) => request.load)))
       .then((results) => {
         if (requestId !== binaryPreviewRequestCounter.current) return
         const next: BinaryDiffPreview = {}
@@ -176,6 +200,7 @@ export function WorkingTreeDiffContainer({
       })
     // 组件卸载或依赖变化时主动清空预览数据，加速垃圾回收。
     return () => {
+      queue.cancelPending()
       setBinaryPreview(null)
       setBinaryPreviewError(null)
     }

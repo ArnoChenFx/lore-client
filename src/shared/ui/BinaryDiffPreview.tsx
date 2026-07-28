@@ -28,27 +28,17 @@ interface PreviewCardProps {
 }
 
 /**
- * 将 Base64 数据转换为 Object URL。
+ * 将 Raw IPC 字节转换为 Object URL。
  *
  * Object URL 比 data URL 更高效：
- * 1. 不需要解析整个 Base64 字符串
- * 2. 浏览器可以直接访问内存中的 Blob
- * 3. 释放时可以显式调用 URL.revokeObjectURL
- *
- * 在 SSR 环境中（如 renderToStaticMarkup）回退到 data URL，
- * 因为 useEffect 不会在服务端执行。
+ * 浏览器可以直接访问内存中的 Blob，释放时再显式调用 URL.revokeObjectURL。
+ * SSR 不生成内嵌 data URL，避免测试或预渲染重新引入大字符串路径。
  */
-function useObjectUrl(dataBase64: string, mimeType: string): string {
-  const [url, setUrl] = useState(() => {
-    // SSR 环境中直接使用 data URL。
-    if (typeof window === 'undefined' || typeof URL.createObjectURL === 'undefined') {
-      return dataBase64 ? `data:${mimeType};base64,${dataBase64}` : ''
-    }
-    return ''
-  })
+function useObjectUrl(data: Uint8Array, mimeType: string): string {
+  const [url, setUrl] = useState('')
 
   useEffect(() => {
-    if (!dataBase64) {
+    if (data.byteLength === 0) {
       setUrl('')
       return
     }
@@ -56,14 +46,7 @@ function useObjectUrl(dataBase64: string, mimeType: string): string {
     // 浏览器环境中使用 Object URL。
     if (typeof URL.createObjectURL !== 'undefined') {
       try {
-        // 将 Base64 解码为二进制数据。
-        const binaryString = atob(dataBase64)
-        const bytes = new Uint8Array(binaryString.length)
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i)
-        }
-
-        const blob = new Blob([bytes], { type: mimeType })
+        const blob = new Blob([data.slice().buffer], { type: mimeType })
         const objectUrl = URL.createObjectURL(blob)
         setUrl(objectUrl)
 
@@ -72,14 +55,10 @@ function useObjectUrl(dataBase64: string, mimeType: string): string {
           URL.revokeObjectURL(objectUrl)
         }
       } catch {
-        // Base64 解码失败时回退到 data URL。
-        setUrl(`data:${mimeType};base64,${dataBase64}`)
+        setUrl('')
       }
-    } else {
-      // 回退到 data URL。
-      setUrl(`data:${mimeType};base64,${dataBase64}`)
     }
-  }, [dataBase64, mimeType])
+  }, [data, mimeType])
 
   return url
 }
@@ -87,23 +66,20 @@ function useObjectUrl(dataBase64: string, mimeType: string): string {
 /**
  * 使用 Object URL 渲染图片预览。
  *
- * 比直接使用 data URL 更高效，因为：
- * 1. 不需要在 HTML 中嵌入整个 Base64 字符串
- * 2. 浏览器可以更高效地管理内存
- * 3. 卸载时可以显式释放内存
+ * Object URL 不把原始字节嵌入 HTML，且卸载时可以显式释放。
  */
 function ImagePreview({
   fileName,
   label,
-  dataBase64,
+  data,
   mimeType
 }: {
   fileName: string
   label: string
-  dataBase64: string
+  data: Uint8Array
   mimeType: string
 }) {
-  const url = useObjectUrl(dataBase64, mimeType)
+  const url = useObjectUrl(data, mimeType)
 
   if (!url) {
     return null
@@ -127,22 +103,22 @@ function PreviewCard({ label, fileName, preview }: PreviewCardProps) {
       </header>
       <div className="binary-diff-preview__canvas">
         {preview.kind === 'image' ? (
-          <ImagePreview fileName={fileName} label={label} dataBase64={preview.dataBase64} mimeType={preview.mimeType} />
+          <ImagePreview fileName={fileName} label={label} data={preview.data} mimeType={preview.mimeType} />
         ) : preview.kind === 'texture' ? (
           <TextureCanvasPreview
             fileName={fileName}
             label={label}
-            dataBase64={preview.dataBase64}
+            data={preview.data}
             metadata={preview.structuredPreview}
           />
         ) : preview.kind === 'model' ? (
-          <ModelCanvasPreview fileName={fileName} label={label} dataBase64={preview.dataBase64} />
+          <ModelCanvasPreview fileName={fileName} label={label} data={preview.data} />
         ) : preview.kind === 'csv' ? (
-          <CsvTablePreview fileName={fileName} label={label} dataBase64={preview.dataBase64} />
+          <CsvTablePreview fileName={fileName} label={label} data={preview.data} />
         ) : preview.kind === 'audio' ? (
-          <AudioPreview fileName={fileName} label={label} mimeType={preview.mimeType} dataBase64={preview.dataBase64} />
+          <AudioPreview fileName={fileName} label={label} mimeType={preview.mimeType} data={preview.data} />
         ) : preview.kind === 'font' ? (
-          <FontPreview fileName={fileName} label={label} dataBase64={preview.dataBase64} />
+          <FontPreview fileName={fileName} label={label} data={preview.data} />
         ) : preview.kind === 'archive' || preview.kind === 'asset' ? (
           <StructuredAssetPreview
             fileName={fileName}
@@ -151,7 +127,7 @@ function PreviewCard({ label, fileName, preview }: PreviewCardProps) {
             size={preview.size}
           />
         ) : (
-          <PdfCanvasPreview fileName={fileName} label={label} dataBase64={preview.dataBase64} />
+          <PdfCanvasPreview fileName={fileName} label={label} data={preview.data} />
         )}
       </div>
     </article>

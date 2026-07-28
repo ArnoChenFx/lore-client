@@ -1346,11 +1346,42 @@ export async function loadBinaryFilePreview(
   path: string,
   revision?: string
 ): Promise<BinaryFilePreview> {
-  return invokeCommand<BinaryFilePreview>('lore_file_preview', {
+  const envelope = await invokeCommand<ArrayBuffer>('lore_file_preview', {
     repositoryPath,
     path,
     revision
   })
+  return decodeBinaryFilePreviewEnvelope(envelope)
+}
+
+interface BinaryFilePreviewMetadata extends Omit<BinaryFilePreview, 'data'> {}
+
+/**
+ * 解码 Rust Raw IPC 二进制信封。
+ *
+ * 只为 UTF-8 JSON 元数据创建短字符串；资产正文保持 `Uint8Array` 视图，避免
+ * ArrayBuffer → Base64 → atob → Uint8Array 的三重峰值与长期字符串高水位。
+ */
+export function decodeBinaryFilePreviewEnvelope(envelope: ArrayBuffer): BinaryFilePreview {
+  const bytes = new Uint8Array(envelope)
+  if (bytes.byteLength < 4) {
+    throw new Error('Binary preview IPC envelope is incomplete')
+  }
+  const metadataLength = new DataView(envelope, 0, 4).getUint32(0, true)
+  const payloadOffset = 4 + metadataLength
+  if (metadataLength <= 0 || payloadOffset > bytes.byteLength) {
+    throw new Error('Binary preview IPC metadata length is invalid')
+  }
+  const metadataText = new TextDecoder().decode(bytes.subarray(4, payloadOffset))
+  const metadata = JSON.parse(metadataText) as BinaryFilePreviewMetadata
+  if (!metadata.path || !metadata.kind || !metadata.mimeType || !Number.isFinite(metadata.size)) {
+    throw new Error('Binary preview IPC metadata is invalid')
+  }
+  return {
+    ...metadata,
+    // subarray 不复制载荷；React state 只保留本次信封的一个 ArrayBuffer 所有权。
+    data: bytes.subarray(payloadOffset)
+  }
 }
 
 /**

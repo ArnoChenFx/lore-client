@@ -2,12 +2,10 @@ import { FileWarning, LoaderCircle, Type } from 'lucide-react'
 import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { decodeBinaryPreviewBase64 } from '../lib'
-
 interface FontPreviewProps {
   fileName: string
   label: string
-  dataBase64: string
+  data: Uint8Array
 }
 
 /**
@@ -16,7 +14,7 @@ interface FontPreviewProps {
  * FontFace 不接收 URL，因此字体无法追随外部资源；卸载时从 document.fonts 删除，
  * 避免多次切换前后版本后积累不可回收的临时字体族。
  */
-export function FontPreview({ fileName, label, dataBase64 }: FontPreviewProps) {
+export function FontPreview({ fileName, label, data }: FontPreviewProps) {
   const { t } = useTranslation()
   const instanceId = useId().replaceAll(':', '')
   const family = `LoreAssetPreview-${instanceId}`
@@ -29,9 +27,8 @@ export function FontPreview({ fileName, label, dataBase64 }: FontPreviewProps) {
 
     void (async () => {
       try {
-        const bytes = decodeBinaryPreviewBase64(dataBase64)
-        const copy = new Uint8Array(bytes.byteLength)
-        copy.set(bytes)
+        // FontFace 可能接管传入缓冲；只复制一次，不能转移 React state 持有的 Raw IPC 数据。
+        const copy = data.slice()
         const face = new FontFace(family, copy.buffer)
         loadedFace = await face.load()
         if (cancelled) return
@@ -46,7 +43,7 @@ export function FontPreview({ fileName, label, dataBase64 }: FontPreviewProps) {
       cancelled = true
       if (loadedFace) document.fonts.delete(loadedFace)
     }
-  }, [dataBase64, family])
+  }, [data, family])
 
   if (status !== 'ready') {
     return (

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ExternalDiffToolPreference } from '../../types'
-import { collectExternalToolCandidates, selectAvailableExternalTools } from './useAvailableExternalTools'
+import {
+  collectExternalToolCandidates,
+  externalToolConfigurationKey,
+  selectAvailableExternalTools
+} from './useAvailableExternalTools'
 
 function tool(
   id: string,
@@ -23,6 +27,19 @@ function tool(
 }
 
 describe('available external tools controller', () => {
+  it('keeps the configuration key stable across equivalent preference copies', () => {
+    const first = {
+      externalDiffTools: [tool('diff', 'diff')],
+      externalMergeTools: [tool('merge', 'merge')]
+    }
+    const copied = structuredClone(first)
+    const changed = structuredClone(first)
+    changed.externalDiffTools[0]!.executable = 'D:\\Tools\\diff.exe'
+
+    expect(externalToolConfigurationKey(copied)).toBe(externalToolConfigurationKey(first))
+    expect(externalToolConfigurationKey(changed)).not.toBe(externalToolConfigurationKey(first))
+  })
+
   it('validates Diff and Merge candidates with their own templates', () => {
     const duplicateId = 'shared-id'
     const preferences = {

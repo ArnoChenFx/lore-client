@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { binaryPreviewKind, decodeBinaryPreviewBase64, formatPreviewBytes } from './binaryPreview'
+import { binaryPreviewKind, copyBinaryPreviewData, formatPreviewBytes } from './binaryPreview'
 
 describe('binary preview formats', () => {
   it('recognizes media, archives, fonts, and engine assets across path styles and casing', () => {
@@ -40,7 +40,10 @@ describe('binary preview formats', () => {
     expect(formatPreviewBytes(2 * 1_024 * 1_024)).toBe('2.0 MB')
   })
 
-  it('decodes preview Base64 into an independent byte array', () => {
-    expect(Array.from(decodeBinaryPreviewBase64('JVBERg=='))).toEqual([37, 80, 68, 70])
+  it('copies raw preview data into an independent byte array', () => {
+    const source = new Uint8Array([37, 80, 68, 70])
+    const copy = copyBinaryPreviewData(source)
+    expect(Array.from(copy)).toEqual([37, 80, 68, 70])
+    expect(copy).not.toBe(source)
   })
 })

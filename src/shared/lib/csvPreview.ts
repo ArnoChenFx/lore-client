@@ -114,9 +114,8 @@ export function parseCsvPreview(
   }
 }
 
-/** 从 Base64 预览载荷解码 UTF-8 CSV 文本。 */
-export function decodeCsvPreviewText(dataBase64: string): string {
-  const bytes = Uint8Array.from(atob(dataBase64.replaceAll(/\s/g, '')), (char) => char.charCodeAt(0))
+/** 从 Raw IPC 预览载荷解码 UTF-8 CSV 文本。 */
+export function decodeCsvPreviewText(bytes: Uint8Array): string {
   // 去掉常见 UTF-8 BOM，避免首列表头带不可见前缀。
   const start = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? 3 : 0
   return new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(start))

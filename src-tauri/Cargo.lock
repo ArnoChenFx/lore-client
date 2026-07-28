@@ -1270,7 +1270,6 @@ dependencies = [
  "miniz_oxide",
  "num-complex",
  "pulp",
- "rayon-core",
  "smallvec",
  "zune-inflate",
 ]
@@ -2591,7 +2590,7 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 [[package]]
 name = "lore"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=b47b23da6a377fa6f906c22bd88b5386aa204cb1#b47b23da6a377fa6f906c22bd88b5386aa204cb1"
+source = "git+https://github.com/EpicGames/lore.git?rev=f9c3a7268e64b57e861ce41292a48aae6cae63a3#f9c3a7268e64b57e861ce41292a48aae6cae63a3"
 dependencies = [
  "anyhow",
  "bitcode",
@@ -2626,7 +2625,7 @@ dependencies = [
 [[package]]
 name = "lore-base"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=b47b23da6a377fa6f906c22bd88b5386aa204cb1#b47b23da6a377fa6f906c22bd88b5386aa204cb1"
+source = "git+https://github.com/EpicGames/lore.git?rev=f9c3a7268e64b57e861ce41292a48aae6cae63a3#f9c3a7268e64b57e861ce41292a48aae6cae63a3"
 dependencies = [
  "anyhow",
  "backtrace",
@@ -2656,7 +2655,6 @@ dependencies = [
 name = "lore-client"
 version = "0.1.10"
 dependencies = [
- "base64 0.22.1",
  "exr",
  "glob-match",
  "image",
@@ -2681,7 +2679,7 @@ dependencies = [
 [[package]]
 name = "lore-credential"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=b47b23da6a377fa6f906c22bd88b5386aa204cb1#b47b23da6a377fa6f906c22bd88b5386aa204cb1"
+source = "git+https://github.com/EpicGames/lore.git?rev=f9c3a7268e64b57e861ce41292a48aae6cae63a3#f9c3a7268e64b57e861ce41292a48aae6cae63a3"
 dependencies = [
  "base64 0.22.1",
  "jsonwebtoken",
@@ -2702,7 +2700,7 @@ dependencies = [
 [[package]]
 name = "lore-error-set"
 version = "0.1.0"
-source = "git+https://github.com/EpicGames/lore.git?rev=b47b23da6a377fa6f906c22bd88b5386aa204cb1#b47b23da6a377fa6f906c22bd88b5386aa204cb1"
+source = "git+https://github.com/EpicGames/lore.git?rev=f9c3a7268e64b57e861ce41292a48aae6cae63a3#f9c3a7268e64b57e861ce41292a48aae6cae63a3"
 dependencies = [
  "lore-error-set-macro",
 ]
@@ -2710,7 +2708,7 @@ dependencies = [
 [[package]]
 name = "lore-error-set-macro"
 version = "0.1.0"
-source = "git+https://github.com/EpicGames/lore.git?rev=b47b23da6a377fa6f906c22bd88b5386aa204cb1#b47b23da6a377fa6f906c22bd88b5386aa204cb1"
+source = "git+https://github.com/EpicGames/lore.git?rev=f9c3a7268e64b57e861ce41292a48aae6cae63a3#f9c3a7268e64b57e861ce41292a48aae6cae63a3"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2720,7 +2718,7 @@ dependencies = [
 [[package]]
 name = "lore-macro"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=b47b23da6a377fa6f906c22bd88b5386aa204cb1#b47b23da6a377fa6f906c22bd88b5386aa204cb1"
+source = "git+https://github.com/EpicGames/lore.git?rev=f9c3a7268e64b57e861ce41292a48aae6cae63a3#f9c3a7268e64b57e861ce41292a48aae6cae63a3"
 dependencies = [
  "quote",
  "syn 2.0.119",
@@ -2729,7 +2727,7 @@ dependencies = [
 [[package]]
 name = "lore-notification"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=b47b23da6a377fa6f906c22bd88b5386aa204cb1#b47b23da6a377fa6f906c22bd88b5386aa204cb1"
+source = "git+https://github.com/EpicGames/lore.git?rev=f9c3a7268e64b57e861ce41292a48aae6cae63a3#f9c3a7268e64b57e861ce41292a48aae6cae63a3"
 dependencies = [
  "async-trait",
  "lore-base",
@@ -2746,7 +2744,7 @@ dependencies = [
 [[package]]
 name = "lore-proto"
 version = "0.1.60"
-source = "git+https://github.com/EpicGames/lore.git?rev=b47b23da6a377fa6f906c22bd88b5386aa204cb1#b47b23da6a377fa6f906c22bd88b5386aa204cb1"
+source = "git+https://github.com/EpicGames/lore.git?rev=f9c3a7268e64b57e861ce41292a48aae6cae63a3#f9c3a7268e64b57e861ce41292a48aae6cae63a3"
 dependencies = [
  "lore-base",
  "prost",
@@ -2759,7 +2757,7 @@ dependencies = [
 [[package]]
 name = "lore-revision"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=b47b23da6a377fa6f906c22bd88b5386aa204cb1#b47b23da6a377fa6f906c22bd88b5386aa204cb1"
+source = "git+https://github.com/EpicGames/lore.git?rev=f9c3a7268e64b57e861ce41292a48aae6cae63a3#f9c3a7268e64b57e861ce41292a48aae6cae63a3"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2819,7 +2817,7 @@ dependencies = [
 [[package]]
 name = "lore-storage"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=b47b23da6a377fa6f906c22bd88b5386aa204cb1#b47b23da6a377fa6f906c22bd88b5386aa204cb1"
+source = "git+https://github.com/EpicGames/lore.git?rev=f9c3a7268e64b57e861ce41292a48aae6cae63a3#f9c3a7268e64b57e861ce41292a48aae6cae63a3"
 dependencies = [
  "async-trait",
  "bitflags 2.13.1",
@@ -2856,7 +2854,7 @@ dependencies = [
 [[package]]
 name = "lore-telemetry"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=b47b23da6a377fa6f906c22bd88b5386aa204cb1#b47b23da6a377fa6f906c22bd88b5386aa204cb1"
+source = "git+https://github.com/EpicGames/lore.git?rev=f9c3a7268e64b57e861ce41292a48aae6cae63a3#f9c3a7268e64b57e861ce41292a48aae6cae63a3"
 dependencies = [
  "axum",
  "http",
@@ -2879,7 +2877,7 @@ dependencies = [
 [[package]]
 name = "lore-transport"
 version = "0.8.6-nightly"
-source = "git+https://github.com/EpicGames/lore.git?rev=b47b23da6a377fa6f906c22bd88b5386aa204cb1#b47b23da6a377fa6f906c22bd88b5386aa204cb1"
+source = "git+https://github.com/EpicGames/lore.git?rev=f9c3a7268e64b57e861ce41292a48aae6cae63a3#f9c3a7268e64b57e861ce41292a48aae6cae63a3"
 dependencies = [
  "async-stream",
  "async-trait",

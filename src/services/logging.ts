@@ -4,7 +4,12 @@ import { debug, error as writeError, info, warn } from '@tauri-apps/plugin-log'
 import type { ApplicationLogInfo } from '../types'
 
 const MAX_LOG_MESSAGE_LENGTH = 4_000
-const EXPECTED_IPC_CONTROL_FLOW_CODES = new Set(['auth_binding_missing', 'auth_binding_identity_not_requested'])
+const EXPECTED_IPC_CONTROL_FLOW_CODES = new Set([
+  'auth_binding_missing',
+  'auth_binding_identity_not_requested',
+  // 高频切换时 Rust 会在进入真实 I/O 前淘汰旧重读；这是正常调度结果，不是用户故障。
+  'heavy_read_superseded'
+])
 
 /**
  * 在日志写入磁盘前移除常见凭据形式。

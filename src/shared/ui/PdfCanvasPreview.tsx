@@ -4,23 +4,23 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { t } from '../../i18n'
-import { decodeBinaryPreviewBase64 } from '../lib'
+import { copyBinaryPreviewData } from '../lib'
 import { IconButton } from './IconButton'
 
 interface PdfCanvasPreviewProps {
   fileName: string
   label: string
-  dataBase64: string
+  data: Uint8Array
 }
 
 /**
- * 把 IPC 返回的 Base64 内容还原为 PDF.js 可接管所有权的独立字节数组。
+ * 把 IPC 返回的字节复制为 PDF.js 可接管所有权的独立数组。
  *
  * 这里不生成 data URL 或 Blob URL：两种 URL 最终仍可能交给 WebView2 的内置
  * PDF 查看器，而该查看器在 iframe 场景存在拦截与兼容性问题。
  */
-export function decodePdfBase64(dataBase64: string): Uint8Array {
-  return decodeBinaryPreviewBase64(dataBase64)
+export function copyPdfData(data: Uint8Array): Uint8Array {
+  return copyBinaryPreviewData(data)
 }
 
 /** 将 PDF.js 的内部异常收敛成稳定、可操作的中文提示。 */
@@ -41,7 +41,7 @@ function describePdfError(error: unknown): string {
  * 组件只渲染当前页，并在尺寸变化时取消旧任务后重绘，避免长文档一次性占用大量
  * 内存；同时不创建注释层，因此 PDF 内的链接、表单和脚本不会进入应用交互上下文。
  */
-export function PdfCanvasPreview({ fileName, label, dataBase64 }: PdfCanvasPreviewProps) {
+export function PdfCanvasPreview({ fileName, label, data }: PdfCanvasPreviewProps) {
   const surfaceRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const renderTaskRef = useRef<RenderTask | null>(null)
@@ -94,7 +94,7 @@ export function PdfCanvasPreview({ fileName, label, dataBase64 }: PdfCanvasPrevi
         // Vite 会把 worker 作为独立静态资源打包，避免依赖 WebView2 原生 PDF 插件。
         pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
         loadingTask = pdfjs.getDocument({
-          data: decodePdfBase64(dataBase64),
+          data: copyPdfData(data),
           stopAtErrors: true,
           useWorkerFetch: false
         })
@@ -118,7 +118,7 @@ export function PdfCanvasPreview({ fileName, label, dataBase64 }: PdfCanvasPrevi
       renderTaskRef.current = null
       if (loadingTask) void loadingTask.destroy()
     }
-  }, [dataBase64])
+  }, [data])
 
   useEffect(() => {
     const canvas = canvasRef.current

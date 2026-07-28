@@ -4,12 +4,10 @@ import { useTranslation } from 'react-i18next'
 import type { Object3D, PerspectiveCamera, Scene, WebGLRenderer } from 'three'
 
 import { t } from '../../i18n'
-import { decodeBinaryPreviewBase64 } from '../lib'
-
 interface ModelCanvasPreviewProps {
   fileName: string
   label: string
-  dataBase64: string
+  data: Uint8Array
 }
 
 type OrbitControlsLike = {
@@ -44,7 +42,7 @@ function createIsolatedLoadingManager(LoadingManager: LoadingManagerConstructor)
   return manager
 }
 
-/** 把 IPC Base64 拷成独立 ArrayBuffer，避免 SharedArrayBuffer / 视图偏移问题。 */
+/** 把 Raw IPC 字节拷成独立 ArrayBuffer，避免解析器转移 React state 的底层缓冲。 */
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const copy = new Uint8Array(bytes.byteLength)
   copy.set(bytes)
@@ -79,21 +77,62 @@ function resolveSceneBackground(surface: HTMLElement, THREE: typeof import('thre
   return new THREE.Color('#1a1d24')
 }
 
-/** 释放网格几何与材质，避免切换前后版本时 WebGL 资源泄漏。 */
-function disposeObject3D(root: Object3D) {
+interface DisposableTexture {
+  isTexture: true
+  dispose: () => void
+}
+
+interface DisposableMaterial {
+  dispose: () => void
+  uniforms?: Record<string, { value?: unknown }>
+  [key: string]: unknown
+}
+
+/** 识别并释放材质直接引用或 Shader uniform 中的纹理。 */
+function disposeTextureValue(value: unknown, disposedTextures: Set<object>) {
+  if (Array.isArray(value)) {
+    value.forEach((entry) => disposeTextureValue(entry, disposedTextures))
+    return
+  }
+  if (!value || typeof value !== 'object' || !('isTexture' in value) || value.isTexture !== true) return
+  if (disposedTextures.has(value)) return
+  disposedTextures.add(value)
+  ;(value as DisposableTexture).dispose()
+}
+
+/** 释放网格几何、材质及其纹理，避免切换前后版本时 GPU 资源泄漏。 */
+export function disposeObject3D(root: Object3D) {
+  const disposedGeometries = new Set<object>()
+  const disposedMaterials = new Set<object>()
+  const disposedTextures = new Set<object>()
+
   root.traverse((child) => {
     const mesh = child as Object3D & {
       geometry?: { dispose: () => void }
-      material?: { dispose: () => void } | Array<{ dispose: () => void }>
+      material?: DisposableMaterial | DisposableMaterial[]
     }
-    mesh.geometry?.dispose()
+    if (mesh.geometry && !disposedGeometries.has(mesh.geometry)) {
+      disposedGeometries.add(mesh.geometry)
+      mesh.geometry.dispose()
+    }
     if (!mesh.material) return
-    if (Array.isArray(mesh.material)) {
-      for (const entry of mesh.material) entry.dispose()
-      return
+
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+    for (const material of materials) {
+      if (disposedMaterials.has(material)) continue
+      disposedMaterials.add(material)
+      Object.values(material).forEach((value) => disposeTextureValue(value, disposedTextures))
+      Object.values(material.uniforms ?? {}).forEach((uniform) => disposeTextureValue(uniform.value, disposedTextures))
+      material.dispose()
     }
-    mesh.material.dispose()
   })
+}
+
+/** 释放 Three.js 内部渲染列表并主动丢失上下文，让 WebView 归还 GPU backing store。 */
+export function disposeWebGLRenderer(renderer: WebGLRenderer) {
+  renderer.renderLists.dispose()
+  renderer.dispose()
+  renderer.forceContextLoss()
 }
 
 /** 将 Three.js / 加载器异常收敛成可操作的中文提示。 */
@@ -124,7 +163,7 @@ function modelExtension(fileName: string): string {
  * WebGL canvas 只挂到 React 不管理子节点的宿主上，避免 Strict Mode / 卸载时
  * `removeChild` 与手动 DOM 操作冲突；每次挂载使用新 canvas，避免复用失效上下文。
  */
-export function ModelCanvasPreview({ fileName, label, dataBase64 }: ModelCanvasPreviewProps) {
+export function ModelCanvasPreview({ fileName, label, data }: ModelCanvasPreviewProps) {
   const { t } = useTranslation()
   const hostRef = useRef<HTMLDivElement | null>(null)
   const surfaceRef = useRef<HTMLDivElement | null>(null)
@@ -171,14 +210,14 @@ export function ModelCanvasPreview({ fileName, label, dataBase64 }: ModelCanvasP
         ])
         if (cancelled) return
 
-        const bytes = decodeBinaryPreviewBase64(dataBase64)
-        const arrayBuffer = toArrayBuffer(bytes)
+        // 解析器需要独占 ArrayBuffer；toArrayBuffer 已完成一次必要复制，不能再预复制。
+        const arrayBuffer = toArrayBuffer(data)
         const manager = createIsolatedLoadingManager(THREE.LoadingManager)
         let loaded: Object3D
         let nextHint: string | null = null
 
         if (extension === 'obj') {
-          const text = new TextDecoder().decode(bytes)
+          const text = new TextDecoder().decode(data)
           loaded = new OBJLoader().parse(text)
           nextHint = t('objGeometryShownSiblingMtl_3f05')
         } else if (extension === 'fbx') {
@@ -298,11 +337,11 @@ export function ModelCanvasPreview({ fileName, label, dataBase64 }: ModelCanvasP
         scene?.remove(root)
         disposeObject3D(root)
       }
-      renderer?.dispose()
+      if (renderer) disposeWebGLRenderer(renderer)
       // 只清理命令式宿主，避免 React 随后再 removeChild 同一节点。
       host.replaceChildren()
     }
-  }, [dataBase64, fileName, label, t])
+  }, [data, fileName, label, t])
 
   return (
     <div className="binary-diff-preview__model-viewer" aria-label={t('status.previewModel', { fileName, label })}>

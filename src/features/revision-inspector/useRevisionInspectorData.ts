@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { loadRevisionChanges, loadRevisionDiff, loadRevisionFiles } from '../../services/lore'
-import { readErrorMessage } from '../../shared/lib'
-import { changeFilePath, createDemoWorkingTreeDiff } from '../../shared/lib'
+import { changeFilePath, createDemoWorkingTreeDiff, LatestTaskQueue, readErrorMessage } from '../../shared/lib'
 import type {
   ApplicationMode,
   ChangeFile,
@@ -113,6 +112,55 @@ interface UseRevisionInspectorDataOptions {
 }
 
 /**
+ * 声明每个 Inspector 标签唯一允许保留的大型资源。
+ *
+ * 概览只消费 Revision 摘要，不应继续持有完整变更清单或完整不可变文件树；变更与
+ * 文件树也互不复用这些数组。显式策略既避免隐藏内容长期占用内存，也让测试能够锁定
+ * 生命周期边界，而不是只验证旧数据没有被渲染出来。
+ */
+export function revisionInspectorRetention(inspectorTab: InspectorTab) {
+  return {
+    changes: inspectorTab === 'changes',
+    files: inspectorTab === 'tree'
+  }
+}
+
+interface RevisionDiffRequestContext {
+  repositoryPath: string
+  selectedRevisionId: string | undefined
+  loadedRepositoryPath: string
+  loadedRevisionId: string
+  primaryPath: string
+  primaryFileBinary: boolean
+}
+
+/**
+ * 只有变更清单、主选文件和当前仓库属于同一个不可变上下文时，才允许读取完整 Diff。
+ *
+ * Repository Tab 切换后的第一次 render 仍会看到上一仓库的 React state；如果只在
+ * effect 中清空它，就会先向新仓库发送一次“旧路径 + 旧父 Revision”的大读取。旧
+ * 响应虽然不会写回 state，但 Rust/Lore 已经完成分配。显式上下文键把这类请求挡在
+ * IPC 之前。
+ */
+export function isRevisionDiffRequestCurrent({
+  repositoryPath,
+  selectedRevisionId,
+  loadedRepositoryPath,
+  loadedRevisionId,
+  primaryPath,
+  primaryFileBinary
+}: RevisionDiffRequestContext): boolean {
+  return Boolean(
+    repositoryPath &&
+    selectedRevisionId &&
+    primaryPath &&
+    !primaryFileBinary &&
+    loadedRepositoryPath === repositoryPath &&
+    loadedRevisionId === selectedRevisionId
+  )
+}
+
+/**
  * 管理 Revision Inspector 的惰性数据与请求竞态。
  *
  * 变更清单、单文件 Diff 和完整文件树是三个独立读取面；各自使用请求序号，保证
@@ -128,6 +176,7 @@ export function useRevisionInspectorData({
   demoRevisionFiles
 }: UseRevisionInspectorDataOptions) {
   const [revisionChanges, setRevisionChanges] = useState<ChangeFile[]>([])
+  const [revisionChangesRepositoryPath, setRevisionChangesRepositoryPath] = useState('')
   const [revisionChangesRevisionId, setRevisionChangesRevisionId] = useState('')
   const [revisionChangesLoading, setRevisionChangesLoading] = useState(false)
   const [revisionChangesError, setRevisionChangesError] = useState<string | null>(null)
@@ -143,6 +192,21 @@ export function useRevisionInspectorData({
   const revisionChangesRequestCounter = useRef(0)
   const revisionDiffRequestCounter = useRef(0)
   const revisionFilesRequestCounter = useRef(0)
+  const revisionChangesQueue = useRef(new LatestTaskQueue())
+  const revisionDiffQueue = useRef(new LatestTaskQueue())
+  const revisionFilesQueue = useRef(new LatestTaskQueue())
+
+  useEffect(() => {
+    const queues = [revisionChangesQueue.current, revisionDiffQueue.current, revisionFilesQueue.current]
+    queues.forEach((queue) => queue.activate())
+    return () => {
+      // 先让所有仍在完成中的旧响应失效，再释放尚未开始的读取闭包。
+      revisionChangesRequestCounter.current += 1
+      revisionDiffRequestCounter.current += 1
+      revisionFilesRequestCounter.current += 1
+      queues.forEach((queue) => queue.dispose())
+    }
+  }, [])
 
   const selectRevisionPrimaryChange = useCallback((file: ChangeFile | null) => {
     setRevisionPrimaryChangePath(file ? changeFilePath(file) : '')
@@ -151,10 +215,12 @@ export function useRevisionInspectorData({
   useEffect(() => {
     revisionChangesRequestCounter.current += 1
     const requestId = revisionChangesRequestCounter.current
+    revisionChangesQueue.current.cancelPending()
     setRevisionChangesError(null)
 
     if (!selectedRevision) {
       setRevisionChanges([])
+      setRevisionChangesRepositoryPath('')
       setRevisionChangesRevisionId('')
       setRevisionPrimaryChangePath('')
       setRevisionChangesLoading(false)
@@ -162,17 +228,24 @@ export function useRevisionInspectorData({
     }
     if (applicationMode === 'browser-demo') {
       setRevisionChanges([])
+      setRevisionChangesRepositoryPath(repositoryPath)
       setRevisionChangesRevisionId(selectedRevision.id)
       setRevisionDiffSource(selectedRevision.parentIds[0] ?? null)
       setRevisionChangesLoading(false)
       return
     }
-    if (inspectorTab !== 'changes') {
+    if (!revisionInspectorRetention(inspectorTab).changes) {
+      setRevisionChanges([])
+      setRevisionChangesRepositoryPath('')
+      setRevisionChangesRevisionId('')
+      setRevisionDiffSource(null)
+      setRevisionPrimaryChangePath('')
       setRevisionChangesLoading(false)
       return
     }
 
     setRevisionChanges([])
+    setRevisionChangesRepositoryPath('')
     setRevisionChangesRevisionId('')
     setRevisionPrimaryChangePath('')
     setRevisionChangesLoading(true)
@@ -180,13 +253,17 @@ export function useRevisionInspectorData({
      * 合并 Revision 的第一父可能与结果树完全相同。并行读取各父节点的轻量清单，
      * 仅当第一父为空时回退首个非空父节点，不批量传输补丁或文件内容。
      */
-    void loadRevisionDiffBaseline(selectedRevision.parentIds, (sourceRevision) =>
-      loadRevisionChanges(repositoryPath, sourceRevision, selectedRevision.id)
-    )
+    void revisionChangesQueue.current
+      .run(() =>
+        loadRevisionDiffBaseline(selectedRevision.parentIds, (sourceRevision) =>
+          loadRevisionChanges(repositoryPath, sourceRevision, selectedRevision.id)
+        )
+      )
       .then((baseline) => {
         if (requestId !== revisionChangesRequestCounter.current) return
         setRevisionDiffSource(baseline.sourceRevision)
         setRevisionChanges(baseline.changes)
+        setRevisionChangesRepositoryPath(repositoryPath)
         setRevisionChangesRevisionId(selectedRevision.id)
       })
       .catch((error) => {
@@ -204,9 +281,24 @@ export function useRevisionInspectorData({
   useEffect(() => {
     revisionDiffRequestCounter.current += 1
     const requestId = revisionDiffRequestCounter.current
+    revisionDiffQueue.current.cancelPending()
     setRevisionDiffError(null)
 
-    if (!selectedRevision || inspectorTab !== 'changes' || !revisionChangesDiffVisible || !revisionPrimaryChangePath) {
+    const requestContextCurrent = isRevisionDiffRequestCurrent({
+      repositoryPath,
+      selectedRevisionId: selectedRevision?.id,
+      loadedRepositoryPath: revisionChangesRepositoryPath,
+      loadedRevisionId: revisionChangesRevisionId,
+      primaryPath: revisionPrimaryChangePath,
+      /*
+       * 二进制文件由受大小限制的 Preview IPC 读取；Lore 文本 Diff 会先遍历完整
+       * Revision 状态，随后才发现二进制并返回 marker，既无展示价值又制造大峰值。
+       */
+      primaryFileBinary: Boolean(
+        revisionChanges.find((file) => changeFilePath(file) === revisionPrimaryChangePath)?.binary
+      )
+    })
+    if (!selectedRevision || inspectorTab !== 'changes' || !revisionChangesDiffVisible || !requestContextCurrent) {
       setRevisionDiffs([])
       setRevisionDiffLoading(false)
       return
@@ -223,13 +315,16 @@ export function useRevisionInspectorData({
 
     setRevisionDiffs([])
     setRevisionDiffLoading(true)
-    void loadRevisionDiff(
-      repositoryPath,
-      revisionDiffSource,
-      selectedRevision.id,
-      [revisionPrimaryChangePath],
-      diffPreferences
-    )
+    void revisionDiffQueue.current
+      .run(() =>
+        loadRevisionDiff(
+          repositoryPath,
+          revisionDiffSource,
+          selectedRevision.id,
+          [revisionPrimaryChangePath],
+          diffPreferences
+        )
+      )
       .then((diffs) => {
         if (requestId === revisionDiffRequestCounter.current) {
           setRevisionDiffs(diffs)
@@ -252,6 +347,9 @@ export function useRevisionInspectorData({
     inspectorTab,
     repositoryPath,
     revisionChangesDiffVisible,
+    revisionChanges,
+    revisionChangesRepositoryPath,
+    revisionChangesRevisionId,
     revisionDiffSource,
     revisionPrimaryChangePath,
     selectedRevision
@@ -266,14 +364,18 @@ export function useRevisionInspectorData({
 
       revisionChangesRequestCounter.current += 1
       const requestId = revisionChangesRequestCounter.current
+      revisionChangesQueue.current.cancelPending()
       setRevisionChanges([])
+      setRevisionChangesRepositoryPath('')
       setRevisionPrimaryChangePath('')
       setRevisionChangesError(null)
       setRevisionChangesLoading(true)
-      void loadRevisionChanges(repositoryPath, sourceRevision, selectedRevision.id)
+      void revisionChangesQueue.current
+        .run(() => loadRevisionChanges(repositoryPath, sourceRevision, selectedRevision.id))
         .then((changes) => {
           if (requestId !== revisionChangesRequestCounter.current) return
           setRevisionChanges(changes)
+          setRevisionChangesRepositoryPath(repositoryPath)
           setRevisionChangesRevisionId(selectedRevision.id)
         })
         .catch((error) => {
@@ -294,6 +396,7 @@ export function useRevisionInspectorData({
     revisionFilesRequestCounter.current += 1
     const requestId = revisionFilesRequestCounter.current
     const revisionId = selectedRevision?.id
+    revisionFilesQueue.current.cancelPending()
     setRevisionFilesError(null)
 
     if (!revisionId || applicationMode === 'browser-demo') {
@@ -302,7 +405,9 @@ export function useRevisionInspectorData({
       setRevisionFilesLoading(false)
       return
     }
-    if (inspectorTab !== 'tree') {
+    if (!revisionInspectorRetention(inspectorTab).files) {
+      setRevisionFiles([])
+      setRevisionFilesRevisionId('')
       setRevisionFilesLoading(false)
       return
     }
@@ -310,7 +415,8 @@ export function useRevisionInspectorData({
     setRevisionFiles([])
     setRevisionFilesRevisionId('')
     setRevisionFilesLoading(true)
-    void loadRevisionFiles(repositoryPath, revisionId)
+    void revisionFilesQueue.current
+      .run(() => loadRevisionFiles(repositoryPath, revisionId))
       .then((files) => {
         if (requestId === revisionFilesRequestCounter.current) {
           setRevisionFiles(files)

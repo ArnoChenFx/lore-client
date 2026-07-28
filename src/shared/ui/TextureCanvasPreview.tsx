@@ -4,12 +4,12 @@ import { useTranslation } from 'react-i18next'
 import type { Mesh, OrthographicCamera, Scene, Texture, WebGLRenderer } from 'three'
 
 import type { StructuredAssetPreview } from '../../types'
-import { decodeBinaryPreviewBase64 } from '../lib'
+import { disposeWebGLRenderer } from './ModelCanvasPreview'
 
 interface TextureCanvasPreviewProps {
   fileName: string
   label: string
-  dataBase64: string
+  data: Uint8Array
   metadata?: StructuredAssetPreview | null
 }
 
@@ -26,7 +26,7 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
  * KTX2Loader 的 JS/WASM 通过 Vite 与应用一起打包，不配置 CDN 或远端路径；解析器只
  * 接收当前 IPC 字节。每个预览在卸载时释放 worker、纹理、材质、几何和 WebGL 上下文。
  */
-export function TextureCanvasPreview({ fileName, label, dataBase64, metadata }: TextureCanvasPreviewProps) {
+export function TextureCanvasPreview({ fileName, label, data, metadata }: TextureCanvasPreviewProps) {
   const { t } = useTranslation()
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [loading, setLoading] = useState(true)
@@ -61,7 +61,8 @@ export function TextureCanvasPreview({ fileName, label, dataBase64, metadata }: 
         const ktxLoader = new KTX2Loader()
         loader = ktxLoader
         ktxLoader.setWorkerLimit(1).detectSupport(renderer)
-        const buffer = toArrayBuffer(decodeBinaryPreviewBase64(dataBase64))
+        // KTX2Loader 会接管解析缓冲；toArrayBuffer 已执行唯一一次必要复制。
+        const buffer = toArrayBuffer(data)
         texture = await new Promise<Texture>((resolve, reject) => ktxLoader.parse(buffer, resolve, reject))
         if (cancelled) {
           texture.dispose()
@@ -123,10 +124,10 @@ export function TextureCanvasPreview({ fileName, label, dataBase64, metadata }: 
       }
       texture?.dispose()
       loader?.dispose()
-      renderer?.dispose()
+      if (renderer) disposeWebGLRenderer(renderer)
       host.replaceChildren()
     }
-  }, [dataBase64, fileName, label, t])
+  }, [data, fileName, label, t])
 
   const facts = metadata?.type === 'assetMetadata' ? metadata.facts : []
   const width = facts.find((fact) => fact.key === 'width')?.value

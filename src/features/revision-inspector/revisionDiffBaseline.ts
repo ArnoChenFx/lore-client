@@ -35,11 +35,16 @@ export async function loadRevisionDiffBaseline(
   loadChanges: (sourceRevision: string | null) => Promise<ChangeFile[]>
 ): Promise<RevisionDiffBaselineResult> {
   const sourceRevisions: Array<string | null> = parentIds.length > 0 ? [...parentIds] : [null]
-  const candidates = await Promise.all(
-    sourceRevisions.map(async (sourceRevision) => ({
+  const candidates: RevisionDiffBaselineResult[] = []
+  /*
+   * 每个父节点都要枚举两棵不可变树。合并 Revision 的父节点数量通常很少，顺序读取
+   * 不影响最终语义，却避免多个完整树清单在 Rust 与 WebView 中同时达到峰值。
+   */
+  for (const sourceRevision of sourceRevisions) {
+    candidates.push({
       sourceRevision,
       changes: await loadChanges(sourceRevision)
-    }))
-  )
+    })
+  }
   return chooseRevisionDiffBaseline(candidates)
 }
