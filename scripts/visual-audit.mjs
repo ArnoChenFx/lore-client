@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { resolveBrowserExecutable } from './browser-path.mjs'
+import { removeOwnedTemporaryDirectory, terminateOwnedProcess } from './temporary-resources.mjs'
 
 // 与冒烟测试共享三平台浏览器发现逻辑；非标准安装仍可通过环境变量覆盖。
 const chromePath = resolveBrowserExecutable()
@@ -3113,16 +3114,19 @@ try {
   }
   throw error
 } finally {
-  browserProcess.kill()
+  await terminateOwnedProcess(browserProcess)
   // 只关闭本脚本启动的 Vite，复用用户现有服务时不改变其生命周期。
   await closeOwnedApplicationServer()
-  // 使用后清理本次独占的浏览器资料目录，避免后续验收因锁文件而启动失败。
-  await delay(150)
-  await rm(profilePath, { recursive: true, force: true }).catch(() => {})
+  try {
+    await removeOwnedTemporaryDirectory(profilePath)
+  } catch (error) {
+    console.error(`Temporary browser profile cleanup failed: ${error.message}`)
+    process.exitCode = 1
+  }
 }
 
 /*
  * Bun 运行期在 Vite 服务关闭后仍可能保留内部监听句柄。此处只位于成功路径，
  * 且浏览器、Vite 与临时目录均已完成清理，因此显式退出不会截断失败或资源回收。
  */
-process.exit(0)
+process.exit(process.exitCode ?? 0)

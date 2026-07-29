@@ -405,22 +405,17 @@ mod tests {
 
     #[test]
     fn missing_preferences_file_returns_none_instead_of_fake_saved_state() {
-        let directory = std::env::temp_dir().join(format!(
-            "lore-client-preferences-missing-{}",
-            std::process::id()
-        ));
-        let path = directory.join(PREFERENCES_FILE_NAME);
+        // TempDir 在正常结束和 panic 展开时都会清理测试专属目录。
+        let directory = tempfile::tempdir().expect("The temporary directory should be created");
+        let path = directory.path().join(PREFERENCES_FILE_NAME);
         assert!(read_preferences_file(&path).unwrap().is_none());
     }
 
     #[test]
     fn preferences_round_trip_preserves_repository_tabs_and_active_repository() {
-        let directory = std::env::temp_dir().join(format!(
-            "lore-client-preferences-roundtrip-{}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&directory).unwrap();
-        let path = directory.join(PREFERENCES_FILE_NAME);
+        // 避免断言失败时把偏好文件遗留在系统临时目录中。
+        let directory = tempfile::tempdir().expect("The temporary directory should be created");
+        let path = directory.path().join(PREFERENCES_FILE_NAME);
         let preferences = ClientPreferences {
             repository_paths: vec!["E:\\A".to_owned(), "E:\\B".to_owned()],
             active_repository_path: Some("E:\\A".to_owned()),
@@ -449,10 +444,6 @@ mod tests {
             restored.external_diff_tools[0].executable,
             "E:\\Tools\\Studio Diff.exe"
         );
-
-        // 测试只清理自己创建的确定文件和目录，不触碰任何用户数据。
-        fs::remove_file(path).unwrap();
-        fs::remove_dir(directory).unwrap();
     }
 
     #[test]

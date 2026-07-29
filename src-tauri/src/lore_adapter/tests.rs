@@ -30,16 +30,16 @@ fn committed_revision(result: &LoreOperationResult) -> String {
 
 #[test]
 fn status_omits_uncommitted_copy_removed_between_scans() {
-    let source_name = "新建 文本文档2.txt";
-    let target_name = "新建 文本文档3.txt";
+    let source_name = "source-document.txt";
+    let target_name = "target-document.txt";
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("System time should be later than the Unix epoch")
         .as_nanos();
     let repository_path = std::env::temp_dir().join(format!("lore-client-transient-copy-{unique}"));
+    let _cleanup = TemporaryRepository::new(repository_path.clone());
     std::fs::create_dir_all(&repository_path)
         .expect("The temporary test directory should be created");
-    let _cleanup = TemporaryRepository::new(repository_path.clone());
     let repository_path_string = repository_path.to_string_lossy().into_owned();
 
     initialize_repository(
@@ -186,7 +186,7 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
             .expect("The transient copy directory should be created");
         std::fs::copy(
             repository_path.join(target_name),
-            directory.join("新建 文本文档4.txt"),
+            directory.join("transient-copy.txt"),
         )
         .expect("The transient workspace copy should be created");
     }
@@ -304,9 +304,9 @@ fn commit_includes_only_explicitly_staged_files_after_read_only_scan() {
         .as_nanos();
     let repository_path =
         std::env::temp_dir().join(format!("lore-client-stage-isolation-{unique}"));
+    let _cleanup = TemporaryRepository::new(repository_path.clone());
     std::fs::create_dir_all(&repository_path)
         .expect("The temporary test directory should be created");
-    let _cleanup = TemporaryRepository::new(repository_path.clone());
     let repository_path_string = repository_path.to_string_lossy().into_owned();
 
     initialize_repository(
@@ -908,6 +908,8 @@ fn shared_store_usage_counts_files_without_following_directories_outside_root() 
             .expect("system time should be valid")
             .as_nanos()
     ));
+    // 使用作用域清理夹具，即使后续扫描或断言发生 panic，也会尽力删除测试目录。
+    let _cleanup = TemporaryRepository::new(root.clone());
     fs::create_dir_all(root.join("nested")).expect("temporary Store directory should exist");
     fs::write(root.join("first.fragment"), [1_u8, 2, 3])
         .expect("first Store file should be writable");
@@ -919,7 +921,6 @@ fn shared_store_usage_counts_files_without_following_directories_outside_root() 
     assert_eq!(size_bytes, 5);
     assert_eq!(file_count, 2);
     assert!(error.is_none());
-    fs::remove_dir_all(&root).expect("temporary Store directory should be removable");
 }
 
 #[test]
@@ -2127,11 +2128,11 @@ fn ordinary_nonempty_directory_can_be_initialized_without_persisting_client_iden
         .as_nanos();
     let repository_path =
         std::env::temp_dir().join(format!("lore-client-initialize-ordinary-{unique}"));
+    let _cleanup = TemporaryRepository::new(repository_path.clone());
     std::fs::create_dir_all(&repository_path)
         .expect("The ordinary test directory should be created");
     std::fs::write(repository_path.join("existing.txt"), "must be preserved")
         .expect("An existing file should be created in the directory");
-    let _cleanup = TemporaryRepository::new(repository_path.clone());
 
     let initialized = initialize_repository(
         repository_path.to_string_lossy().as_ref(),
@@ -2296,11 +2297,11 @@ fn clone_target_rejects_nonempty_directory() {
         .expect("System time should be later than the Unix epoch")
         .as_nanos();
     let parent = std::env::temp_dir().join(format!("lore-client-clone-target-{unique}"));
+    let _cleanup = TemporaryRepository::new(parent.clone());
     let destination = parent.join("world");
     std::fs::create_dir_all(&destination).expect("The test directory should be created");
     std::fs::write(destination.join("existing.txt"), "preserve")
         .expect("The test file should be written");
-    let _cleanup = TemporaryRepository::new(parent.clone());
 
     let result = validate_clone_destination(parent.to_string_lossy().as_ref(), "world");
     assert!(
@@ -2316,8 +2317,8 @@ fn clone_target_rejects_both_platform_path_separators() {
         .expect("System time should be later than the Unix epoch")
         .as_nanos();
     let parent = std::env::temp_dir().join(format!("lore-client-clone-separators-{unique}"));
-    std::fs::create_dir_all(&parent).expect("The test parent directory should be created");
     let _cleanup = TemporaryRepository::new(parent.clone());
+    std::fs::create_dir_all(&parent).expect("The test parent directory should be created");
     let parent = parent.to_string_lossy();
 
     for directory_name in ["nested/directory", r"nested\directory"] {
@@ -2334,8 +2335,8 @@ fn clone_target_rejects_windows_reserved_names_on_every_platform() {
         .expect("System time should be later than the Unix epoch")
         .as_nanos();
     let parent = std::env::temp_dir().join(format!("lore-client-clone-reserved-{unique}"));
-    std::fs::create_dir_all(&parent).expect("The test parent directory should be created");
     let _cleanup = TemporaryRepository::new(parent.clone());
+    std::fs::create_dir_all(&parent).expect("The test parent directory should be created");
     let parent = parent.to_string_lossy();
 
     for directory_name in ["CON", "nul.txt", "COM1", "LPT9.logs", "trailing."] {
@@ -2352,8 +2353,8 @@ fn clone_target_accepts_a_portable_unicode_directory_name() {
         .expect("System time should be later than the Unix epoch")
         .as_nanos();
     let parent = std::env::temp_dir().join(format!("lore-client-clone-portable-{unique}"));
-    std::fs::create_dir_all(&parent).expect("The test parent directory should be created");
     let _cleanup = TemporaryRepository::new(parent.clone());
+    std::fs::create_dir_all(&parent).expect("The test parent directory should be created");
 
     let destination = validate_clone_destination(parent.to_string_lossy().as_ref(), "世界-project")
         .expect("A portable Unicode directory name should be accepted");
@@ -2372,9 +2373,9 @@ fn real_lore_repository_can_be_created_and_events_read() {
         .expect("System time should be later than the Unix epoch")
         .as_nanos();
     let repository_path = std::env::temp_dir().join(format!("lore-client-smoke-{unique}"));
+    let _cleanup = TemporaryRepository::new(repository_path.clone());
     std::fs::create_dir_all(&repository_path)
         .expect("The temporary test directory should be created");
-    let _cleanup = TemporaryRepository::new(repository_path.clone());
 
     let globals = LoreGlobalArgs {
         repository_path: repository_path.as_path().into(),
@@ -2751,7 +2752,59 @@ impl TemporaryRepository {
 
 impl Drop for TemporaryRepository {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.path);
+        /*
+         * Lore 会缓存已打开仓库的上下文；Windows 上直接删除仍被上下文持有的数据库
+         * 文件会失败。测试夹具必须先释放上下文，再容忍句柄关闭存在极短延迟。
+         * 非 Lore 临时目录或尚未完成初始化的目录无需释放，直接进入删除流程即可。
+         */
+        if self.path.join(".lore").exists() || self.path.join(".urc").exists() {
+            let _ = release_repository_cache(&self.path);
+        }
+
+        for attempt in 0..3 {
+            match std::fs::remove_dir_all(&self.path) {
+                Ok(()) => return,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+                Err(_) if attempt < 2 => std::thread::sleep(std::time::Duration::from_millis(25)),
+                Err(_) => break,
+            }
+        }
+
+        /*
+         * 固定 Lore 版本在 Windows 测试进程退出前仍可能保留 Store 文件句柄。
+         * 此时启动同一测试二进制中的最小清理工作进程；它不继承标准流，也不会阻塞
+         * Cargo，在父测试进程释放最终句柄后只删除本夹具生成的精确路径。
+         */
+        #[cfg(windows)]
+        if let Ok(current_executable) = std::env::current_exe() {
+            let _ = std::process::Command::new(current_executable)
+                .args([
+                    "--exact",
+                    "lore_adapter::tests::deferred_temporary_repository_cleanup_worker",
+                    "--nocapture",
+                ])
+                .env("LORE_CLIENT_TEST_CLEANUP_PATH", &self.path)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+        }
+    }
+}
+
+#[test]
+fn deferred_temporary_repository_cleanup_worker() {
+    let Some(path) = std::env::var_os("LORE_CLIENT_TEST_CLEANUP_PATH").map(PathBuf::from) else {
+        return;
+    };
+
+    // 最长等待两分钟，覆盖完整 Rust 测试进程退出并释放 Lore 全局运行时的时间。
+    for _ in 0..2_400 {
+        match std::fs::remove_dir_all(&path) {
+            Ok(()) => return,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(50)),
+        }
     }
 }
 
@@ -2768,12 +2821,12 @@ fn create_configuration_test_repository(
         "lore-client-{label}-{}-{unique}",
         std::process::id()
     ));
+    let cleanup = TemporaryRepository::new(repository_path.clone());
     let metadata_path = repository_path.join(".lore");
     std::fs::create_dir_all(&metadata_path)
         .expect("The temporary Lore metadata directory should be created");
     std::fs::write(metadata_path.join("config.toml"), configuration)
         .expect("The temporary repository configuration should be written");
-    let cleanup = TemporaryRepository::new(repository_path.clone());
     (repository_path, cleanup)
 }
 

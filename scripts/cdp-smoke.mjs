@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process'
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { resolveBrowserExecutable } from './browser-path.mjs'
+import { removeOwnedTemporaryDirectory, terminateOwnedProcess } from './temporary-resources.mjs'
 
 // 自动覆盖 Windows、Linux 与 macOS 的常见 Chrome、Chromium 和 Edge 安装；
 // CI 使用非标准浏览器时仍可通过 LORE_CLIENT_BROWSER_PATH 显式指定。
@@ -4810,10 +4811,14 @@ try {
   }
   throw error
 } finally {
-  browserProcess.kill()
+  await terminateOwnedProcess(browserProcess)
   // 只关闭本脚本启动的 Vite；复用用户现有开发服务时不得改变其生命周期。
   await closeOwnedApplicationServer()
-  // 每次使用唯一临时资料目录，既避免并发验收互相抢锁，也不残留浏览器状态。
-  await delay(150)
-  await rm(profilePath, { recursive: true, force: true }).catch(() => {})
+  // 清理失败必须可见，否则连续运行会在系统临时目录中累积浏览器资料。
+  try {
+    await removeOwnedTemporaryDirectory(profilePath)
+  } catch (error) {
+    console.error(`Temporary browser profile cleanup failed: ${error.message}`)
+    process.exitCode = 1
+  }
 }
