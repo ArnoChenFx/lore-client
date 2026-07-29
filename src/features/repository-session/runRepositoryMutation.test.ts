@@ -83,6 +83,25 @@ describe('repository mutation lifecycle', () => {
     })
   })
 
+  it('keeps the current view when a successful mutation does not request navigation', async () => {
+    const before = snapshot()
+    const after = { ...snapshot(), loadedAt: '2026-07-26T00:01:00.000Z' }
+    const callbacks = dependencies()
+
+    const result = await runRepositoryMutationLifecycle({
+      activeSnapshot: before,
+      labelKey: 'createRevision',
+      task: vi.fn(async () => undefined),
+      successDetail: 'Revision created',
+      loadSnapshot: vi.fn(async () => after),
+      ...callbacks
+    })
+
+    expect(result).toBe(true)
+    expect(callbacks.applySnapshot).toHaveBeenCalledWith(after)
+    expect(callbacks.selectView).not.toHaveBeenCalled()
+  })
+
   it('projects a lightweight mutation result without loading the full repository snapshot', async () => {
     const before = snapshot()
     const projected = {

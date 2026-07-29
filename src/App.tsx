@@ -477,8 +477,7 @@ function App() {
     defaultIdentity: preferences.defaultIdentity,
     notify,
     runRepositoryMutation,
-    upsertSnapshot,
-    setActiveView
+    upsertSnapshot
   })
 
   /** 从配置页直接 Push 当前分支；远端地址必须已经落盘，不能使用未保存草稿。 */

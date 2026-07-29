@@ -38,7 +38,6 @@ import type {
   DiffPreferences,
   ExternalDiffToolPreference,
   FileHistoryEntry,
-  NavigationView,
   Repository,
   RepositoryFileReference,
   RepositorySnapshot,
@@ -156,7 +155,6 @@ interface UseLocalChangeActionsOptions {
   notify: AppNotify
   runRepositoryMutation: RunRepositoryMutation
   upsertSnapshot: (snapshot: RepositorySnapshot) => void
-  setActiveView: (view: NavigationView) => void
 }
 
 /**
@@ -175,8 +173,7 @@ export function useLocalChangeActions({
   defaultIdentity,
   notify,
   runRepositoryMutation,
-  upsertSnapshot,
-  setActiveView
+  upsertSnapshot
 }: UseLocalChangeActionsOptions) {
   const [fileHistoryRequest, setFileHistoryRequest] = useState<{
     file: RepositoryFileReference
@@ -576,18 +573,20 @@ export function useLocalChangeActions({
           ...activeSnapshot,
           changes: activeSnapshot.changes.filter((file) => !file.staged)
         })
-        setActiveView('history')
         return
       }
 
+      /*
+       * Commit 成功后只刷新权威仓库快照，保留用户当前所在的本地更改视图。
+       * 若操作实际新进入冲突会话，会话层仍会覆盖该默认行为并切回本地更改。
+       */
       await runRepositoryMutation(
         'createRevision',
         (repository) => commitRevision(repository.path, message, defaultIdentity),
-        message,
-        'history'
+        message
       )
     },
-    [activeSnapshot, applicationMode, defaultIdentity, notify, runRepositoryMutation, setActiveView, upsertSnapshot]
+    [activeSnapshot, applicationMode, defaultIdentity, notify, runRepositoryMutation, upsertSnapshot]
   )
 
   return {
