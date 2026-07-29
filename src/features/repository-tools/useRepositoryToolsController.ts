@@ -64,8 +64,9 @@ import type {
   LoreLink,
   LoreLinkAddRequest,
   LoreLinkUpdateRequest,
-  RepositorySnapshot,
   RepositoryAuthAccountBinding,
+  RepositoryConfiguration,
+  RepositorySnapshot,
   RemoteRepository,
   RepositoryView,
   RepositoryViewPreview,
@@ -117,6 +118,28 @@ export function isRepositoryToolsBusy(busyAction: string | null): boolean {
 /** 文件菜单和目录批量操作可能传入重复或空路径，进入 Lore 前统一规范化。 */
 export function normalizeRepositoryToolPaths(paths: readonly string[]): string[] {
   return [...new Set(paths.map((path) => path.trim()).filter(Boolean))]
+}
+
+/**
+ * 原生配置更新会在原子替换后重新读取并返回两个白名单字段，因此结果本身就是权威
+ * 状态。仅投影 Repository 配置可避免再次串行读取 Status、Branch、History、Auth
+ * 作者和标签；其余会话数据保持同一引用，不伪造任何工作区状态。
+ */
+export function projectRepositoryConfigurationSnapshot(
+  activeSnapshot: RepositorySnapshot,
+  configuration: RepositoryConfiguration
+): RepositorySnapshot {
+  return {
+    ...activeSnapshot,
+    repository: {
+      ...activeSnapshot.repository,
+      identity: configuration.identity,
+      remoteUrl: configuration.remoteUrl,
+      // 配置页只接受服务器根地址，因此 serverUrl 与规范化后的 remoteUrl 相同。
+      serverUrl: configuration.remoteUrl
+    },
+    loadedAt: new Date().toISOString()
+  }
 }
 
 type DependencyGraphLoader = (
@@ -848,7 +871,9 @@ export function useRepositoryToolsController({
       await runRepositoryMutation(
         'updateRepositoryConfiguration',
         (repository) => updateRepositoryConfig(repository.path, identity, remoteUrl),
-        operationMessage('repositoryIdentityAndRemoteUrlSaved')
+        operationMessage('repositoryIdentityAndRemoteUrlSaved'),
+        undefined,
+        (snapshot, result) => projectRepositoryConfigurationSnapshot(snapshot, result as RepositoryConfiguration)
       )
     },
     [activeSnapshot, applicationMode, notify, runRepositoryMutation, upsertSnapshot]

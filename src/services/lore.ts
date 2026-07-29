@@ -654,24 +654,13 @@ export async function loadFileDependencyGraph(
  */
 export async function listRemoteRepositories(serverUrl: string, userId?: string): Promise<RemoteRepository[]> {
   const result = await runOperation('lore_repository_list', { serverUrl, userId: userId?.trim() || null })
-  const repositories = parseRemoteRepositories(result.events)
-
   /*
-   * 固定 Lore 版本的 Repository List 事件只携带 ID 与名称，description 位于
-   * Repository Info。这里并行补齐只读详情，让服务器目录可以直接展示说明，同时
-   * 保留列表作为降级结果：某个仓库暂时无权读取或详情请求失败时，不能连带隐藏
-   * 服务器上其他可见仓库。
+   * 目录首屏只消费 List 事件，不能再为每个仓库等待一次 Info 请求。认证端点离线、
+   * 权限不足或网络尾延迟都会让单个详情请求等到超时，而 Promise.all 会把这种延迟
+   * 放大成整个认证按钮长时间忙碌。Clone 流程仍会通过 loadRemoteRepositoryInfo
+   * 按需读取所选仓库的完整详情，因此这里的轻量化不会削弱后续写操作校验。
    */
-  return Promise.all(
-    repositories.map(async (repository) => {
-      try {
-        const details = await loadRemoteRepositoryInfo(serverUrl, repository.name, userId)
-        return { ...repository, ...details }
-      } catch {
-        return repository
-      }
-    })
-  )
+  return parseRemoteRepositories(result.events)
 }
 
 /** Clone 前按需读取远端 Repository 的说明、默认 Branch 与创建身份。 */
@@ -749,6 +738,25 @@ function parseRemoteRepositories(events: LoreEvent[]): RemoteRepository[] {
       id: readString(event.data.id, 'unknown'),
       name: readString(event.data.name, t('untitledRepository'))
     }))
+    .sort((left, right) => {
+      /*
+       * 不依赖服务端事件顺序：先按大小写不敏感的名称排序，再用原始名称和稳定 ID
+       * 破除同名及大小写相同项的平局。显式字符串比较避免系统区域设置改变顺序。
+       */
+      const normalizedNameOrder = compareStableText(
+        left.name.toLocaleLowerCase('en-US'),
+        right.name.toLocaleLowerCase('en-US')
+      )
+      if (normalizedNameOrder !== 0) return normalizedNameOrder
+      const exactNameOrder = compareStableText(left.name, right.name)
+      return exactNameOrder !== 0 ? exactNameOrder : compareStableText(left.id, right.id)
+    })
+}
+
+/** 使用 Unicode 码点顺序提供与系统区域设置无关的稳定字符串比较。 */
+function compareStableText(left: string, right: string): number {
+  if (left === right) return 0
+  return left < right ? -1 : 1
 }
 
 function layerResourceId(sourceRepository: string, targetPath: string): string {

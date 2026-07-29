@@ -580,7 +580,8 @@ export function RepositoryToolsDialog({
       className="dialog-backdrop"
       role="presentation"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !dialogBusy) onClose()
+        /* 关闭只隐藏工具页；仓库写操作仍由全局门闩和操作中心安全收口。 */
+        if (event.target === event.currentTarget) onClose()
       }}
     >
       <section className="task-dialog tools-dialog" role="dialog" aria-modal="true" aria-labelledby="tools-title">
@@ -592,7 +593,7 @@ export function RepositoryToolsDialog({
             <small>LORE REPOSITORY</small>
             <h2 id="tools-title">{t('repositoryTools')}</h2>
           </span>
-          <button type="button" aria-label={t('closeRepositoryTools')} disabled={dialogBusy} onClick={onClose}>
+          <button type="button" aria-label={t('closeRepositoryTools')} onClick={onClose}>
             <X size={16} />
           </button>
         </header>

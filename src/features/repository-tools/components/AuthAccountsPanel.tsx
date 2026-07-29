@@ -49,6 +49,30 @@ export function consolidateAuthIdentities(identities: LoreAuthIdentity[]): LoreA
   )
 }
 
+/**
+ * 为账户绑定页生成稳定的仓库顺序。
+ *
+ * 仓库快照的输入顺序会随打开、刷新和异步完成时机变化，因此这里复制后排序，既不
+ * 修改上层会话数组，也通过路径与 ID 为同名仓库提供确定的平局规则。
+ */
+export function sortRepositoriesForAccountBinding<T extends Pick<Repository, 'id' | 'name' | 'path'>>(
+  repositories: readonly T[]
+): T[] {
+  return [...repositories].sort((left, right) => {
+    const fields: Array<[string, string]> = [
+      [left.name.toLocaleLowerCase('en-US'), right.name.toLocaleLowerCase('en-US')],
+      [left.name, right.name],
+      [left.path.toLocaleLowerCase('en-US'), right.path.toLocaleLowerCase('en-US')],
+      [left.path, right.path],
+      [left.id, right.id]
+    ]
+    for (const [leftField, rightField] of fields) {
+      if (leftField !== rightField) return leftField < rightField ? -1 : 1
+    }
+    return 0
+  })
+}
+
 /** 设备级账户中心：JWT 留在 Lore Token Store，界面只管理脱敏账户与仓库绑定。 */
 export function AuthAccountsPanel({
   remoteUrl,
@@ -75,6 +99,7 @@ export function AuthAccountsPanel({
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const accounts = useMemo(() => consolidateAuthIdentities(identities), [identities])
+  const sortedRepositories = useMemo(() => sortRepositoriesForAccountBinding(repositories), [repositories])
   const selectedAccount = accounts.find((identity) => authIdentityKey(identity) === selectedKey) ?? accounts[0]
 
   useEffect(() => {
@@ -341,7 +366,7 @@ export function AuthAccountsPanel({
           {!addingAccount && selectedAccount && detailTab === 'repositories' && (
             <div className="auth-account-manager__repositories">
               <p>{t('repositoryAccountBindingHint')}</p>
-              {repositories.map((repository) => {
+              {sortedRepositories.map((repository) => {
                 const binding = bindings.find(
                   (candidate) => candidate.repositoryPath.toLocaleLowerCase() === repository.path.toLocaleLowerCase()
                 )

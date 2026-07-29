@@ -340,7 +340,8 @@ function App() {
       labelKey: string,
       task: (repository: Repository) => Promise<unknown>,
       successDetail: string | OperationDetail,
-      nextView?: NavigationView
+      nextView?: NavigationView,
+      projectSnapshot?: (activeSnapshot: RepositorySnapshot, mutationResult: unknown) => RepositorySnapshot
     ) => {
       if (!activeSnapshot) {
         await openRepository()
@@ -357,6 +358,7 @@ function App() {
           activeSnapshot,
           labelKey,
           task,
+          projectSnapshot,
           successDetail,
           nextView,
           loadSnapshot: (repositoryPath) => loadRepositorySnapshot(repositoryPath, false),

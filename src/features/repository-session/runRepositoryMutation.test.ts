@@ -83,6 +83,36 @@ describe('repository mutation lifecycle', () => {
     })
   })
 
+  it('projects a lightweight mutation result without loading the full repository snapshot', async () => {
+    const before = snapshot()
+    const projected = {
+      ...before,
+      repository: { ...before.repository, identity: 'Updated Author' },
+      loadedAt: '2026-07-26T00:00:30.000Z'
+    }
+    const callbacks = dependencies()
+    const loadSnapshot = vi.fn(async () => {
+      throw new Error('Full snapshot should not load')
+    })
+
+    const result = await runRepositoryMutationLifecycle({
+      activeSnapshot: before,
+      labelKey: 'updateRepositoryConfiguration',
+      task: vi.fn(async () => ({ identity: 'Updated Author' })),
+      projectSnapshot: (_activeSnapshot, mutationResult) => {
+        expect(mutationResult).toEqual({ identity: 'Updated Author' })
+        return projected
+      },
+      successDetail: 'Configuration saved',
+      loadSnapshot,
+      ...callbacks
+    })
+
+    expect(result).toBe(true)
+    expect(loadSnapshot).not.toHaveBeenCalled()
+    expect(callbacks.applySnapshot).toHaveBeenCalledWith(projected)
+  })
+
   it('focuses a newly created conflict instead of reporting ordinary success', async () => {
     const before = snapshot()
     const after = snapshot(true)

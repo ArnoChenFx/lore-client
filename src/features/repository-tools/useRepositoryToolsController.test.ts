@@ -7,6 +7,7 @@ import {
   isPublishAuthenticationError,
   loadCurrentDependencyGraph,
   normalizeRepositoryToolPaths,
+  projectRepositoryConfigurationSnapshot,
   resolvePublishAuthAccount
 } from './useRepositoryToolsController'
 
@@ -93,6 +94,48 @@ describe('repository tools controller helpers', () => {
     expect(isRepositoryToolsBusy('resetBranchLatest')).toBe(true)
     expect(isRepositoryToolsBusy('createRevision')).toBe(false)
     expect(isRepositoryToolsBusy(null)).toBe(false)
+  })
+
+  it('projects an authoritative configuration result without rebuilding unrelated snapshot data', () => {
+    const activeSnapshot = {
+      repository: {
+        id: 'repository-id',
+        name: 'project',
+        branch: 'main',
+        revision: 'revision-id',
+        path: 'E:\\Project\\project',
+        ahead: 1,
+        behind: 2,
+        online: true,
+        remoteState: 'online' as const,
+        color: '#78a4ff',
+        conflictCount: 0,
+        unresolvedConflictCount: 0
+      },
+      branches: [],
+      revisions: [],
+      changes: [],
+      tags: [],
+      conflictSession: null,
+      loadedAt: '2026-07-29T00:00:00.000Z'
+    }
+
+    const projected = projectRepositoryConfigurationSnapshot(activeSnapshot, {
+      identity: 'Arno <arno@example.com>',
+      remoteUrl: 'lore://192.168.11.20:41337'
+    })
+
+    expect(projected.repository).toMatchObject({
+      identity: 'Arno <arno@example.com>',
+      remoteUrl: 'lore://192.168.11.20:41337',
+      serverUrl: 'lore://192.168.11.20:41337',
+      revision: 'revision-id',
+      ahead: 1,
+      behind: 2
+    })
+    expect(projected.branches).toBe(activeSnapshot.branches)
+    expect(projected.revisions).toBe(activeSnapshot.revisions)
+    expect(projected.changes).toBe(activeSnapshot.changes)
   })
 
   it('prefers the repository account binding when publishing', () => {

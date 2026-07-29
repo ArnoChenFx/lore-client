@@ -18,9 +18,11 @@ import type {
   LoreMetadataScope,
   LoreRepositoryInstance,
   LoreRevisionInfo,
+  NavigationView,
   OperationDetail,
   Repository,
   RepositoryAuthAccountBinding,
+  RepositorySnapshot,
   RepositoryView,
   RepositoryViewPreview,
   Revision
@@ -142,7 +144,10 @@ export interface RepositoryToolsDialogProps {
 export type RepositoryMutationRunner = (
   labelKey: string,
   task: (repository: Repository) => Promise<unknown>,
-  successDetail: string | OperationDetail
+  successDetail: string | OperationDetail,
+  nextView?: NavigationView,
+  /** 写命令已返回完整局部 DTO 时，可投影快照并跳过昂贵的全仓重读。 */
+  projectSnapshot?: (activeSnapshot: RepositorySnapshot, mutationResult: unknown) => RepositorySnapshot
 ) => Promise<boolean>
 
 /** Repository Tools 对 App 和本地更改暴露的窄接口。 */

@@ -237,9 +237,12 @@ export function useRepositoryEntryController({
     try {
       setServerLoading(true)
       setServerError(null)
-      const identities = await listAuthIdentities()
+      /* 账户枚举与仓库目录互不依赖，并行读取可避免把两段远端/IPC 延迟串联。 */
+      const [identities, repositories] = await Promise.all([
+        listAuthIdentities(),
+        listRemoteRepositories(remoteBrowserUrl, serverAuthUserId)
+      ])
       setServerAuthIdentities(identities)
-      const repositories = await listRemoteRepositories(remoteBrowserUrl, serverAuthUserId)
       setRemoteRepositories(repositories)
       finishOperation(
         operation,
@@ -281,9 +284,13 @@ export function useRepositoryEntryController({
       setServerLoading(true)
       setServerError(null)
       await loginAuthInteractive(remoteBrowserUrl)
-      setServerAuthIdentities(await listAuthIdentities())
+      const [identities, repositories] = await Promise.all([
+        listAuthIdentities(),
+        listRemoteRepositories(remoteBrowserUrl)
+      ])
+      setServerAuthIdentities(identities)
       setServerAuthUserId('')
-      setRemoteRepositories(await listRemoteRepositories(remoteBrowserUrl))
+      setRemoteRepositories(repositories)
       await onAuthStateChange(remoteBrowserUrl)
     } catch (error) {
       setRemoteRepositories([])
@@ -310,9 +317,13 @@ export function useRepositoryEntryController({
     void (async () => {
       try {
         setServerLoading(true)
-        setServerAuthIdentities(await listAuthIdentities())
+        const [identities, repositories] = await Promise.all([
+          listAuthIdentities(),
+          listRemoteRepositories(remoteBrowserUrl)
+        ])
+        setServerAuthIdentities(identities)
         setServerAuthUserId('')
-        setRemoteRepositories(await listRemoteRepositories(remoteBrowserUrl))
+        setRemoteRepositories(repositories)
         setServerError(null)
       } catch (error) {
         if (isAuthenticationRequiredError(error)) {

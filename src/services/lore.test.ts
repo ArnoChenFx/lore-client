@@ -770,6 +770,20 @@ describe('Lore event adapter', () => {
     expect(loreEventParsers.parseRemoteRepositories(events)).toEqual([{ id: '7fcda7b9', name: 'world-building' }])
   })
 
+  it('sorts remote repositories by name and identifier for a stable directory order', () => {
+    const events: LoreEvent[] = [
+      { tagName: 'repositoryListEntry', data: { id: 'id-zulu', name: 'Zulu' } },
+      { tagName: 'repositoryListEntry', data: { id: 'id-alpha-2', name: 'alpha' } },
+      { tagName: 'repositoryListEntry', data: { id: 'id-alpha-1', name: 'Alpha' } }
+    ]
+
+    expect(loreEventParsers.parseRemoteRepositories(events)).toEqual([
+      { id: 'id-alpha-1', name: 'Alpha' },
+      { id: 'id-alpha-2', name: 'alpha' },
+      { id: 'id-zulu', name: 'Zulu' }
+    ])
+  })
+
   it('preserves archived state from Lore branch list events', () => {
     const repository = loreEventParsers.parseRepository(repositoryPath, [
       {

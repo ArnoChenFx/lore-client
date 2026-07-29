@@ -669,8 +669,8 @@ describe('repository snapshot branch loading', () => {
     })
   })
 
-  it('enriches the server repository directory with remote descriptions', async () => {
-    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+  it('returns the server repository directory without waiting for per-repository details', async () => {
+    invokeMock.mockImplementation(async (command: string) => {
       if (command === 'lore_repository_list') {
         return {
           operation: 'repository.list',
@@ -684,50 +684,19 @@ describe('repository snapshot branch loading', () => {
         }
       }
       if (command === 'lore_repository_info_remote') {
-        return {
-          operation: 'repository.info',
-          status: 0,
-          events: [
-            {
-              tagName: 'repositoryData',
-              data: {
-                id: 'remote-id',
-                name: args.repositoryName,
-                description: 'Open world assets'
-              }
-            }
-          ]
-        }
+        // 模拟认证端或仓库详情端点长时间无响应；目录首屏不应被这类尾延迟拖住。
+        return new Promise(() => undefined)
       }
       throw new Error(`Unexpected command: ${command}`)
     })
 
-    await expect(listRemoteRepositories('lore://127.0.0.1:41337', 'artist-id')).resolves.toEqual([
-      expect.objectContaining({
-        id: 'remote-id',
-        name: 'world',
-        description: 'Open world assets'
-      })
+    const outcome = await Promise.race([
+      listRemoteRepositories('lore://127.0.0.1:41337', 'artist-id'),
+      new Promise<'timed-out'>((resolve) => setTimeout(() => resolve('timed-out'), 50))
     ])
-    expect(invokeMock).toHaveBeenCalledWith('lore_repository_info_remote', {
-      serverUrl: 'lore://127.0.0.1:41337',
-      repositoryName: 'world',
-      userId: 'artist-id'
-    })
-  })
 
-  it('keeps a repository list entry when its detail request fails', async () => {
-    invokeMock
-      .mockResolvedValueOnce({
-        operation: 'repository.list',
-        status: 0,
-        events: [{ tagName: 'repositoryListEntry', data: { id: 'remote-id', name: 'world' } }]
-      })
-      .mockRejectedValueOnce(new Error('Repository info unavailable'))
-
-    await expect(listRemoteRepositories('lore://127.0.0.1:41337')).resolves.toEqual([
-      { id: 'remote-id', name: 'world' }
-    ])
+    expect(outcome).toEqual([{ id: 'remote-id', name: 'world' }])
+    expect(invokeMock).toHaveBeenCalledTimes(1)
   })
 
   it('passes the bound authentication account when publishing a local repository', async () => {

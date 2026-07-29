@@ -21,6 +21,8 @@ interface RepositoryMutationLifecycle {
   activeSnapshot: RepositorySnapshot
   labelKey: string
   task: (repository: Repository) => Promise<unknown>
+  /** 写命令已返回权威局部 DTO 时，用它投影快照并跳过昂贵的全仓重读。 */
+  projectSnapshot?: (activeSnapshot: RepositorySnapshot, mutationResult: unknown) => RepositorySnapshot
   successDetail: string | OperationDetail
   nextView?: NavigationView
   loadSnapshot: (repositoryPath: string) => Promise<RepositorySnapshot>
@@ -43,6 +45,7 @@ export async function runRepositoryMutationLifecycle({
   activeSnapshot,
   labelKey,
   task,
+  projectSnapshot,
   successDetail,
   nextView,
   loadSnapshot,
@@ -60,8 +63,10 @@ export async function runRepositoryMutationLifecycle({
   const operation = beginOperation(labelKey, activeSnapshot.repository.name)
 
   try {
-    await task(activeSnapshot.repository)
-    const snapshot = await loadSnapshot(activeSnapshot.repository.path)
+    const mutationResult = await task(activeSnapshot.repository)
+    const snapshot = projectSnapshot
+      ? projectSnapshot(activeSnapshot, mutationResult)
+      : await loadSnapshot(activeSnapshot.repository.path)
     applySnapshot(snapshot)
     const outcome = classifyRepositoryMutationOutcome(activeSnapshot, snapshot, nextView)
     if (outcome.nextView) selectView(outcome.nextView)
