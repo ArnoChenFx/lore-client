@@ -75,7 +75,7 @@ interface InspectorProps {
   repositoryPath: string
   activeTab: InspectorTab
   onTabChange: (tab: InspectorTab) => void
-  onLoadBinaryPreview?: (path: string, revision?: string) => Promise<BinaryFilePreview>
+  onLoadBinaryPreview?: (path: string, revision?: string, metadataOnly?: boolean) => Promise<BinaryFilePreview>
   onPrimaryChangeFile?: (file: ChangeFile | null) => void
   onNotify: (title: string, detail: string, tone?: ToastMessage['tone']) => void
   onRevealFile: (file: RepositoryFileReference) => void

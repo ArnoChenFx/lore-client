@@ -1352,17 +1352,20 @@ export async function loadRevisionFiles(repositoryPath: string, revision: string
  * 按需读取一个工作区或不可变 Revision 文件的二进制预览。
  *
  * `revision` 为空表示工作区真实文件；非空时 Rust 会从该 Revision Tree 的内容地址
- * 读取。调用方只在用户选中支持的图片/PDF/游戏资产后调用，避免完整 Diff 批量传输资产。
+ * 读取。调用方只为当前主要选择调用；关闭二进制 Diff 时传入 `metadataOnly`，Rust 只
+ * 返回前后大小且不读取正文，避免完整 Diff 批量传输资产。
  */
 export async function loadBinaryFilePreview(
   repositoryPath: string,
   path: string,
-  revision?: string
+  revision?: string,
+  metadataOnly = false
 ): Promise<BinaryFilePreview> {
   const envelope = await invokeCommand<ArrayBuffer>('lore_file_preview', {
     repositoryPath,
     path,
-    revision
+    revision,
+    metadataOnly
   })
   return decodeBinaryFilePreviewEnvelope(envelope)
 }
@@ -1387,7 +1390,16 @@ export function decodeBinaryFilePreviewEnvelope(envelope: ArrayBuffer): BinaryFi
   }
   const metadataText = new TextDecoder().decode(bytes.subarray(4, payloadOffset))
   const metadata = JSON.parse(metadataText) as BinaryFilePreviewMetadata
-  if (!metadata.path || !metadata.kind || !metadata.mimeType || !Number.isFinite(metadata.size)) {
+  if (
+    !metadata.path ||
+    !metadata.kind ||
+    !metadata.mimeType ||
+    !Number.isFinite(metadata.size) ||
+    (metadata.contentState !== 'available' &&
+      metadata.contentState !== 'tooLarge' &&
+      metadata.contentState !== 'unsupported' &&
+      metadata.contentState !== 'metadataOnly')
+  ) {
     throw new Error('Binary preview IPC metadata is invalid')
   }
   return {

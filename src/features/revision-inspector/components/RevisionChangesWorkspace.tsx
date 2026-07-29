@@ -60,7 +60,7 @@ interface RevisionChangesWorkspaceProps {
   diffError?: string | null
   notice?: string | null
   selectionRequest?: RevisionWorkspaceSelectionRequest | null
-  onLoadBinaryPreview?: (path: string, revision?: string) => Promise<BinaryFilePreview>
+  onLoadBinaryPreview?: (path: string, revision?: string, metadataOnly?: boolean) => Promise<BinaryFilePreview>
   onPrimaryFileChange?: (file: ChangeFile | null) => void
   onOpenContextMenu: (files: ChangeFile[], primaryFile: ChangeFile, event: MouseEvent<HTMLElement>) => void
 }
@@ -241,8 +241,9 @@ export function RevisionChangesWorkspace({
   /**
    * 只为主选择读取可预览的前后版本。
    *
-   * 目录、多选中的非主文件和不可预览资产都不会触发 Store 读取；快速切换对象时
-   * 通过序号丢弃旧请求，避免旧内容短暂覆盖当前 Revision 选择。
+   * 目录与多选中的非主文件不会触发 Store 读取；不支持预览或关闭二进制 Diff 时只
+   * 读取 Tree 大小元数据，受支持且启用预览时才读取正文。快速切换对象时通过序号
+   * 丢弃旧请求。
    */
   useEffect(() => {
     const queue = previewQueue.current
@@ -252,13 +253,7 @@ export function RevisionChangesWorkspace({
     setBinaryPreview(null)
     setBinaryPreviewError(null)
 
-    if (
-      !contentSelectionAuthorized ||
-      !diffVisible ||
-      !preferences.binaryDiffVisible ||
-      !primaryFile ||
-      !previewableKind
-    ) {
+    if (!contentSelectionAuthorized || !diffVisible || !primaryFile || (!primaryFile.binary && !previewableKind)) {
       setBinaryPreviewLoading(false)
       return
     }
@@ -277,13 +272,13 @@ export function RevisionChangesWorkspace({
     if (primaryFile.status !== 'added' && sourceRevision) {
       requests.push({
         side: 'before',
-        load: () => onLoadBinaryPreview(path, sourceRevision)
+        load: () => onLoadBinaryPreview(path, sourceRevision, !preferences.binaryDiffVisible)
       })
     }
     if (primaryFile.status !== 'deleted') {
       requests.push({
         side: 'after',
-        load: () => onLoadBinaryPreview(path, revision.id)
+        load: () => onLoadBinaryPreview(path, revision.id, !preferences.binaryDiffVisible)
       })
     }
     if (requests.length === 0) {
@@ -741,13 +736,16 @@ export function RevisionChangesWorkspace({
                 <FileQuestion size={28} />
                 <strong>{t('selectFileViewDiff_ddf0')}</strong>
               </div>
-            ) : (primaryFile.binary || previewableKind) && !preferences.binaryDiffVisible ? (
+            ) : (primaryFile.binary || previewableKind) &&
+              !preferences.binaryDiffVisible &&
+              !binaryPreview &&
+              !binaryPreviewLoading ? (
               <div className="revision-diff-pane__empty">
                 <Binary size={30} />
                 <strong>{t('binaryDiffHidden')}</strong>
                 <span>{t('enableBinaryDiffInOptions')}</span>
               </div>
-            ) : previewableKind ? (
+            ) : previewableKind || primaryFile.binary ? (
               <BinaryDiffPreview
                 fileName={primaryFile.name}
                 preview={binaryPreview}
@@ -755,20 +753,11 @@ export function RevisionChangesWorkspace({
                 error={binaryPreviewError}
                 size={primaryFile.size ? Number(primaryFile.size) : undefined}
               />
-            ) : primaryFile.binary || !primaryDiff?.patch ? (
+            ) : !primaryDiff?.patch ? (
               <div className="revision-diff-pane__empty">
                 <Binary size={30} />
-                <strong>
-                  {primaryFile.binary ? t('inlinePreviewSupportedBinaryType_63f9') : t('noTextDiffToDisplay')}
-                </strong>
-                <span>
-                  {primaryFile.binary
-                    ? t('status.binaryFormatsSupported', {
-                        path: changeFilePath(primaryFile),
-                        size: primaryFile.size ?? t('unknownSize')
-                      })
-                    : changeFilePath(primaryFile)}
-                </span>
+                <strong>{t('noTextDiffToDisplay')}</strong>
+                <span>{changeFilePath(primaryFile)}</span>
               </div>
             ) : (
               <div

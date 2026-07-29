@@ -133,13 +133,16 @@ export function WorkingTreeDiff({
           <strong>{t('unableToLoadFileDiff')}</strong>
           <span>{error}</span>
         </div>
-      ) : (file.binary || previewableKind) && !preferences.binaryDiffVisible ? (
+      ) : (file.binary || previewableKind) &&
+        !preferences.binaryDiffVisible &&
+        !binaryPreview &&
+        !binaryPreviewLoading ? (
         <div className="working-diff__empty">
           <Binary size={32} />
           <strong>{t('binaryDiffHidden')}</strong>
           <span>{t('enableBinaryDiffInOptions')}</span>
         </div>
-      ) : previewableKind ? (
+      ) : previewableKind || file.binary ? (
         <BinaryDiffPreview
           fileName={file.name}
           preview={binaryPreview}
@@ -147,12 +150,6 @@ export function WorkingTreeDiff({
           error={binaryPreviewError}
           size={file.size ? Number(file.size) : undefined}
         />
-      ) : file.binary ? (
-        <div className="working-diff__empty">
-          <Binary size={32} />
-          <strong>{t('inlinePreviewSupportedBinaryType_63f9')}</strong>
-          <span>{t('status.workspaceBinaryPreviewHint', { size: file.size ?? t('unknownSize') })}</span>
-        </div>
       ) : lines.length === 0 ? (
         <div className="working-diff__empty">
           <FileQuestion size={28} />

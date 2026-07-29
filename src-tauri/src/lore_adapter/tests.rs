@@ -1240,6 +1240,7 @@ fn workspace_binary_preview_returns_validated_real_file_content() {
         repository_path.to_string_lossy().as_ref(),
         "Content/Images/Preview.PNG",
         None,
+        false,
     )
     .expect("An allowlisted workspace image should return a preview DTO");
 
@@ -1248,9 +1249,107 @@ fn workspace_binary_preview_returns_validated_real_file_content() {
     assert_eq!(preview.mime_type, "image/png");
     assert_eq!(preview.size, 8);
     assert_eq!(
+        preview.content_state,
+        LoreFilePreviewContentState::Available
+    );
+    assert_eq!(
         preview.data,
         [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]
     );
+}
+
+#[test]
+fn disabled_workspace_binary_diff_returns_metadata_without_reading_content() {
+    let (repository_path, _cleanup) =
+        create_configuration_test_repository("workspace-disabled-binary-preview", "");
+    let image_directory = repository_path.join("Content").join("Images");
+    std::fs::create_dir_all(&image_directory).expect("Temporary image directory should be created");
+    std::fs::write(
+        image_directory.join("Preview.PNG"),
+        [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a],
+    )
+    .expect("Temporary image should be written");
+
+    let preview = build_file_preview(
+        repository_path.to_string_lossy().as_ref(),
+        "Content/Images/Preview.PNG",
+        None,
+        true,
+    )
+    .expect("A disabled binary Diff should return size-only metadata");
+
+    assert_eq!(preview.kind, "image");
+    assert_eq!(preview.size, 8);
+    assert_eq!(
+        preview.content_state,
+        LoreFilePreviewContentState::MetadataOnly
+    );
+    assert!(preview.data.is_empty());
+    assert!(preview.structured_preview.is_none());
+}
+
+#[test]
+fn oversized_workspace_asset_returns_size_metadata_without_reading_content() {
+    let (repository_path, _cleanup) =
+        create_configuration_test_repository("workspace-oversized-preview", "");
+    let asset_path = repository_path.join("Content").join("World.umap");
+    std::fs::create_dir_all(
+        asset_path
+            .parent()
+            .expect("Asset should have a parent directory"),
+    )
+    .expect("Asset directory should be created");
+    let asset = std::fs::File::create(&asset_path).expect("Oversized asset should be created");
+    asset
+        .set_len(24 * 1024 * 1024)
+        .expect("Sparse oversized asset length should be set");
+
+    let preview = build_file_preview(
+        repository_path.to_string_lossy().as_ref(),
+        "Content/World.umap",
+        None,
+        false,
+    )
+    .expect("An oversized allowlisted asset should return size-only metadata");
+
+    assert_eq!(preview.size, 24 * 1024 * 1024);
+    assert_eq!(preview.content_state, LoreFilePreviewContentState::TooLarge);
+    assert!(preview.data.is_empty());
+    assert!(preview.structured_preview.is_none());
+}
+
+#[test]
+fn unsupported_workspace_binary_returns_size_metadata_without_reading_content() {
+    let (repository_path, _cleanup) =
+        create_configuration_test_repository("workspace-unsupported-preview", "");
+    let binary_path = repository_path
+        .join("Content")
+        .join("OnlineFramework.archive");
+    std::fs::create_dir_all(
+        binary_path
+            .parent()
+            .expect("Binary file should have a parent directory"),
+    )
+    .expect("Binary directory should be created");
+    std::fs::write(&binary_path, [0_u8; 32]).expect("Unsupported binary should be written");
+
+    let preview = build_file_preview(
+        repository_path.to_string_lossy().as_ref(),
+        "Content/OnlineFramework.archive",
+        None,
+        false,
+    )
+    .expect("An unsupported binary should return size-only metadata");
+
+    assert_eq!(preview.kind, "binary");
+    assert_eq!(preview.mime_type, "application/octet-stream");
+    assert_eq!(preview.size, 32);
+    assert_eq!(
+        preview.content_state,
+        LoreFilePreviewContentState::Unsupported
+    );
+    assert!(preview.data.is_empty());
+    assert!(preview.structured_preview.is_none());
 }
 
 #[test]
@@ -2579,6 +2678,7 @@ fn real_lore_repository_can_be_created_and_events_read() {
         repository_path.to_string_lossy().as_ref(),
         "root-preview.png",
         Some(&source_revision),
+        false,
     )
     .expect("The root revision PNG should return real preview content from the immutable store");
     assert_eq!(root_png_preview.kind, "image");

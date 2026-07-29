@@ -85,8 +85,10 @@ Content is read on demand for the primary selection. Disabling Binary Diff stops
 reads in both workspace and Revision changes.
 
 Container directories are entry-limited, texture decoding has dimension and memory budgets,
-and every source file remains subject to the 20 MiB embedded-preview limit. Previewing never
-extracts archives, executes scripts, follows symlinks, or reads resources outside the container.
+and every source file remains subject to the 20 MiB embedded-preview limit. When either side of
+a Diff exceeds that limit, Lore Client reads only file metadata and displays the before/after sizes
+and signed size change; it does not load or decode the oversized content. Previewing never extracts
+archives, executes scripts, follows symlinks, or reads resources outside the container.
 
 ## Choosing the mechanism
 

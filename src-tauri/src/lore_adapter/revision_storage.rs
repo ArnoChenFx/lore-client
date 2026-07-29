@@ -862,6 +862,7 @@ pub(super) fn encode_file_preview_response(
         mime_type,
         data,
         size,
+        content_state,
         structured_preview,
     } = preview;
     let metadata = serde_json::to_vec(&LoreFilePreviewMetadata {
@@ -869,6 +870,7 @@ pub(super) fn encode_file_preview_response(
         kind,
         mime_type,
         size,
+        content_state,
         structured_preview,
     })
     .map_err(|error| {
@@ -895,19 +897,27 @@ pub(super) fn build_file_preview(
     repository_path: &str,
     path: &str,
     revision: Option<&str>,
+    metadata_only: bool,
 ) -> Result<LoreFilePreview, LoreCommandError> {
     let relative_path = validate_repository_relative_path(path)?;
     let normalized_path = relative_path
         .to_string_lossy()
         .replace(std::path::MAIN_SEPARATOR, "/");
-    let (kind, source_mime_type) = binary_preview_format(&relative_path).ok_or_else(|| {
-        LoreCommandError::new(
-            "binary_preview_unsupported",
-            format!(
-                "Embedded preview supports only common images, PDFs, and game assets: {normalized_path}"
-            ),
-        )
-    })?;
+    let preview_format = binary_preview_format(&relative_path);
+    let (kind, source_mime_type) = preview_format.unwrap_or(("binary", "application/octet-stream"));
+    /*
+     * 元数据降级必须共享同一个稳定 DTO。未知格式与超限文件都不读取正文，区别只由
+     * content_state 表达，前端据此显示准确原因并复用同一套大小比较布局。
+     */
+    let metadata_only_preview = |size, content_state| LoreFilePreview {
+        path: normalized_path.clone(),
+        kind,
+        mime_type: source_mime_type,
+        data: Vec::new(),
+        size,
+        content_state,
+        structured_preview: None,
+    };
 
     let bytes = if let Some(revision) = revision {
         let files = collect_revision_tree_files_at_paths(
@@ -924,7 +934,24 @@ pub(super) fn build_file_preview(
                     format!("File {normalized_path} does not exist in revision {revision}"),
                 )
             })?;
-        ensure_binary_preview_size(file.size)?;
+        if metadata_only {
+            return Ok(metadata_only_preview(
+                file.size,
+                LoreFilePreviewContentState::MetadataOnly,
+            ));
+        }
+        if preview_format.is_none() {
+            return Ok(metadata_only_preview(
+                file.size,
+                LoreFilePreviewContentState::Unsupported,
+            ));
+        }
+        if binary_preview_size_exceeded(file.size) {
+            return Ok(metadata_only_preview(
+                file.size,
+                LoreFilePreviewContentState::TooLarge,
+            ));
+        }
         read_revision_file_content(repository_path, file)?
     } else {
         let workspace_path = validate_existing_workspace_file(repository_path, &normalized_path)?;
@@ -939,7 +966,24 @@ pub(super) fn build_file_preview(
                 )
             })?
             .len();
-        ensure_binary_preview_size(size)?;
+        if metadata_only {
+            return Ok(metadata_only_preview(
+                size,
+                LoreFilePreviewContentState::MetadataOnly,
+            ));
+        }
+        if preview_format.is_none() {
+            return Ok(metadata_only_preview(
+                size,
+                LoreFilePreviewContentState::Unsupported,
+            ));
+        }
+        if binary_preview_size_exceeded(size) {
+            return Ok(metadata_only_preview(
+                size,
+                LoreFilePreviewContentState::TooLarge,
+            ));
+        }
         std::fs::read(&workspace_path).map_err(|error| {
             LoreCommandError::new(
                 "workspace_preview_read_failed",
@@ -964,6 +1008,7 @@ pub(super) fn build_file_preview(
         mime_type,
         data: preview_bytes,
         size: original_size,
+        content_state: LoreFilePreviewContentState::Available,
         structured_preview,
     })
 }

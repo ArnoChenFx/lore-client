@@ -69,8 +69,8 @@ export function WorkingTreeDiffContainer({
   }, [])
 
   const loadRepositoryBinaryPreview = useCallback(
-    (path: string, revision?: string): Promise<BinaryFilePreview> =>
-      loadBinaryFilePreview(repositoryPath, path, revision),
+    (path: string, revision?: string, metadataOnly = false): Promise<BinaryFilePreview> =>
+      loadBinaryFilePreview(repositoryPath, path, revision, metadataOnly),
     [repositoryPath]
   )
 
@@ -126,7 +126,8 @@ export function WorkingTreeDiffContainer({
   }, [applicationMode, file, preferences.diff, repositoryPath])
 
   /**
-   * 预览格式只读取当前主要文件的前后版本。
+   * 预览格式只读取当前主要文件的前后版本。关闭二进制 Diff 时仍请求轻量大小元数据，
+   * Rust 不会打开正文、解析资产或通过 Raw IPC 传输二进制载荷。
    *
    * 新增文件没有 before，删除文件没有 after；快速切换时旧请求不会覆盖新文件。
    */
@@ -139,7 +140,7 @@ export function WorkingTreeDiffContainer({
     setBinaryPreviewError(null)
 
     const path = file ? changeFilePath(file) : ''
-    if (!preferences.binaryDiffVisible || !file || !binaryPreviewKind(path)) {
+    if (!file || (!file.binary && !binaryPreviewKind(path))) {
       setBinaryPreviewLoading(false)
       return
     }
@@ -156,13 +157,13 @@ export function WorkingTreeDiffContainer({
     if (file.status !== 'added' && currentRevisionId) {
       requests.push({
         side: 'before',
-        load: () => loadRepositoryBinaryPreview(path, currentRevisionId)
+        load: () => loadRepositoryBinaryPreview(path, currentRevisionId, !preferences.binaryDiffVisible)
       })
     }
     if (file.status !== 'deleted') {
       requests.push({
         side: 'after',
-        load: () => loadRepositoryBinaryPreview(path)
+        load: () => loadRepositoryBinaryPreview(path, undefined, !preferences.binaryDiffVisible)
       })
     }
     if (requests.length === 0) {

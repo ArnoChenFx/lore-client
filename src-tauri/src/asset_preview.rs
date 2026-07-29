@@ -1202,10 +1202,18 @@ pub fn binary_preview_format(path: &Path) -> Option<(&'static str, &'static str)
     }
 }
 
+/// 判断原始资产是否超过内嵌预览上限。
+///
+/// 调用方可在真正读取内容前用它返回轻量大小元数据，避免为了显示“文件过大”而
+/// 把整份资产载入内存。读取完成后仍须调用 `ensure_binary_preview_size` 防御并发增长。
+pub fn binary_preview_size_exceeded(size: u64) -> bool {
+    const MAX_BINARY_PREVIEW_BYTES: u64 = 20 * 1024 * 1024;
+    size > MAX_BINARY_PREVIEW_BYTES
+}
+
 /// 同时在读取前后检查体积，避免损坏元数据或并发文件增长绕过 IPC 上限。
 pub fn ensure_binary_preview_size(size: u64) -> Result<(), AssetPreviewError> {
-    const MAX_BINARY_PREVIEW_BYTES: u64 = 20 * 1024 * 1024;
-    if size > MAX_BINARY_PREVIEW_BYTES {
+    if binary_preview_size_exceeded(size) {
         return Err(AssetPreviewError::too_large(size));
     }
     Ok(())

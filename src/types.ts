@@ -439,8 +439,18 @@ export interface ExternalMergeRequest {
   }
 }
 
-/** 当前内嵌预览允许的受控渲染类别；未知二进制格式不会进入该联合类型。 */
-export type BinaryPreviewKind = 'image' | 'texture' | 'pdf' | 'model' | 'csv' | 'audio' | 'archive' | 'font' | 'asset'
+/** 当前二进制 Diff 的稳定类别；`binary` 只承载未知格式的大小元数据，不会渲染正文。 */
+export type BinaryPreviewKind =
+  | 'image'
+  | 'texture'
+  | 'pdf'
+  | 'model'
+  | 'csv'
+  | 'audio'
+  | 'archive'
+  | 'font'
+  | 'asset'
+  | 'binary'
 
 /** 归档目录中的只读条目；路径只用于展示，不会回传给提取或写入命令。 */
 export interface ArchivePreviewEntry {
@@ -486,6 +496,8 @@ export interface BinaryFilePreview {
   mimeType: string
   data: Uint8Array
   size: number
+  /** 超限或格式不支持时只返回大小元数据，`data` 为空且文件正文从未被读取。 */
+  contentState: 'available' | 'tooLarge' | 'unsupported' | 'metadataOnly'
   /** 只有 KTX2、归档和引擎资产携带；普通媒体继续使用受控原始载荷。 */
   structuredPreview?: StructuredAssetPreview | null
 }

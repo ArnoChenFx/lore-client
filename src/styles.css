@@ -6953,6 +6953,99 @@ body.is-resizing-panes {
   line-height: 1.5;
 }
 
+/* 超限资产只展示轻量大小变化；三组数字固定列位，窄面板时自动纵向换行。 */
+.binary-diff-preview__size-only {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px;
+  color: var(--faint);
+  text-align: center;
+}
+
+.binary-diff-preview__size-only > svg {
+  color: var(--accent-muted);
+}
+
+.binary-diff-preview__size-only > strong {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.binary-diff-preview__size-only > span {
+  max-width: 460px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.binary-diff-preview__size-comparison {
+  display: grid;
+  width: min(100%, 520px);
+  grid-template-columns: minmax(90px, 1fr) auto minmax(90px, 1fr) minmax(90px, 1fr);
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.binary-diff-preview__size-comparison > div {
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg-panel);
+}
+
+.binary-diff-preview__size-comparison > svg {
+  align-self: center;
+  color: var(--muted);
+}
+
+.binary-diff-preview__size-comparison small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.binary-diff-preview__size-comparison b {
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.binary-diff-preview__size-comparison > .binary-diff-preview__size-delta {
+  border-color: var(--line-strong);
+  background: var(--bg-selected);
+}
+
+/* 文件体积增长与缩减沿用全局成功/危险语义色，零变化继续使用中性正文色。 */
+.binary-diff-preview__size-delta.is-increase b {
+  color: var(--success);
+}
+
+.binary-diff-preview__size-delta.is-decrease b {
+  color: var(--danger);
+}
+
+@media (max-width: 560px) {
+  .binary-diff-preview__size-comparison {
+    grid-template-columns: minmax(90px, 1fr) auto minmax(90px, 1fr);
+  }
+
+  .binary-diff-preview__size-comparison > .binary-diff-preview__size-delta {
+    grid-column: 1 / -1;
+  }
+}
+
 .titlebar-menu {
   position: relative;
   height: 100%;

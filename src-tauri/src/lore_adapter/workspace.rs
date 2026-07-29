@@ -259,22 +259,29 @@ pub async fn lore_revision_files(
     .await
 }
 
-/// 按需读取一个工作区文件或指定 Revision 中的图片/PDF 预览。
+/// 按需读取一个工作区文件或指定 Revision 中的二进制预览或大小元数据。
 ///
 /// `revision` 为空时读取工作区真实文件；非空时只读取该不可变 Revision Tree 中
-/// 精确匹配的内容。两条路径都执行仓库相对路径、格式白名单和 20 MB 大小限制。
+/// 精确匹配的内容。受支持格式执行 20 MB 大小限制；未知格式或 metadata-only 请求只
+/// 返回大小且不读取正文。
 #[tauri::command]
 pub async fn lore_file_preview(
     repository_path: String,
     path: String,
     revision: Option<String>,
+    metadata_only: Option<bool>,
 ) -> Result<tauri::ipc::Response, LoreCommandError> {
     let revision = revision
         .map(|value| validate_revision(&value))
         .transpose()?;
     run_heavy_lore_task(&FILE_PREVIEW_READ_LANE, move || {
-        build_file_preview(&repository_path, &path, revision.as_deref())
-            .and_then(encode_file_preview_response)
+        build_file_preview(
+            &repository_path,
+            &path,
+            revision.as_deref(),
+            metadata_only.unwrap_or(false),
+        )
+        .and_then(encode_file_preview_response)
     })
     .await
 }

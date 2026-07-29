@@ -25,7 +25,7 @@ describe('working-tree binary Diff visibility', () => {
     updateClientPreferences({ binaryDiffVisible: true })
   })
 
-  it('does not render the CSV visualization when binary Diff is disabled', () => {
+  it('renders only file size changes when binary Diff is disabled', () => {
     updateClientPreferences({ binaryDiffVisible: false })
 
     const html = renderToStaticMarkup(
@@ -36,14 +36,36 @@ describe('working-tree binary Diff visibility', () => {
         diff={null}
         loading={false}
         error={null}
-        binaryPreview={null}
+        binaryPreview={{
+          before: {
+            path: 'data/market.csv',
+            kind: 'csv',
+            mimeType: 'text/csv',
+            data: new Uint8Array(),
+            size: 4 * 1024,
+            contentState: 'metadataOnly'
+          },
+          after: {
+            path: 'data/market.csv',
+            kind: 'csv',
+            mimeType: 'text/csv',
+            data: new Uint8Array(),
+            size: 8 * 1024,
+            contentState: 'metadataOnly'
+          }
+        }}
         binaryPreviewLoading={false}
         binaryPreviewError={null}
       />
     )
 
     expect(html).toContain('二进制 Diff 已隐藏')
-    expect(html).toContain('可在 Diff 选项中重新启用二进制 Diff。')
-    expect(html).not.toContain('binary-diff-preview')
+    expect(html).toContain('文件正文保持关闭，仅显示文件大小变化。')
+    expect(html).toContain('4.0 KB')
+    expect(html).toContain('8.0 KB')
+    expect(html).toContain('+4.0 KB')
+    expect(html).toContain('binary-diff-preview__size-only')
+    expect(html).toContain('binary-diff-preview__size-delta is-increase')
+    expect(html).not.toContain('binary-diff-preview__csv')
   })
 })

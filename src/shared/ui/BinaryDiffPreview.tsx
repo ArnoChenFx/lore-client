@@ -1,4 +1,4 @@
-import { Binary, FileWarning, LoaderCircle } from 'lucide-react'
+import { ArrowRight, Binary, FileWarning, LoaderCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -134,6 +134,67 @@ function PreviewCard({ label, fileName, preview }: PreviewCardProps) {
   )
 }
 
+/** 为大小变化补充明确正负号；零值保持中性，避免出现“+0 B”。 */
+function formatSizeDelta(bytes: number): string {
+  if (bytes === 0) return formatPreviewBytes(0)
+  return `${bytes > 0 ? '+' : '−'}${formatPreviewBytes(Math.abs(bytes))}`
+}
+
+/**
+ * 元数据降级不读取正文，只使用 Rust 在读取前取得的可信文件大小展示变化。
+ *
+ * 新增或删除文件天然缺少一侧，以长横线保留同一列位；变化量按空文件计算，仍能
+ * 直观看出这次 Revision 或工作区更改增加、减少了多少磁盘内容。
+ */
+function SizeOnlyPreview({
+  preview,
+  reason
+}: {
+  preview: BinaryDiffPreview
+  reason: 'tooLarge' | 'unsupported' | 'metadataOnly'
+}) {
+  const { t } = useTranslation()
+  const beforeSize = preview.before?.size
+  const afterSize = preview.after?.size
+  const delta = (afterSize ?? 0) - (beforeSize ?? 0)
+  const deltaTone = delta > 0 ? 'increase' : delta < 0 ? 'decrease' : 'unchanged'
+  const titleKey =
+    reason === 'tooLarge'
+      ? 'binaryPreviewSizeOnly'
+      : reason === 'unsupported'
+        ? 'binaryPreviewUnsupportedSizeOnly'
+        : 'binaryDiffHidden'
+  const hintKey =
+    reason === 'tooLarge'
+      ? 'binaryPreviewSizeOnlyHint'
+      : reason === 'unsupported'
+        ? 'binaryPreviewUnsupportedSizeOnlyHint'
+        : 'binaryPreviewMetadataOnlyHint'
+
+  return (
+    <div className="binary-diff-preview__size-only" role="status">
+      {reason === 'tooLarge' ? <FileWarning size={30} /> : <Binary size={30} />}
+      <strong>{t(titleKey)}</strong>
+      <span>{t(hintKey)}</span>
+      <div className="binary-diff-preview__size-comparison">
+        <div>
+          <small>{t('before')}</small>
+          <b>{beforeSize === undefined ? '—' : formatPreviewBytes(beforeSize)}</b>
+        </div>
+        <ArrowRight size={18} aria-hidden="true" />
+        <div>
+          <small>{t('after')}</small>
+          <b>{afterSize === undefined ? '—' : formatPreviewBytes(afterSize)}</b>
+        </div>
+        <div className={`binary-diff-preview__size-delta is-${deltaTone}`}>
+          <small>{t('fileSizeChange')}</small>
+          <b>{formatSizeDelta(delta)}</b>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** 所有受控资产类型共用的 Diff 预览表面；两侧缺失时给出明确状态。 */
 export function BinaryDiffPreview({ fileName, preview, loading, error, size }: BinaryDiffPreviewProps) {
   const { t } = useTranslation()
@@ -155,6 +216,18 @@ export function BinaryDiffPreview({ fileName, preview, loading, error, size }: B
         <span>{error}</span>
       </div>
     )
+  }
+
+  const metadataOnlyReason =
+    preview?.before?.contentState === 'tooLarge' || preview?.after?.contentState === 'tooLarge'
+      ? 'tooLarge'
+      : preview?.before?.contentState === 'unsupported' || preview?.after?.contentState === 'unsupported'
+        ? 'unsupported'
+        : preview?.before?.contentState === 'metadataOnly' || preview?.after?.contentState === 'metadataOnly'
+          ? 'metadataOnly'
+          : null
+  if (metadataOnlyReason && preview) {
+    return <SizeOnlyPreview preview={preview} reason={metadataOnlyReason} />
   }
 
   if (!preview?.before && !preview?.after) {

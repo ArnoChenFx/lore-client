@@ -22,14 +22,16 @@ describe('binary diff preview', () => {
             kind: 'image',
             mimeType: 'image/png',
             data: new Uint8Array([0]),
-            size: 1
+            size: 1,
+            contentState: 'available'
           },
           after: {
             path: 'Content/Sky.png',
             kind: 'image',
             mimeType: 'image/png',
             data: new Uint8Array([1]),
-            size: 1
+            size: 1,
+            contentState: 'available'
           }
         }}
       />
@@ -55,7 +57,8 @@ describe('binary diff preview', () => {
             kind: 'pdf',
             mimeType: 'application/pdf',
             data: new Uint8Array([37, 80, 68, 70]),
-            size: 5
+            size: 5,
+            contentState: 'available'
           }
         }}
       />
@@ -80,7 +83,8 @@ describe('binary diff preview', () => {
             kind: 'model',
             mimeType: 'model/fbx',
             data: new Uint8Array([0]),
-            size: 1
+            size: 1,
+            contentState: 'available'
           }
         }}
       />
@@ -107,7 +111,8 @@ describe('binary diff preview', () => {
             kind: 'csv',
             mimeType: 'text/csv',
             data: csvData,
-            size: 28
+            size: 28,
+            contentState: 'available'
           }
         }}
       />
@@ -132,7 +137,8 @@ describe('binary diff preview', () => {
             kind: 'audio',
             mimeType: 'audio/ogg',
             data: new TextEncoder().encode('OggS'),
-            size: 4
+            size: 4,
+            contentState: 'available'
           }
         }}
       />
@@ -156,6 +162,7 @@ describe('binary diff preview', () => {
             mimeType: 'image/ktx2',
             data: new Uint8Array([0xab, 0x4b, 0x54, 0x58]),
             size: 12,
+            contentState: 'available',
             structuredPreview: {
               type: 'assetMetadata',
               format: 'KTX2',
@@ -184,7 +191,8 @@ describe('binary diff preview', () => {
             kind: 'font',
             mimeType: 'font/otf',
             data: new TextEncoder().encode('OTTO'),
-            size: 4
+            size: 4,
+            contentState: 'available'
           }
         }}
       />
@@ -207,6 +215,7 @@ describe('binary diff preview', () => {
             mimeType: 'application/x-pak',
             data: new Uint8Array(),
             size: 128,
+            contentState: 'available',
             structuredPreview: {
               type: 'archive',
               format: 'Quake PAK',
@@ -240,6 +249,7 @@ describe('binary diff preview', () => {
             mimeType: 'application/x-blender',
             data: new Uint8Array(),
             size: 256,
+            contentState: 'available',
             structuredPreview: {
               type: 'assetMetadata',
               format: 'Blender',
@@ -265,5 +275,109 @@ describe('binary diff preview', () => {
     const copy = copyPdfData(source)
     expect(Array.from(copy)).toEqual([37, 80, 68, 70])
     expect(copy).not.toBe(source)
+  })
+
+  it('renders only the file size change when an asset exceeds the preview limit', () => {
+    const html = renderToStaticMarkup(
+      <BinaryDiffPreview
+        fileName="World.umap"
+        loading={false}
+        error={null}
+        preview={{
+          before: {
+            path: 'Content/World.umap',
+            kind: 'asset',
+            mimeType: 'application/x-unreal-asset',
+            data: new Uint8Array(),
+            size: 24 * 1024 * 1024,
+            contentState: 'tooLarge'
+          },
+          after: {
+            path: 'Content/World.umap',
+            kind: 'asset',
+            mimeType: 'application/x-unreal-asset',
+            data: new Uint8Array(),
+            size: 30 * 1024 * 1024,
+            contentState: 'tooLarge'
+          }
+        }}
+      />
+    )
+
+    expect(html).toContain('Asset exceeds the embedded preview limit')
+    expect(html).toContain('24.0 MB')
+    expect(html).toContain('30.0 MB')
+    expect(html).toContain('+6.0 MB')
+    expect(html).toContain('binary-diff-preview__size-delta is-increase')
+    expect(html).toContain('lucide-file-exclamation-point')
+    expect(html).not.toContain('binary-diff-preview__card')
+  })
+
+  it('marks a negative oversized asset size change as a decrease', () => {
+    const html = renderToStaticMarkup(
+      <BinaryDiffPreview
+        fileName="World.umap"
+        loading={false}
+        error={null}
+        preview={{
+          before: {
+            path: 'Content/World.umap',
+            kind: 'asset',
+            mimeType: 'application/x-unreal-asset',
+            data: new Uint8Array(),
+            size: 30 * 1024 * 1024,
+            contentState: 'tooLarge'
+          },
+          after: {
+            path: 'Content/World.umap',
+            kind: 'asset',
+            mimeType: 'application/x-unreal-asset',
+            data: new Uint8Array(),
+            size: 24 * 1024 * 1024,
+            contentState: 'tooLarge'
+          }
+        }}
+      />
+    )
+
+    expect(html).toContain('−6.0 MB')
+    expect(html).toContain('binary-diff-preview__size-delta is-decrease')
+  })
+
+  it('uses a distinct message for an unsupported binary size change', () => {
+    const html = renderToStaticMarkup(
+      <BinaryDiffPreview
+        fileName="OnlineFramework.archive"
+        loading={false}
+        error={null}
+        preview={{
+          before: {
+            path: 'src/OnlineFramework.archive',
+            kind: 'binary',
+            mimeType: 'application/octet-stream',
+            data: new Uint8Array(),
+            size: 8 * 1024,
+            contentState: 'unsupported'
+          },
+          after: {
+            path: 'src/OnlineFramework.archive',
+            kind: 'binary',
+            mimeType: 'application/octet-stream',
+            data: new Uint8Array(),
+            size: 9 * 1024,
+            contentState: 'unsupported'
+          }
+        }}
+      />
+    )
+
+    expect(html).toContain('This binary type does not support embedded preview')
+    expect(html).toContain('8.0 KB')
+    expect(html).toContain('9.0 KB')
+    expect(html).toContain('+1.0 KB')
+    expect(html).toContain('binary-diff-preview__size-delta is-increase')
+    expect(html).toContain('lucide-binary')
+    expect(html).not.toContain('lucide-file-exclamation-point')
+    expect(html).not.toContain('Asset exceeds the embedded preview limit')
   })
 })

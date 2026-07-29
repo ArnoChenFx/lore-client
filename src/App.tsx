@@ -242,8 +242,8 @@ function App() {
    */
   const workspaceInspectorVisible = activeView !== 'changes' || preferences.localChangesDiffVisible
   const loadActiveRepositoryBinaryPreview = useCallback(
-    (path: string, revision?: string): Promise<BinaryFilePreview> =>
-      loadBinaryFilePreview(activeRepository.path, path, revision),
+    (path: string, revision?: string, metadataOnly = false): Promise<BinaryFilePreview> =>
+      loadBinaryFilePreview(activeRepository.path, path, revision, metadataOnly),
     [activeRepository.path]
   )
   const demoRevisionFiles = useMemo(() => {

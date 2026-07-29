@@ -76,8 +76,8 @@ use serde_json::Value;
 use tauri::Emitter;
 
 use crate::asset_preview::{
-    binary_preview_format, build_structured_preview, ensure_binary_preview_size,
-    prepare_preview_payload, StructuredAssetPreview,
+    binary_preview_format, binary_preview_size_exceeded, build_structured_preview,
+    ensure_binary_preview_size, prepare_preview_payload, StructuredAssetPreview,
 };
 use crate::client_preferences::RepositoryAuthAccountBinding;
 
@@ -448,8 +448,20 @@ pub struct LoreFilePreview {
     pub mime_type: &'static str,
     pub data: Vec<u8>,
     pub size: u64,
+    /// 超限、不支持或调用方仅请求元数据时只返回大小；`data` 保持为空且不读取正文。
+    pub content_state: LoreFilePreviewContentState,
     /// 归档目录与引擎资产元数据由 Rust 解析，React 不接触不可信二进制结构。
     pub structured_preview: Option<StructuredAssetPreview>,
+}
+
+/// Raw IPC 预览正文的可用状态；前端据此区分真实空文件与不同原因的安全省略内容。
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LoreFilePreviewContentState {
+    Available,
+    TooLarge,
+    Unsupported,
+    MetadataOnly,
 }
 
 /** Raw IPC 二进制信封前部的轻量 JSON 元数据。 */
@@ -460,6 +472,7 @@ struct LoreFilePreviewMetadata {
     kind: &'static str,
     mime_type: &'static str,
     size: u64,
+    content_state: LoreFilePreviewContentState,
     structured_preview: Option<StructuredAssetPreview>,
 }
 
