@@ -3036,6 +3036,12 @@ kbd {
   font-size: 10px;
 }
 
+.change-file-row__name small.is-path-transition,
+.revision-change-row.is-file small.is-path-transition {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .change-file-row > em {
   /*
    * “二进制”是可选标签，但始终占用第 3 列。显式指定列位后，标签缺席时

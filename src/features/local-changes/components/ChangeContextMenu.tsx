@@ -21,8 +21,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from
 import { createPortal } from 'react-dom'
 
 import { t } from '../../../i18n'
-import { fileLockOwnerLabel } from '../../../shared/lib'
-import { changeFilePath } from '../../../shared/lib'
+import { changeFilePath, changeFilePathTransition, fileLockOwnerLabel } from '../../../shared/lib'
 import type { ContextMenuPoint } from '../../../shared/ui'
 import type { ChangeFile, ExternalDiffToolPreference, LoreFileLock, ToastMessage } from '../../../types'
 
@@ -234,6 +233,19 @@ export function ChangeContextMenu({
   }
 
   const { files, primary } = request
+  const primaryPathTransition = changeFilePathTransition(primary)
+  const primaryPathLabel = primaryPathTransition
+    ? t('status.pathTransition', {
+        source: primaryPathTransition.sourcePath,
+        target: primaryPathTransition.targetPath
+      })
+    : changeFilePath(primary)
+  const primaryPathDescription = primaryPathTransition
+    ? t(primaryPathTransition.kind === 'moved' ? 'status.movedFromTo' : 'status.renamedFromTo', {
+        source: primaryPathTransition.sourcePath,
+        target: primaryPathTransition.targetPath
+      })
+    : changeFilePath(primary)
   const single = files.length === 1
   const unstaged = files.filter((file) => !file.staged)
   const staged = files.filter((file) => file.staged)
@@ -340,12 +352,12 @@ export function ChangeContextMenu({
       }}
     >
       <header>
-        <strong title={single ? changeFilePath(primary) : undefined}>
+        <strong title={single ? primaryPathDescription : undefined}>
           {single ? primary.name : t('status.fileCount', { count: files.length })}
         </strong>
         <small>
           {single
-            ? changeFilePath(primary)
+            ? primaryPathLabel
             : t('status.stagedAndUnstaged', { staged: staged.length, unstaged: unstaged.length })}
         </small>
       </header>

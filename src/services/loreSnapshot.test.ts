@@ -36,6 +36,7 @@ const {
   loreEventParsers,
   publishRepository,
   runConflictAction,
+  stageMove,
   switchBranch
 } = await import('./lore')
 
@@ -875,6 +876,23 @@ describe('repository snapshot branch loading', () => {
       operation: 'merge',
       action: 'mine',
       paths: ['Content/Conflict.txt']
+    })
+  })
+
+  it('passes an atomic move relation to the native stage command', async () => {
+    invokeMock.mockResolvedValueOnce({
+      operation: 'file.stage-move',
+      status: 0,
+      durationMs: 1,
+      events: []
+    })
+
+    await stageMove('E:\\Worlds\\RealLore', 'old/file.txt', 'next/file.txt')
+
+    expect(invokeMock).toHaveBeenCalledWith('lore_stage_move', {
+      repositoryPath: 'E:\\Worlds\\RealLore',
+      sourcePath: 'old/file.txt',
+      targetPath: 'next/file.txt'
     })
   })
 

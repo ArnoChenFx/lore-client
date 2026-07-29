@@ -668,30 +668,452 @@ pub async fn lore_repository_view_apply(
     run_lore_task(move || apply_repository_view(repository_path, revision, content)).await
 }
 
-/// 读取仓库状态，并可选择执行一次完整文件系统扫描。
+/// 读取仓库状态，并对旧版本可能遗留的结构事件做保守归一化。
+///
+/// 旧客户端或外部 Lore 写入式扫描可能把未提交新增留在 staged state；若该路径随后
+/// 在提交前被删除，后续 Status 会把它误报为 Delete。这里以当前 Revision Tree 为权威基线，
+/// 只对无冲突的结构变化做精确归一化：不存在于基线的未暂存 Delete，以及磁盘已
+/// 明确不存在的未暂存 Add 被剔除；唯一的“删除源内容地址 = 新增目标工作区哈希”
+/// 配对在相同 Stage 分区内被提升为 Move。
+/// 已暂存与未暂存事件绝不跨区合并，避免把“已暂存新增后又从工作区删除”等双层语义
+/// 错误折叠；任何冲突状态则完整保留上游事件。
+pub(super) fn normalize_unstaged_structural_status(
+    repository_path: &str,
+    mut result: LoreOperationResult,
+) -> LoreOperationResult {
+    if result.status != 0 || result.events.iter().any(status_event_has_conflict) {
+        return result;
+    }
+
+    let missing_unstaged_adds = collect_missing_unstaged_add_paths(repository_path, &result.events);
+
+    let deleted_paths = result
+        .events
+        .iter()
+        .filter(|event| {
+            event.get("tagName").and_then(Value::as_str) == Some("repositoryStatusFile")
+                && event.pointer("/data/type").and_then(Value::as_str) == Some("file")
+                && event.pointer("/data/action").and_then(Value::as_str) == Some("delete")
+        })
+        .filter_map(|event| event.pointer("/data/path").and_then(Value::as_str))
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if deleted_paths.is_empty() {
+        rewrite_unstaged_structural_status_events(
+            &mut result.events,
+            &[],
+            &BTreeMap::new(),
+            &missing_unstaged_adds,
+        );
+        return result;
+    }
+
+    let Some(current_revision) = result
+        .events
+        .iter()
+        .find(|event| {
+            event.get("tagName").and_then(Value::as_str) == Some("repositoryStatusRevision")
+        })
+        .and_then(|event| event.pointer("/data/revision").and_then(Value::as_str))
+        .filter(|revision| !revision.is_empty())
+    else {
+        return result;
+    };
+    let baseline_files = if is_zero_hash(current_revision) {
+        Vec::new()
+    } else {
+        match collect_revision_tree_files_at_paths(
+            repository_path,
+            current_revision,
+            &deleted_paths,
+        ) {
+            Ok(files) => files,
+            Err(error) => {
+                log::debug!(
+                    "Skipping structural status normalization because the current revision tree could not be read: {}",
+                    error.message
+                );
+                return result;
+            }
+        }
+    };
+
+    let deleted_sizes = baseline_files
+        .iter()
+        .map(|file| file.size)
+        .collect::<BTreeSet<_>>();
+    let added_candidates = result
+        .events
+        .iter()
+        .filter(|event| {
+            event.get("tagName").and_then(Value::as_str) == Some("repositoryStatusFile")
+                && event.pointer("/data/type").and_then(Value::as_str) == Some("file")
+                && event.pointer("/data/action").and_then(Value::as_str) == Some("add")
+        })
+        .filter_map(|event| {
+            let path = event.pointer("/data/path").and_then(Value::as_str)?;
+            let size = event.pointer("/data/size").and_then(Value::as_u64)?;
+            deleted_sizes
+                .contains(&size)
+                .then(|| (path.to_owned(), size))
+        })
+        .collect::<Vec<_>>();
+    let workspace_hashes = hash_workspace_status_candidates(repository_path, &added_candidates);
+    rewrite_unstaged_structural_status_events(
+        &mut result.events,
+        &baseline_files,
+        &workspace_hashes,
+        &missing_unstaged_adds,
+    );
+    result
+}
+
+/// 找出 Lore 仍报告为未暂存 Add、但工作区文件系统已经明确返回不存在的路径。
+///
+/// 只接受通过仓库相对路径校验且 `symlink_metadata` 返回 NotFound 的证据。权限失败、
+/// 其他 I/O 错误和仍存在的符号链接都保留原事件，避免一次只读状态修正隐藏真实变化。
+fn collect_missing_unstaged_add_paths(repository_path: &str, events: &[Value]) -> BTreeSet<String> {
+    events
+        .iter()
+        .filter(|event| {
+            event.get("tagName").and_then(Value::as_str) == Some("repositoryStatusFile")
+                && event.pointer("/data/type").and_then(Value::as_str) == Some("file")
+                && event.pointer("/data/action").and_then(Value::as_str) == Some("add")
+                && event.pointer("/data/flagStaged").and_then(Value::as_bool) != Some(true)
+        })
+        .filter_map(|event| event.pointer("/data/path").and_then(Value::as_str))
+        .filter_map(|path| {
+            let relative_path = validate_repository_relative_path(path).ok()?;
+            match std::fs::symlink_metadata(Path::new(repository_path).join(relative_path)) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Some(path.to_owned()),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// 冲突事件包含多个互斥或组合标记；任一个为真都必须跳过结构归一化。
+fn status_event_has_conflict(event: &Value) -> bool {
+    event.get("tagName").and_then(Value::as_str) == Some("repositoryStatusFile")
+        && [
+            "flagConflict",
+            "flagConflictUnresolved",
+            "flagConflictAutomerged",
+            "flagConflictMine",
+            "flagConflictTheirs",
+        ]
+        .iter()
+        .any(|flag| {
+            event
+                .pointer(&format!("/data/{flag}"))
+                .and_then(Value::as_bool)
+                == Some(true)
+        })
+}
+
+/// 通过 Lore 自身的流式文件哈希读取候选目标，避免为了识别大型资产移动而把正文整体
+/// 载入客户端内存。路径先经过仓库相对路径与符号链接越界校验；任一候选在扫描后发生
+/// 漂移时只放弃该候选的 Move 提升，仍可继续剔除已有 Tree 证据支持的幽灵 Delete。
+fn hash_workspace_status_candidates(
+    repository_path: &str,
+    candidates: &[(String, u64)],
+) -> BTreeMap<String, String> {
+    let validated = candidates
+        .iter()
+        .filter_map(|(relative_path, size)| {
+            match validate_existing_workspace_file(repository_path, relative_path) {
+                Ok(absolute_path) => Some((relative_path.clone(), *size, absolute_path)),
+                Err(error) => {
+                    log::debug!(
+                        "Skipping workspace move hash for {relative_path}: {}",
+                        error.message
+                    );
+                    None
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+    if validated.is_empty() {
+        return BTreeMap::new();
+    }
+
+    let globals = match global_args(repository_path) {
+        Ok(globals) => globals,
+        Err(error) => {
+            log::debug!(
+                "Skipping workspace move hashes because repository globals are unavailable: {}",
+                error.message
+            );
+            return BTreeMap::new();
+        }
+    };
+    let paths = validated
+        .iter()
+        .map(|(_, _, path)| LoreString::from_path(path))
+        .collect::<Vec<_>>();
+    let hash_result = run_operation("file.hash.status-move", move |callback| {
+        lore::runtime().block_on(lore::file::hash(
+            globals,
+            LoreFileHashArgs {
+                paths: LoreArray::from_vec(paths),
+            },
+            callback,
+        ))
+    });
+    let hash_result = match hash_result {
+        Ok(result) if result.status == 0 => result,
+        Ok(result) => {
+            log::debug!(
+                "Skipping workspace move hashes because Lore file hash returned status {}",
+                result.status
+            );
+            return BTreeMap::new();
+        }
+        Err(error) => {
+            log::debug!(
+                "Skipping workspace move hashes because Lore file hash failed: {}",
+                error.message
+            );
+            return BTreeMap::new();
+        }
+    };
+
+    let hashes = hash_result
+        .events
+        .iter()
+        .filter(|event| event.get("tagName").and_then(Value::as_str) == Some("fileHash"))
+        .collect::<Vec<_>>();
+    /*
+     * 固定 Lore 的 File Hash 按请求数组顺序同步遍历并逐项发出事件；以相同顺序配对可
+     * 避免 Windows 扩展路径在跨 FFI 序列化时出现额外前缀。大小仍需一致，防止哈希
+     * 期间文件被外部编辑后把旧 Status 的目标误配成 Move。
+     */
+    validated
+        .iter()
+        .zip(hashes)
+        .filter_map(|((relative_path, expected_size, _), event)| {
+            let size = event.pointer("/data/size").and_then(Value::as_u64)?;
+            let hash = event.pointer("/data/hash").and_then(Value::as_str)?;
+            (*expected_size == size).then(|| (relative_path.clone(), hash.to_owned()))
+        })
+        .collect()
+}
+
+/// 依据已经取得的不可变 Tree 元数据与工作区内容哈希改写事件流。
+///
+/// 只有同一 Stage 分区内的哈希分组两端都恰好各一项时才合并 Move；一个来源对应多个
+/// 同内容目标、多个同内容来源对应一个目标，或来源与目标跨 Stage 分区，都保持
+/// Add/Delete，明确拒绝在有歧义时随意选择路径关系。
+pub(super) fn rewrite_unstaged_structural_status_events(
+    events: &mut Vec<Value>,
+    baseline_files: &[RevisionTreeFile],
+    workspace_hashes: &BTreeMap<String, String>,
+    missing_unstaged_adds: &BTreeSet<String>,
+) {
+    let baseline_by_path = baseline_files
+        .iter()
+        .map(|file| (file.path.as_str(), file))
+        .collect::<BTreeMap<_, _>>();
+    let mut removed_indices = events
+        .iter()
+        .enumerate()
+        .filter(|(_, event)| {
+            if event.get("tagName").and_then(Value::as_str) != Some("repositoryStatusFile")
+                || event.pointer("/data/type").and_then(Value::as_str) != Some("file")
+                || event.pointer("/data/flagStaged").and_then(Value::as_bool) == Some(true)
+            {
+                return false;
+            }
+            let Some(path) = event.pointer("/data/path").and_then(Value::as_str) else {
+                return false;
+            };
+            match event.pointer("/data/action").and_then(Value::as_str) {
+                Some("delete") => !baseline_by_path.contains_key(path),
+                Some("add") => missing_unstaged_adds.contains(path),
+                _ => false,
+            }
+        })
+        .map(|(index, _)| index)
+        .collect::<BTreeSet<_>>();
+
+    let address_hash = |address: &str| {
+        address
+            .split_once('-')
+            .map(|(hash, _)| hash)
+            .filter(|hash| hash.len() == 64 && hash.chars().any(|character| character != '0'))
+            .map(str::to_owned)
+    };
+    let mut deleted_by_content = BTreeMap::<(String, u64, bool), Vec<(usize, String)>>::new();
+    let mut added_by_content = BTreeMap::<(String, u64, bool), Vec<(usize, String)>>::new();
+    for (index, event) in events.iter().enumerate() {
+        if removed_indices.contains(&index)
+            || event.get("tagName").and_then(Value::as_str) != Some("repositoryStatusFile")
+            || event.pointer("/data/type").and_then(Value::as_str) != Some("file")
+        {
+            continue;
+        }
+        let Some(path) = event.pointer("/data/path").and_then(Value::as_str) else {
+            continue;
+        };
+        let staged = event.pointer("/data/flagStaged").and_then(Value::as_bool) == Some(true);
+        match event.pointer("/data/action").and_then(Value::as_str) {
+            Some("delete") => {
+                let Some(file) = baseline_by_path.get(path) else {
+                    continue;
+                };
+                let Some(hash) = address_hash(&file.address) else {
+                    continue;
+                };
+                deleted_by_content
+                    .entry((hash, file.size, staged))
+                    .or_default()
+                    .push((index, path.to_owned()));
+            }
+            Some("add") => {
+                let Some(hash) = workspace_hashes.get(path) else {
+                    continue;
+                };
+                let Some(size) = event.pointer("/data/size").and_then(Value::as_u64) else {
+                    continue;
+                };
+                added_by_content
+                    .entry((hash.clone(), size, staged))
+                    .or_default()
+                    .push((index, path.to_owned()));
+            }
+            _ => {}
+        }
+    }
+
+    for (content, deleted) in deleted_by_content {
+        let Some(added) = added_by_content.get(&content) else {
+            continue;
+        };
+        if deleted.len() != 1 || added.len() != 1 {
+            continue;
+        }
+        let (deleted_index, source_path) = &deleted[0];
+        let (added_index, _) = &added[0];
+        let Some(data) = events[*added_index]
+            .get_mut("data")
+            .and_then(Value::as_object_mut)
+        else {
+            continue;
+        };
+        data.insert("action".to_owned(), Value::String("move".to_owned()));
+        data.insert("fromPath".to_owned(), Value::String(source_path.clone()));
+        removed_indices.insert(*deleted_index);
+    }
+
+    let mut index = 0_usize;
+    events.retain(|_| {
+        let keep = !removed_indices.contains(&index);
+        index += 1;
+        keep
+    });
+}
+
+/// 在 Lore 的只读 RepositoryContext 中执行完整 Status 扫描。
+///
+/// 顶层 `lore::repository::status` 会在 `scan` 或 `check_dirty` 开启时自动选择写调用，
+/// 但固定 Lore 没有公开“扫描但不持久化”的 FFI 参数。底层 Status 已经把持久化严格
+/// 绑定到 `RepositoryWriteToken`，因此这里重建最小公开执行边界：继续使用绑定账户、
+/// Lore EventDispatcher、结构化错误与 End/Complete 生命周期，只把仓库访问模式固定为
+/// `ReadOnly`。扫描产生的临时 dirty 标记随内存 State 释放，不会写回 staged anchor。
+fn run_read_only_repository_status(
+    repository_path: PathBuf,
+    globals: LoreGlobalArgs,
+    callback: LoreEventCallback,
+) -> i32 {
+    let execution = Arc::new(lore_revision::interface::ExecutionContext::new_client(
+        globals,
+        lore_revision::relay::EventDispatcher::new(callback),
+    ));
+    let scoped_execution = execution.clone();
+
+    lore::runtime().block_on(
+        lore_revision::runtime::LORE_CONTEXT.scope(execution, async move {
+            let repository = match lore_revision::repository::load_and_connect(
+                &repository_path,
+                lore_revision::repository::RepositoryAccess::ReadOnly,
+            )
+            .await
+            {
+                Ok(repository) => repository,
+                Err(error) => {
+                    return scoped_execution
+                        .dispatcher
+                        .complete_result::<(), _>(Err(error))
+                        .await;
+                }
+            };
+
+            let result = lore_revision::repository::status::status(
+                repository,
+                None,
+                lore_revision::repository::status::StatusOptions {
+                    staged: true,
+                    /*
+                     * 仓库快照必须同时包含 staged 路径与当前文件系统差异。若按旧
+                     * `scan=false` 只返回已持久化节点，后台远端刷新会用残缺快照
+                     * 覆盖仍然存在的本地变化。只读上下文保证完整扫描不会序列化。
+                     */
+                    scan: true,
+                    check_dirty: false,
+                    reset: false,
+                    sync_point: true,
+                    revision_only: false,
+                    count: true,
+                },
+            )
+            .await;
+            scoped_execution.dispatcher.complete_result(result).await
+        }),
+    )
+}
+
 #[tauri::command]
 pub async fn lore_repository_status(
     repository_path: String,
     scan: bool,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     run_lore_task(move || {
+        // 保留 `scan` 形参名称维持 Tauri IPC 契约；完整快照现在无条件执行只读扫描。
+        let _scan_requested = scan;
         let globals = global_args(&repository_path)?;
-        run_operation("repository.status", move |callback| {
-            lore::runtime().block_on(lore::repository::status(
-                globals,
-                LoreRepositoryStatusArgs {
-                    staged: 1,
-                    scan: u8::from(scan),
-                    check_dirty: u8::from(!scan),
-                    reset: 0,
-                    sync_point: 1,
-                    revision_only: 0,
-                    count: 1,
-                    paths: LoreArray::default(),
-                },
-                callback,
-            ))
-        })
+        /*
+         * 必须与 Lore 顶层调用使用同一套路径清理。Windows `canonicalize` 产生的
+         * `\\?\` 路径和 Lore 清理后的普通路径若同时作为 RepositoryLock 键，会让
+         * 同一进程尝试再次取得自己的 OS 文件锁，直到旧 Flush 释放才恢复。
+         */
+        let validated_repository_path = lore_revision::util::path::make_absolute_from(
+            globals.repository_path.as_str(),
+            globals.working_directory().map(Path::new),
+        )
+        .map_err(|error| {
+            LoreCommandError::new(
+                "repository_path_unavailable",
+                format!("Failed to normalize repository path for read-only status: {error}"),
+            )
+        })?;
+        let result = run_operation("repository.status", move |callback| {
+            /*
+             * Lore 顶层 `repository::status(scan=1)` 会主动取得写令牌，并把扫描得到的
+             * Dirty flags 序列化到 staged anchor。工作区查看不应改变待提交树，因此
+             * 这里直接复用 Lore 的只读调用边界和底层 Status 实现：完整扫描仍使用
+             * Lore 自身的 Filter、Layer、Link 与内容比较规则，但只读 RepositoryContext
+             * 没有写令牌，Status 结束时无法持久化临时 dirty state。
+             *
+             * IPC 暂时保留旧 `scan` 参数以兼容前端和外部调用方，但仓库快照的契约
+             * 是完整快照，因此读路径始终扫描。若将来需要仅刷新远端元数据，应新增
+             * 不包含 `changes` 的独立 DTO，不能用残缺 Status 冒充完整快照。
+             */
+            run_read_only_repository_status(validated_repository_path, globals, callback)
+        })?;
+        Ok(normalize_unstaged_structural_status(
+            &repository_path,
+            result,
+        ))
     })
     .await
 }

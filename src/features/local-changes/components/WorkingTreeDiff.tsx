@@ -3,9 +3,14 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
-import { t } from '../../../i18n'
 import { fileLockOwnerLabel } from '../../../shared/lib'
-import { binaryPreviewKind, changeFilePath, countUnifiedDiffLines, parseUnifiedDiff } from '../../../shared/lib'
+import {
+  binaryPreviewKind,
+  changeFilePath,
+  changeFilePathTransition,
+  countUnifiedDiffLines,
+  parseUnifiedDiff
+} from '../../../shared/lib'
 import { BinaryDiffPreview, DiffOptionsControl } from '../../../shared/ui'
 import type {
   BinaryDiffPreview as BinaryDiffPreviewData,
@@ -27,13 +32,6 @@ interface WorkingTreeDiffProps {
   binaryPreviewError: string | null
 }
 
-const statusLabels = {
-  modified: t('modified'),
-  added: t('added'),
-  deleted: t('deleted'),
-  renamed: t('renamed')
-} as const
-
 /** 本地更改专用 Diff 面板，只渲染 Lore 返回的 unified patch。 */
 export function WorkingTreeDiff({
   file,
@@ -52,6 +50,16 @@ export function WorkingTreeDiff({
   const lines = useMemo(() => (diff?.patch ? parseUnifiedDiff(diff.patch) : []), [diff?.patch])
   const lineCounts = useMemo(() => countUnifiedDiffLines(lines), [lines])
   const previewableKind = file ? binaryPreviewKind(changeFilePath(file)) : null
+  const pathTransition = file ? changeFilePathTransition(file) : null
+  const filePathLabel = file
+    ? pathTransition
+      ? t('status.pathTransition', {
+          source: pathTransition.sourcePath,
+          target: pathTransition.targetPath
+        })
+      : changeFilePath(file)
+    : ''
+  const fileStatusLabel = file ? t(pathTransition?.kind ?? file.status) : ''
 
   return (
     <section className={`working-diff${fileLock ? ' has-lock' : ''}`}>
@@ -70,7 +78,7 @@ export function WorkingTreeDiff({
             <strong>{file?.name ?? selectionLabel?.split('/').at(-1) ?? t('noFileSelected')}</strong>
             <small>
               {file
-                ? `${changeFilePath(file)} · ${statusLabels[file.status]}`
+                ? `${filePathLabel} · ${fileStatusLabel}`
                 : selectionLabel
                   ? `${selectionLabel} · ${t('folderSelected')}`
                   : t('selectWorkspaceFileLeft_da82')}
@@ -117,7 +125,7 @@ export function WorkingTreeDiff({
         <div className="working-diff__empty">
           <LoaderCircle className="is-spinning" size={27} />
           <strong>{t('loadingLoreDiff')}</strong>
-          <span>{changeFilePath(file)}</span>
+          <span>{filePathLabel}</span>
         </div>
       ) : error ? (
         <div className="working-diff__empty is-error">

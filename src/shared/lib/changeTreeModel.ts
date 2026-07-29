@@ -23,6 +23,14 @@ export interface ChangeContextSelectionResult extends ChangeSelectionResult {
   primaryId: string
 }
 
+/** 文件路径发生变化时供各变更视图共享的精确展示语义。 */
+export interface ChangePathTransition {
+  sourcePath: string
+  targetPath: string
+  /** 同目录只改文件名属于重命名；父目录变化则属于移动。 */
+  kind: 'moved' | 'renamed'
+}
+
 interface MutableDirectory {
   name: string
   path: string
@@ -38,6 +46,48 @@ const pathCollator = new Intl.Collator('zh-CN', {
 /** 返回 Lore 使用的正斜杠仓库相对路径。 */
 export function changeFilePath(file: RepositoryFileReference): string {
   return file.path === '.' ? file.name : `${file.path}/${file.name}`
+}
+
+/** 返回仓库相对路径的父目录；根目录文件统一使用 `.`。 */
+function repositoryPathDirectory(path: string): string {
+  const separatorIndex = path.lastIndexOf('/')
+  return separatorIndex >= 0 ? path.slice(0, separatorIndex) || '.' : '.'
+}
+
+/**
+ * 将 Lore 已确认的 Move 来源转换为稳定的移动/重命名展示模型。
+ *
+ * 这里刻意要求 `renamed` 状态和非空 `previousPath` 同时存在。新增、删除或来源缺失
+ * 时不能根据文件名、大小或内容相似度猜测，否则同内容资产会被错误合并成一次移动。
+ */
+export function changeFilePathTransition(file: ChangeFile): ChangePathTransition | null {
+  const sourcePath = file.previousPath?.replaceAll('\\', '/').trim()
+  if (file.status !== 'renamed' || !sourcePath) return null
+
+  const targetPath = changeFilePath(file)
+  if (sourcePath === targetPath) return null
+
+  return {
+    sourcePath,
+    targetPath,
+    kind: repositoryPathDirectory(sourcePath) === repositoryPathDirectory(targetPath) ? 'renamed' : 'moved'
+  }
+}
+
+/**
+ * 展开文件写操作必须覆盖的全部仓库相对路径。
+ *
+ * 普通变更只包含当前路径；已经由 Lore 确认来源的移动/重命名同时包含旧、新路径，
+ * 保证 Stage/Unstage 不会把一次原子路径变化拆成“删除尚未暂存、添加已经暂存”。
+ */
+export function changeFileOperationPaths(files: readonly ChangeFile[]): string[] {
+  const paths = new Set<string>()
+  for (const file of files) {
+    const transition = changeFilePathTransition(file)
+    if (transition) paths.add(transition.sourcePath)
+    paths.add(changeFilePath(file))
+  }
+  return [...paths]
 }
 
 /** 文件和目录必须使用不同命名空间，才能保存彼此独立的视觉选区。 */

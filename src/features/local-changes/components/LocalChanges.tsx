@@ -14,6 +14,7 @@ import {
   LockKeyhole,
   LoaderCircle,
   Minus,
+  MoveRight,
   PanelRightClose,
   PanelRightOpen,
   Plus,
@@ -40,6 +41,7 @@ import {
   buildChangeTreeRows,
   changeFileObjectId,
   changeFilePath,
+  changeFilePathTransition,
   clampStageSplitRatio,
   isChangeDirectoryObjectId,
   resolveSelectedChangeFiles,
@@ -136,7 +138,7 @@ const statusInfo = {
   modified: { labelKey: 'modified', short: 'M', icon: FileCode2 },
   added: { labelKey: 'added', short: 'A', icon: FilePlus2 },
   deleted: { labelKey: 'deleted', short: 'D', icon: FileX2 },
-  renamed: { labelKey: 'renamed', short: 'R', icon: FileCode2 }
+  renamed: { labelKey: 'renamed', short: 'R', icon: MoveRight }
 } as const
 
 interface ChangeGroupProps {
@@ -175,6 +177,19 @@ function ChangeGroup({
     const objectId = changeFileObjectId(file.id)
     const selected = selectedIds.has(objectId)
     const fileLock = lockByPath.get(changeFilePath(file))
+    const pathTransition = changeFilePathTransition(file)
+    const transitionText = pathTransition
+      ? t('status.pathTransition', {
+          source: pathTransition.sourcePath,
+          target: pathTransition.targetPath
+        })
+      : null
+    const transitionDescription = pathTransition
+      ? t(pathTransition.kind === 'moved' ? 'status.movedFromTo' : 'status.renamedFromTo', {
+          source: pathTransition.sourcePath,
+          target: pathTransition.targetPath
+        })
+      : null
     return (
       <div
         key={objectId}
@@ -205,7 +220,10 @@ function ChangeGroup({
         aria-keyshortcuts="Enter"
         title={t('status.doubleClickActionPath', { action: actionLabel, path: changeFilePath(file) })}
       >
-        <span className={`change-file-row__status is-${file.status}`} title={t(status.labelKey)}>
+        <span
+          className={`change-file-row__status is-${file.status}`}
+          title={transitionDescription ?? t(status.labelKey)}
+        >
           <StatusIcon size={13} />
           <i>{status.short}</i>
         </span>
@@ -227,7 +245,14 @@ function ChangeGroup({
               </em>
             )}
           </strong>
-          {viewMode === 'flat' && <small>{file.path}</small>}
+          {(viewMode === 'flat' || transitionText) && (
+            <small
+              className={transitionText ? 'is-path-transition' : undefined}
+              title={transitionDescription ?? undefined}
+            >
+              {transitionText ?? file.path}
+            </small>
+          )}
         </span>
         {file.binary && <em>{t('binary')}</em>}
         <button
@@ -442,7 +467,12 @@ export function LocalChanges({
   const visibleFiles = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase()
     if (!normalized) return files
-    return files.filter((file) => changeFilePath(file).toLocaleLowerCase().includes(normalized))
+    return files.filter((file) => {
+      const transition = changeFilePathTransition(file)
+      return [changeFilePath(file), transition?.sourcePath]
+        .filter(Boolean)
+        .some((path) => path!.toLocaleLowerCase().includes(normalized))
+    })
   }, [files, query])
 
   // 未暂存优先，与 Fork 的工作区顺序一致，也决定 Shift 范围与全选的稳定顺序。

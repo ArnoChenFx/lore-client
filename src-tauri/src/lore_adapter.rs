@@ -27,8 +27,8 @@ use lore::dependency::{
     LoreFileDependencyAddArgs, LoreFileDependencyListArgs, LoreFileDependencyRemoveArgs,
 };
 use lore::file::{
-    LoreFileDiffArgs, LoreFileHistoryArgs, LoreFileMetadataListArgs, LoreFileResetArgs,
-    LoreFileStageArgs, LoreFileUnstageArgs,
+    LoreFileDiffArgs, LoreFileHashArgs, LoreFileHistoryArgs, LoreFileMetadataListArgs,
+    LoreFileResetArgs, LoreFileStageArgs, LoreFileStageMoveArgs, LoreFileUnstageArgs,
 };
 use lore::interface::{
     LoreArray, LoreEvent, LoreEventCallback, LoreGlobalArgs, LoreMetadataType, LoreString,

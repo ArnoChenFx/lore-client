@@ -1202,6 +1202,15 @@ export async function stagePaths(repositoryPath: string, paths: string[]): Promi
   return runOperation('lore_stage', { repositoryPath, paths })
 }
 
+/** 使用 Lore 原生移动语义原子暂存来源删除与目标新增。 */
+export async function stageMove(
+  repositoryPath: string,
+  sourcePath: string,
+  targetPath: string
+): Promise<LoreOperationResult> {
+  return runOperation('lore_stage_move', { repositoryPath, sourcePath, targetPath })
+}
+
 export async function unstagePaths(repositoryPath: string, paths: string[]): Promise<LoreOperationResult> {
   return runOperation('lore_unstage', { repositoryPath, paths })
 }

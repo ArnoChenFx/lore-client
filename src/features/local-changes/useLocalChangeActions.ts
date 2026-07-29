@@ -13,11 +13,14 @@ import {
   openWorkspaceFile,
   runConflictAction,
   savePatchFile,
+  stageMove,
   stagePaths,
   unstagePaths
 } from '../../services/lore'
 import {
   changeDirectoryPathFromObjectId,
+  changeFilePathTransition,
+  changeFileOperationPaths,
   changeFileObjectId,
   changeFilePath,
   collectChangeObjectIds,
@@ -52,6 +55,35 @@ import {
 interface ChangeSelection {
   selectedIds: string[]
   primaryId: string
+}
+
+export interface ChangeStagePlan {
+  /** 可以由 Lore 普通批量 Stage 处理的仓库相对路径。 */
+  regularPaths: string[]
+  /** 必须保留来源关系并逐项交给 Lore 原生 stage_move 的路径变化。 */
+  moves: Array<{ sourcePath: string; targetPath: string }>
+}
+
+/**
+ * 把 UI 文件选区拆成普通路径暂存与原子移动暂存。
+ *
+ * Move 的来源路径不得再次落入普通 Stage，否则先执行的一半操作可能把同一个移动
+ * 降级成独立删除/新增。该函数只建立稳定调用计划，不读取文件系统或修改 DTO。
+ */
+export function createChangeStagePlan(files: readonly ChangeFile[]): ChangeStagePlan {
+  const regularFiles: ChangeFile[] = []
+  const moves = files.flatMap((file) => {
+    const transition = changeFilePathTransition(file)
+    if (!transition) {
+      regularFiles.push(file)
+      return []
+    }
+    return [{ sourcePath: transition.sourcePath, targetPath: transition.targetPath }]
+  })
+  return {
+    regularPaths: changeFileOperationPaths(regularFiles),
+    moves
+  }
 }
 
 /**
@@ -159,7 +191,8 @@ export function useLocalChangeActions({
     async (files: ChangeFile[], staged: boolean) => {
       if (!activeSnapshot || files.length === 0) return
       const ids = new Set(files.map((file) => file.id))
-      const paths = files.map(changeFilePath)
+      // Unstage 仍需覆盖 Move 两端；Stage 则交给 Lore 原生 stage_move 保留原子关系。
+      const paths = changeFileOperationPaths(files)
       if (applicationMode === 'browser-demo') {
         upsertSnapshot({
           ...activeSnapshot,
@@ -170,7 +203,25 @@ export function useLocalChangeActions({
 
       await runRepositoryMutation(
         staged ? 'stageFiles' : 'unstageFiles',
-        (repository) => (staged ? stagePaths(repository.path, paths) : unstagePaths(repository.path, paths)),
+        async (repository) => {
+          if (!staged) return unstagePaths(repository.path, paths)
+
+          const plan = createChangeStagePlan(files)
+
+          /*
+           * 普通路径可以继续一次批量 Stage；Move 必须逐项调用原生接口。仓库写操作
+           * 已由 runRepositoryMutation 串行化，任一步失败后统一重读真实快照，不在
+           * React 中伪造部分成功状态。
+           */
+          if (plan.regularPaths.length > 0) {
+            await stagePaths(repository.path, plan.regularPaths)
+          }
+          let result = null
+          for (const move of plan.moves) {
+            result = await stageMove(repository.path, move.sourcePath, move.targetPath)
+          }
+          return result
+        },
         operationMessage('status.fileCountWithPath', { count: files.length, path: paths[0] }),
         'changes'
       )

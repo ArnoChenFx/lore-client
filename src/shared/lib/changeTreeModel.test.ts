@@ -5,7 +5,9 @@ import {
   buildChangeTreeRows,
   clampStageSplitRatio,
   changeDirectoryObjectId,
+  changeFileOperationPaths,
   changeFilePath,
+  changeFilePathTransition,
   changeFileObjectId,
   resolveSelectedChangeFiles,
   selectChangeContext,
@@ -62,6 +64,72 @@ describe('local changes tree projection', () => {
 
   it('does not prefix root file paths with an extra dot', () => {
     expect(changeFilePath(files[2])).toBe('README.md')
+  })
+
+  it('distinguishes an exact rename from a cross-directory move', () => {
+    expect(
+      changeFilePathTransition({
+        ...files[0],
+        id: 'renamed-file',
+        path: 'Content/World',
+        name: 'WorldSettings.txt',
+        status: 'renamed',
+        previousPath: 'Content/World/A.txt'
+      })
+    ).toEqual({
+      sourcePath: 'Content/World/A.txt',
+      targetPath: 'Content/World/WorldSettings.txt',
+      kind: 'renamed'
+    })
+
+    expect(
+      changeFilePathTransition({
+        ...files[0],
+        id: 'moved-file',
+        path: 'Content/Config',
+        name: 'A.txt',
+        status: 'renamed',
+        previousPath: 'Content/World/A.txt'
+      })
+    ).toEqual({
+      sourcePath: 'Content/World/A.txt',
+      targetPath: 'Content/Config/A.txt',
+      kind: 'moved'
+    })
+  })
+
+  it('does not infer a path transition without an exact source path', () => {
+    expect(
+      changeFilePathTransition({
+        ...files[0],
+        id: 'source-missing',
+        status: 'renamed'
+      })
+    ).toBeNull()
+    expect(
+      changeFilePathTransition({
+        ...files[0],
+        id: 'ordinary-add',
+        status: 'added',
+        previousPath: 'Content/World/Old.txt'
+      })
+    ).toBeNull()
+  })
+
+  it('expands both sides of a move for stage operations', () => {
+    expect(
+      changeFileOperationPaths([
+        {
+          ...files[0],
+          id: 'moved-file',
+          path: 'Content/Config',
+          name: 'A.txt',
+          status: 'renamed',
+          previousPath: 'Content/World/A.txt'
+        },
+        files[2]
+      ])
+    ).toEqual(['Content/World/A.txt', 'Content/Config/A.txt', 'README.md'])
   })
 })
 

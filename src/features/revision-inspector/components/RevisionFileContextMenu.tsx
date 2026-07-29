@@ -13,7 +13,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from
 import { createPortal } from 'react-dom'
 
 import { t } from '../../../i18n'
-import { changeFilePath } from '../../../shared/lib'
+import { changeFilePath, changeFilePathTransition } from '../../../shared/lib'
 import type {
   ChangeFile,
   ExternalDiffToolPreference,
@@ -158,6 +158,19 @@ export function RevisionFileContextMenu({
   const relativePaths = request.files.map(getChangeFileRelativePath)
   const fullPaths = request.files.map((file) => getChangeFileFullPath(repositoryPath, file))
   const primaryRelativePath = getChangeFileRelativePath(primaryFile)
+  const primaryPathTransition = request.primaryChange ? changeFilePathTransition(request.primaryChange) : null
+  const primaryPathLabel = primaryPathTransition
+    ? t('status.pathTransition', {
+        source: primaryPathTransition.sourcePath,
+        target: primaryPathTransition.targetPath
+      })
+    : primaryRelativePath
+  const primaryPathDescription = primaryPathTransition
+    ? t(primaryPathTransition.kind === 'moved' ? 'status.movedFromTo' : 'status.renamedFromTo', {
+        source: primaryPathTransition.sourcePath,
+        target: primaryPathTransition.targetPath
+      })
+    : primaryRelativePath
   const firstParent = revision.parentIds?.[0]
   const parentLabel = revision.parentCount > 1 ? t('firstParentRevisionState') : t('parentRevisionState')
   const menuLabels = getRevisionFileMenuLabels()
@@ -324,8 +337,8 @@ export function RevisionFileContextMenu({
           <strong title={multiple ? request.files.map((file) => file.name).join('\n') : primaryFile.name}>
             {multiple ? t('status.selectedFilesCount', { count: fileCount }) : primaryFile.name}
           </strong>
-          <small title={primaryRelativePath}>
-            {multiple ? t('status.primaryFilePath', { path: primaryRelativePath }) : primaryRelativePath}
+          <small title={primaryPathDescription}>
+            {multiple ? t('status.primaryFilePath', { path: primaryPathLabel }) : primaryPathLabel}
           </small>
         </header>
         <button

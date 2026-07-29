@@ -378,12 +378,13 @@ export const initialChanges: ChangeFile[] = [
     id: 'change-2',
     path: 'Content/World/Meridian/Fog',
     name: 'Harbor_DistanceFog.uasset',
-    status: 'modified',
+    status: 'renamed',
     staged: true,
     additions: 18,
     deletions: 8,
     binary: true,
-    size: '840 KB'
+    size: '840 KB',
+    previousPath: 'Content/World/Meridian/Lighting/Harbor_DistanceFog.uasset'
   },
   {
     id: 'change-3',
@@ -443,12 +444,13 @@ export const inspectorFiles: ChangeFile[] = [
     id: 'file-2',
     path: 'Content/World/Meridian/Fog',
     name: 'Harbor_DistanceFog.uasset',
-    status: 'modified',
+    status: 'renamed',
     staged: true,
     additions: 61,
     deletions: 9,
     binary: true,
-    size: '840 KB'
+    size: '840 KB',
+    previousPath: 'Content/World/Meridian/Lighting/Harbor_DistanceFog.uasset'
   },
   {
     id: 'file-3',

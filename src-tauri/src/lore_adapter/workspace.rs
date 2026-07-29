@@ -4,6 +4,76 @@
 //! 父模块统一管理，避免模块化重构改变现有 IPC 契约或 Lore 调用行为。
 
 use super::*;
+
+/// 在显式 Stage 之前清除旧客户端留下的“只有 dirty、没有真实 Stage”的 anchor。
+///
+/// 旧实现会让工作区扫描创建 staged anchor。直接在读路径迁移会再次产生副作用，
+/// 因此只在用户已经发起 Stage 写操作时处理；一旦检测到真实 Stage、Merge 或冲突
+/// 标记就保持原状，绝不以工作区最新内容重建并覆盖用户已有的待提交集合。
+fn reset_legacy_dirty_only_anchor_before_stage(
+    repository_path: &str,
+) -> Result<(), LoreCommandError> {
+    let inspect_globals = global_args(repository_path)?;
+    let status = run_operation("repository.status.pre-stage-inspect", move |callback| {
+        lore::runtime().block_on(lore::repository::status(
+            inspect_globals,
+            LoreRepositoryStatusArgs {
+                staged: 1,
+                scan: 0,
+                check_dirty: 0,
+                reset: 0,
+                sync_point: 0,
+                revision_only: 0,
+                count: 0,
+                paths: LoreArray::default(),
+            },
+            callback,
+        ))
+    })?;
+    ensure_operation_success(&status, "Inspect staged state before Stage")?;
+
+    let has_staged_anchor = status
+        .events
+        .iter()
+        .find(|event| event["tagName"] == "repositoryStatusRevision")
+        .and_then(|event| event["data"]["revisionStaged"].as_str())
+        .is_some_and(|revision| !is_zero_hash(revision));
+    if !has_staged_anchor {
+        return Ok(());
+    }
+
+    let has_explicit_state = status.events.iter().any(|event| {
+        if event["tagName"] != "repositoryStatusFile" {
+            return false;
+        }
+        ["flagStaged", "flagMerged", "flagConflict"]
+            .into_iter()
+            .any(|key| event["data"][key].as_bool() == Some(true))
+    });
+    if has_explicit_state {
+        return Ok(());
+    }
+
+    let reset_globals = global_args(repository_path)?;
+    let reset = run_operation("repository.status.pre-stage-reset", move |callback| {
+        lore::runtime().block_on(lore::repository::status(
+            reset_globals,
+            LoreRepositoryStatusArgs {
+                staged: 1,
+                scan: 0,
+                check_dirty: 0,
+                reset: 1,
+                sync_point: 0,
+                revision_only: 1,
+                count: 0,
+                paths: LoreArray::default(),
+            },
+            callback,
+        ))
+    })?;
+    ensure_operation_success(&reset, "Reset legacy dirty-only staged state")
+}
+
 /// Stage 指定路径；空路径数组表示递归扫描并暂存整个仓库。
 #[tauri::command]
 pub async fn lore_stage(
@@ -11,6 +81,7 @@ pub async fn lore_stage(
     paths: Vec<String>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     run_lore_task(move || {
+        reset_legacy_dirty_only_anchor_before_stage(&repository_path)?;
         let globals = global_args(&repository_path)?;
         let paths = normalize_paths(paths, true);
         run_operation("file.stage", move |callback| {
@@ -21,6 +92,48 @@ pub async fn lore_stage(
                     case_change: 0,
                     // UI 发起的 Stage 必须感知外部编辑器直接写入的文件，因此目录操作执行扫描。
                     scan: 1,
+                },
+                callback,
+            ))
+        })
+    })
+    .await
+}
+
+/// 把一个已经由 Status 明确确认的路径移动作为单个 Lore 变更暂存。
+///
+/// 普通 `file.stage([from, to])` 只能表达两个路径集合，无法保证 Lore 在来源删除与
+/// 目标新增之间保留 Move 关系。这里使用固定 Lore 的原生 `stage_move`，并在 Rust
+/// 边界再次校验两个仓库相对路径，防止前端旧快照越过工作区边界。
+#[tauri::command]
+pub async fn lore_stage_move(
+    repository_path: String,
+    source_path: String,
+    target_path: String,
+) -> Result<LoreOperationResult, LoreCommandError> {
+    let paths = validate_repository_relative_paths(vec![source_path, target_path])?;
+    let [source_path, target_path]: [String; 2] = paths.try_into().map_err(|_| {
+        LoreCommandError::new(
+            "invalid_move_paths",
+            "Staging a move requires exactly one source path and one target path",
+        )
+    })?;
+    if source_path == target_path {
+        return Err(LoreCommandError::new(
+            "identical_move_paths",
+            "The source and target paths of a move must be different",
+        ));
+    }
+
+    run_lore_task(move || {
+        reset_legacy_dirty_only_anchor_before_stage(&repository_path)?;
+        let globals = global_args(&repository_path)?;
+        run_operation("file.stage-move", move |callback| {
+            lore::runtime().block_on(lore::file::stage_move(
+                globals,
+                LoreFileStageMoveArgs {
+                    from_path: source_path.into(),
+                    to_path: target_path.into(),
                 },
                 callback,
             ))

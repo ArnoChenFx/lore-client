@@ -9,10 +9,544 @@ use super::{
     composition::{
         build_layer_add_args, build_layer_remove_args, build_link_add_args, build_link_update_args,
     },
-    workspace::lore_write_patch_file,
+    operations::lore_commit,
+    workspace::{
+        lore_revision_changes, lore_stage, lore_stage_move, lore_unstage, lore_write_patch_file,
+    },
 };
 
 const ZERO_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+
+/** 从 Commit 的稳定结构化事件中取得新 Revision，供真实仓库回归测试继续读取不可变树。 */
+fn committed_revision(result: &LoreOperationResult) -> String {
+    result
+        .events
+        .iter()
+        .find(|event| event["tagName"] == "revisionCommitRevision")
+        .and_then(|event| event["data"]["revision"].as_str())
+        .expect("The commit event should provide the created revision")
+        .to_owned()
+}
+
+#[test]
+fn status_omits_uncommitted_copy_removed_between_scans() {
+    let source_name = "新建 文本文档2.txt";
+    let target_name = "新建 文本文档3.txt";
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("System time should be later than the Unix epoch")
+        .as_nanos();
+    let repository_path = std::env::temp_dir().join(format!("lore-client-transient-copy-{unique}"));
+    std::fs::create_dir_all(&repository_path)
+        .expect("The temporary test directory should be created");
+    let _cleanup = TemporaryRepository::new(repository_path.clone());
+    let repository_path_string = repository_path.to_string_lossy().into_owned();
+
+    initialize_repository(
+        &repository_path_string,
+        "transient-copy",
+        "Transient copy status regression",
+        "lore-client-test",
+        None,
+    )
+    .expect("The temporary Lore repository should be initialized");
+    std::fs::write(repository_path.join(source_name), "same contents")
+        .expect("The committed source file should be created");
+    tauri::async_runtime::block_on(lore_stage(
+        repository_path_string.clone(),
+        vec![source_name.to_owned()],
+    ))
+    .expect("The source file should be staged");
+    let baseline_commit = tauri::async_runtime::block_on(lore_commit(
+        repository_path_string.clone(),
+        "Commit source file".to_owned(),
+        None,
+    ))
+    .expect("The source file should be committed");
+    let baseline_revision = committed_revision(&baseline_commit);
+
+    let transient_directory = repository_path.join("sda");
+    std::fs::create_dir_all(&transient_directory)
+        .expect("The transient directory should be created");
+    std::fs::copy(
+        repository_path.join(source_name),
+        transient_directory.join(source_name),
+    )
+    .expect("The transient copy should be created");
+    std::fs::copy(
+        repository_path.join(source_name),
+        repository_path.join(target_name),
+    )
+    .expect("The retained copy should be created");
+    let first_scan = tauri::async_runtime::block_on(lore_repository_status(
+        repository_path_string.clone(),
+        true,
+    ))
+    .expect("The first working-tree scan should succeed");
+    let reported_staged_revision = first_scan
+        .events
+        .iter()
+        .find(|event| {
+            event.get("tagName").and_then(Value::as_str) == Some("repositoryStatusRevision")
+        })
+        .and_then(|event| event.pointer("/data/revisionStaged"))
+        .and_then(Value::as_str)
+        .expect("Status should report the staged revision identity");
+    assert!(
+        is_zero_hash(reported_staged_revision),
+        "The scan should start without a staged revision: {reported_staged_revision}",
+    );
+    let state_after_scan = tauri::async_runtime::block_on(lore_repository_status(
+        repository_path_string.clone(),
+        false,
+    ))
+    .expect("Reading repository state after the scan should succeed");
+    let persisted_staged_revision = state_after_scan
+        .events
+        .iter()
+        .find(|event| {
+            event.get("tagName").and_then(Value::as_str) == Some("repositoryStatusRevision")
+        })
+        .and_then(|event| event.pointer("/data/revisionStaged"))
+        .and_then(Value::as_str)
+        .expect("Status should report the persisted staged revision identity");
+    assert!(
+        is_zero_hash(persisted_staged_revision),
+        "A read-only working-tree scan must not persist a staged revision: {persisted_staged_revision}",
+    );
+
+    std::fs::remove_dir_all(&transient_directory)
+        .expect("The transient directory should be deleted");
+    std::fs::remove_file(repository_path.join(source_name))
+        .expect("The original source should be deleted");
+    let result = tauri::async_runtime::block_on(lore_repository_status(
+        repository_path_string.clone(),
+        true,
+    ))
+    .expect("The second working-tree scan should succeed");
+    let status_files = result
+        .events
+        .iter()
+        .filter(|event| {
+            event.get("tagName").and_then(Value::as_str) == Some("repositoryStatusFile")
+                && event.pointer("/data/type").and_then(Value::as_str) == Some("file")
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    assert_eq!(
+        status_files.len(),
+        1,
+        "Status must omit a transient copy that never belonged to the committed revision: {status_files:?}",
+    );
+    assert_eq!(status_files[0]["data"]["path"], target_name);
+    assert_eq!(status_files[0]["data"]["action"], "move");
+    assert_eq!(status_files[0]["data"]["fromPath"], source_name);
+    tauri::async_runtime::block_on(lore_stage_move(
+        repository_path_string.clone(),
+        source_name.to_owned(),
+        target_name.to_owned(),
+    ))
+    .expect("The move should be staged through the native move operation");
+    let staged_result = tauri::async_runtime::block_on(lore_repository_status(
+        repository_path_string.clone(),
+        true,
+    ))
+    .expect("Status after staging the move should succeed");
+    let staged_status_files = staged_result
+        .events
+        .iter()
+        .filter(|event| {
+            event.get("tagName").and_then(Value::as_str) == Some("repositoryStatusFile")
+                && event.pointer("/data/type").and_then(Value::as_str) == Some("file")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        staged_status_files.len(),
+        1,
+        "Staging both sides must retain one atomic move: {staged_status_files:?}",
+    );
+    assert_eq!(staged_status_files[0]["data"]["path"], target_name);
+    assert_eq!(staged_status_files[0]["data"]["action"], "move");
+    assert_eq!(staged_status_files[0]["data"]["fromPath"], source_name);
+    assert_eq!(staged_status_files[0]["data"]["flagStaged"], true);
+
+    /*
+     * 复现真实 UI 中“旧版本先把目标单独暂存，随后扫描两个临时副本，再删除目录并
+     * 重新暂存 Move”的历史状态。固定 Lore 可能把已消失副本继续报告为 Add；最终
+     * Status 必须仍只保留工作区真实存在的原子移动。
+     */
+    tauri::async_runtime::block_on(lore_unstage(
+        repository_path_string.clone(),
+        vec![source_name.to_owned(), target_name.to_owned()],
+    ))
+    .expect("The move should be unstaged before reproducing stale additions");
+    for directory_name in ["sda", "sdd"] {
+        let directory = repository_path.join(directory_name);
+        std::fs::create_dir_all(&directory)
+            .expect("The transient copy directory should be created");
+        std::fs::copy(
+            repository_path.join(target_name),
+            directory.join("新建 文本文档4.txt"),
+        )
+        .expect("The transient workspace copy should be created");
+    }
+    /*
+     * 用旧客户端的写入式 Status 主动制造受污染 staged anchor，验证升级后不仅新扫描
+     * 无副作用，显式 Stage/Commit 也不会把旧 dirty-only 目录带进新 Revision。
+     */
+    let legacy_globals = global_args(&repository_path_string)
+        .expect("The legacy status simulation should build repository globals");
+    let legacy_scan = run_operation(
+        "repository.status.legacy-write-simulation",
+        move |callback| {
+            lore::runtime().block_on(lore::repository::status(
+                legacy_globals,
+                LoreRepositoryStatusArgs {
+                    staged: 1,
+                    scan: 1,
+                    check_dirty: 0,
+                    reset: 0,
+                    sync_point: 0,
+                    revision_only: 0,
+                    count: 0,
+                    paths: LoreArray::default(),
+                },
+                callback,
+            ))
+        },
+    )
+    .expect("The legacy write-style status simulation should succeed");
+    assert_eq!(legacy_scan.status, 0);
+    let legacy_persisted_state = tauri::async_runtime::block_on(lore_repository_status(
+        repository_path_string.clone(),
+        false,
+    ))
+    .expect("The persisted legacy staged anchor should be readable");
+    assert!(
+        legacy_persisted_state
+            .events
+            .iter()
+            .find(|event| event["tagName"] == "repositoryStatusRevision")
+            .and_then(|event| event["data"]["revisionStaged"].as_str())
+            .is_some_and(|revision| !is_zero_hash(revision)),
+        "The regression setup must persist the legacy dirty-only staged anchor",
+    );
+    for directory_name in ["sda", "sdd"] {
+        std::fs::remove_dir_all(repository_path.join(directory_name))
+            .expect("The transient copy directory should be deleted");
+    }
+    tauri::async_runtime::block_on(lore_stage_move(
+        repository_path_string.clone(),
+        source_name.to_owned(),
+        target_name.to_owned(),
+    ))
+    .expect("The exact move should be staged after deleting transient copies");
+    let final_result = tauri::async_runtime::block_on(lore_repository_status(
+        repository_path_string.clone(),
+        true,
+    ))
+    .expect("Final status should succeed after removing transient additions");
+    let final_status_files = final_result
+        .events
+        .iter()
+        .filter(|event| {
+            event.get("tagName").and_then(Value::as_str) == Some("repositoryStatusFile")
+                && event.pointer("/data/type").and_then(Value::as_str) == Some("file")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        final_status_files.len(),
+        1,
+        "Missing transient additions must not reappear after staging the move: {final_status_files:?}",
+    );
+    assert_eq!(final_status_files[0]["data"]["action"], "move");
+    assert_eq!(final_status_files[0]["data"]["flagStaged"], true);
+
+    let move_commit = tauri::async_runtime::block_on(lore_commit(
+        repository_path_string.clone(),
+        "Commit retained move".to_owned(),
+        None,
+    ))
+    .expect("The staged move should commit successfully");
+    let move_revision = committed_revision(&move_commit);
+    let revision_changes = tauri::async_runtime::block_on(lore_revision_changes(
+        repository_path_string.clone(),
+        Some(baseline_revision),
+        move_revision,
+    ))
+    .expect("The immutable revision changes should be readable");
+    assert_eq!(
+        revision_changes.len(),
+        1,
+        "Only the explicitly staged move may enter revision history: {revision_changes:?}",
+    );
+    assert_eq!(revision_changes[0].action, "move");
+    assert_eq!(
+        revision_changes[0].source_path.as_deref(),
+        Some(source_name)
+    );
+    assert_eq!(revision_changes[0].path, target_name);
+    assert!(
+        revision_changes
+            .iter()
+            .all(|change| !change.path.starts_with("sda/") && !change.path.starts_with("sdd/")),
+        "Transient directories must never appear in immutable revision history: {revision_changes:?}",
+    );
+    release_repository_cache(&repository_path)
+        .expect("The cached repository context should be released before cleanup");
+}
+
+#[test]
+fn commit_includes_only_explicitly_staged_files_after_read_only_scan() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("System time should be later than the Unix epoch")
+        .as_nanos();
+    let repository_path =
+        std::env::temp_dir().join(format!("lore-client-stage-isolation-{unique}"));
+    std::fs::create_dir_all(&repository_path)
+        .expect("The temporary test directory should be created");
+    let _cleanup = TemporaryRepository::new(repository_path.clone());
+    let repository_path_string = repository_path.to_string_lossy().into_owned();
+
+    initialize_repository(
+        &repository_path_string,
+        "stage-isolation",
+        "Explicit stage isolation regression",
+        "lore-client-test",
+        None,
+    )
+    .expect("The temporary Lore repository should be initialized");
+    std::fs::write(repository_path.join("staged.txt"), "included")
+        .expect("The explicitly staged file should be created");
+    std::fs::write(repository_path.join("working-only.txt"), "excluded")
+        .expect("The working-tree-only file should be created");
+
+    let scan = tauri::async_runtime::block_on(lore_repository_status(
+        repository_path_string.clone(),
+        true,
+    ))
+    .expect("The read-only working-tree scan should succeed");
+    assert_eq!(
+        scan.events
+            .iter()
+            .filter(|event| event["tagName"] == "repositoryStatusFile")
+            .count(),
+        2,
+        "The read-only snapshot should display both working-tree files",
+    );
+    tauri::async_runtime::block_on(lore_stage(
+        repository_path_string.clone(),
+        vec!["staged.txt".to_owned()],
+    ))
+    .expect("The selected file should be staged");
+    std::fs::write(repository_path.join("staged.txt"), "working edit")
+        .expect("The staged file should be edited again in the working tree");
+    let staged_status = tauri::async_runtime::block_on(lore_repository_status(
+        repository_path_string.clone(),
+        false,
+    ))
+    .expect("The read-only status after editing a staged path should succeed");
+    let staged_path_events = staged_status
+        .events
+        .iter()
+        .filter(|event| {
+            event["tagName"] == "repositoryStatusFile" && event["data"]["path"] == "staged.txt"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        staged_path_events.len(),
+        1,
+        "Lore Stage tracks path membership, so the selected path remains one staged change: {staged_path_events:?}",
+    );
+    assert_eq!(staged_path_events[0]["data"]["flagStaged"], true);
+    let commit = tauri::async_runtime::block_on(lore_commit(
+        repository_path_string.clone(),
+        "Commit selected file".to_owned(),
+        None,
+    ))
+    .expect("The explicitly staged file should commit successfully");
+    let revision = committed_revision(&commit);
+    let committed_paths = collect_revision_tree_files(&repository_path_string, &revision)
+        .expect("The committed immutable tree should be readable")
+        .into_iter()
+        .map(|file| file.path)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        committed_paths,
+        vec!["staged.txt"],
+        "A read-only scan must not make the working-tree-only file committable",
+    );
+    let committed_diff = build_initial_revision_diff(
+        &repository_path_string,
+        &revision,
+        &["staged.txt".to_owned()],
+        3,
+    )
+    .expect("The committed file content should be readable from the immutable revision");
+    let committed_patch = committed_diff
+        .events
+        .iter()
+        .find(|event| event["tagName"] == "fileDiff" && event["data"]["path"] == "staged.txt")
+        .and_then(|event| event["data"]["patch"].as_str())
+        .expect("The initial revision should include a text patch");
+    assert!(
+        committed_patch.contains("+working edit"),
+        "Lore Stage includes the path, and Commit records its latest working content: {committed_patch:?}",
+    );
+    assert!(
+        !committed_patch.contains("working-only"),
+        "An unselected working-tree path must remain outside the immutable revision: {committed_patch:?}",
+    );
+
+    release_repository_cache(&repository_path)
+        .expect("The cached repository context should be released before cleanup");
+}
+
+#[test]
+fn structural_status_does_not_guess_an_ambiguous_move_source() {
+    let baseline_files = vec![
+        RevisionTreeFile {
+            path: "first.txt".to_owned(),
+            size: 13,
+            address: format!("{}-context", "a".repeat(64)),
+            repository: "repository".to_owned(),
+        },
+        RevisionTreeFile {
+            path: "second.txt".to_owned(),
+            size: 13,
+            address: format!("{}-context", "a".repeat(64)),
+            repository: "repository".to_owned(),
+        },
+    ];
+    let mut events = vec![
+        serde_json::json!({
+            "tagName": "repositoryStatusFile",
+            "data": { "path": "target.txt", "type": "file", "action": "add", "size": 13 }
+        }),
+        serde_json::json!({
+            "tagName": "repositoryStatusFile",
+            "data": { "path": "first.txt", "type": "file", "action": "delete", "size": 0 }
+        }),
+        serde_json::json!({
+            "tagName": "repositoryStatusFile",
+            "data": { "path": "second.txt", "type": "file", "action": "delete", "size": 0 }
+        }),
+    ];
+    let workspace_hashes = BTreeMap::from([("target.txt".to_owned(), "a".repeat(64))]);
+
+    rewrite_unstaged_structural_status_events(
+        &mut events,
+        &baseline_files,
+        &workspace_hashes,
+        &BTreeSet::new(),
+    );
+
+    assert_eq!(events.len(), 3);
+    assert_eq!(events[0]["data"]["action"], "add");
+    assert_eq!(events[0]["data"]["fromPath"], Value::Null);
+}
+
+#[test]
+fn structural_status_preserves_real_staged_changes() {
+    let staged_event = serde_json::json!({
+        "tagName": "repositoryStatusFile",
+        "data": {
+            "path": "staged.txt",
+            "type": "file",
+            "action": "delete",
+            "flagStaged": true,
+            "flagConflict": false
+        }
+    });
+    let result = LoreOperationResult {
+        operation: "repository.status",
+        status: 0,
+        duration_ms: 0,
+        events: vec![staged_event.clone()],
+    };
+
+    let normalized = normalize_unstaged_structural_status("missing-repository", result);
+
+    assert_eq!(normalized.events, vec![staged_event]);
+}
+
+#[test]
+fn structural_status_does_not_merge_across_stage_partitions() {
+    let baseline_files = vec![RevisionTreeFile {
+        path: "source.txt".to_owned(),
+        size: 13,
+        address: format!("{}-context", "a".repeat(64)),
+        repository: "repository".to_owned(),
+    }];
+    let mut events = vec![
+        serde_json::json!({
+            "tagName": "repositoryStatusFile",
+            "data": {
+                "path": "source.txt",
+                "type": "file",
+                "action": "delete",
+                "size": 0,
+                "flagStaged": false
+            }
+        }),
+        serde_json::json!({
+            "tagName": "repositoryStatusFile",
+            "data": {
+                "path": "target.txt",
+                "type": "file",
+                "action": "add",
+                "size": 13,
+                "flagStaged": true
+            }
+        }),
+    ];
+    let workspace_hashes = BTreeMap::from([("target.txt".to_owned(), "a".repeat(64))]);
+
+    rewrite_unstaged_structural_status_events(
+        &mut events,
+        &baseline_files,
+        &workspace_hashes,
+        &BTreeSet::new(),
+    );
+
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0]["data"]["action"], "delete");
+    assert_eq!(events[1]["data"]["action"], "add");
+}
+
+#[test]
+fn structural_status_removes_only_missing_unstaged_additions() {
+    let mut events = vec![
+        serde_json::json!({
+            "tagName": "repositoryStatusFile",
+            "data": {
+                "path": "missing-unstaged.txt",
+                "type": "file",
+                "action": "add",
+                "flagStaged": false
+            }
+        }),
+        serde_json::json!({
+            "tagName": "repositoryStatusFile",
+            "data": {
+                "path": "missing-staged.txt",
+                "type": "file",
+                "action": "add",
+                "flagStaged": true
+            }
+        }),
+    ];
+    let missing = BTreeSet::from([
+        "missing-unstaged.txt".to_owned(),
+        "missing-staged.txt".to_owned(),
+    ]);
+
+    rewrite_unstaged_structural_status_events(&mut events, &[], &BTreeMap::new(), &missing);
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["data"]["path"], "missing-staged.txt");
+}
 
 #[test]
 fn storage_payload_capture_reassembles_fragments_without_json_values() {

@@ -96,6 +96,7 @@ pub fn run() {
             lore_adapter::maintenance::lore_repository_instance_update_path,
             lore_adapter::maintenance::lore_repository_gc,
             lore_adapter::workspace::lore_stage,
+            lore_adapter::workspace::lore_stage_move,
             lore_adapter::workspace::lore_unstage,
             lore_adapter::workspace::lore_file_reset,
             lore_adapter::workspace::lore_workspace_diff,

@@ -25,6 +25,7 @@ import {
   changeDirectoryPathFromObjectId,
   changeFileObjectId,
   changeFilePath,
+  changeFilePathTransition,
   countUnifiedDiffLines,
   isChangeDirectoryObjectId,
   LatestTaskQueue,
@@ -178,7 +179,12 @@ export function RevisionChangesWorkspace({
   const visibleFiles = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase()
     if (!normalized) return files
-    return files.filter((file) => changeFilePath(file).toLocaleLowerCase().includes(normalized))
+    return files.filter((file) => {
+      const transition = changeFilePathTransition(file)
+      return [changeFilePath(file), transition?.sourcePath]
+        .filter(Boolean)
+        .some((path) => path!.toLocaleLowerCase().includes(normalized))
+    })
   }, [files, query])
   const visibleRows = useMemo(
     () => buildChangeTreeRows(visibleFiles, collapsedDirectories, 'revision'),
@@ -194,6 +200,7 @@ export function RevisionChangesWorkspace({
   const selectedSet = new Set(selectedObjectIds)
   const resolvedSelectedFiles = resolveSelectedChangeFiles(selectedObjectIds, files, allRows)
   const primaryFile = files.find((file) => changeFileObjectId(file.id) === primaryObjectId) ?? null
+  const primaryPathTransition = primaryFile ? changeFilePathTransition(primaryFile) : null
   const primaryDirectory = changeDirectoryPathFromObjectId(primaryObjectId)
   const primaryDiff = primaryFile
     ? (diffs.find((diff) => diff.path.replaceAll('\\', '/') === changeFilePath(primaryFile)) ?? null)
@@ -429,6 +436,19 @@ export function RevisionChangesWorkspace({
   const renderFile = (file: ChangeFile, depth = 0) => {
     const objectId = changeFileObjectId(file.id)
     const selected = selectedSet.has(objectId)
+    const pathTransition = changeFilePathTransition(file)
+    const transitionText = pathTransition
+      ? t('status.pathTransition', {
+          source: pathTransition.sourcePath,
+          target: pathTransition.targetPath
+        })
+      : null
+    const transitionDescription = pathTransition
+      ? t(pathTransition.kind === 'moved' ? 'status.movedFromTo' : 'status.renamedFromTo', {
+          source: pathTransition.sourcePath,
+          target: pathTransition.targetPath
+        })
+      : null
     return (
       <div
         key={objectId}
@@ -440,11 +460,20 @@ export function RevisionChangesWorkspace({
         onClick={(event) => selectObject(objectId, event)}
         onContextMenu={(event) => openContextMenu(objectId, [file], file, event)}
       >
-        <span className={`file-status is-${file.status}`}>{statusLabels[file.status]}</span>
+        <span className={`file-status is-${file.status}`} title={transitionDescription ?? t(file.status)}>
+          {statusLabels[file.status]}
+        </span>
         {file.binary ? <Binary size={14} /> : <FileCode2 size={14} />}
         <span>
           <strong>{file.name}</strong>
-          {viewMode === 'flat' && <small>{file.path}</small>}
+          {(viewMode === 'flat' || transitionText) && (
+            <small
+              className={transitionText ? 'is-path-transition' : undefined}
+              title={transitionDescription ?? undefined}
+            >
+              {transitionText ?? file.path}
+            </small>
+          )}
         </span>
       </div>
     )
@@ -657,7 +686,12 @@ export function RevisionChangesWorkspace({
                 <strong>{primaryFile?.name ?? primaryDirectory?.split('/').at(-1) ?? t('noFileSelected')}</strong>
                 <small>
                   {primaryFile
-                    ? changeFilePath(primaryFile)
+                    ? primaryPathTransition
+                      ? t('status.pathTransition', {
+                          source: primaryPathTransition.sourcePath,
+                          target: primaryPathTransition.targetPath
+                        })
+                      : changeFilePath(primaryFile)
                     : primaryDirectory
                       ? t('status.folderSelection', { path: primaryDirectory })
                       : t('status.selectLeftObject', { id: revision.shortId })}
