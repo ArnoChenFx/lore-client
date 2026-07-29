@@ -21,10 +21,10 @@ image = { version = "0.25", default-features = false, features = ["dds", "exr", 
 exr = { version = "1.74", default-features = false }
 zstd = "0.13"
 glob-match = "0.2.1"
-lore = { git = "https://github.com/EpicGames/lore.git", rev = "f9c3a7268e64b57e861ce41292a48aae6cae63a3" }
+lore = { git = "https://github.com/EpicGames/lore.git", rev = "6fd18e6cf54b84c8715c3a7ac5922617a2399e02" }
 # 认证变更需要调用 Lore 顶层 crate 尚未暴露的 Transport 连接失效入口；
 # 依赖必须与 `lore` 锁定到完全相同的提交，避免协议实现漂移或重复版本。
-lore-revision = { git = "https://github.com/EpicGames/lore.git", rev = "f9c3a7268e64b57e861ce41292a48aae6cae63a3" }
+lore-revision = { git = "https://github.com/EpicGames/lore.git", rev = "6fd18e6cf54b84c8715c3a7ac5922617a2399e02" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
