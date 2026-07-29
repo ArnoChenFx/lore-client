@@ -2,6 +2,7 @@ mod app_logging;
 mod asset_preview;
 mod client_preferences;
 mod lore_adapter;
+mod revision_author_cache;
 
 /// 构建并启动 Tauri 桌面应用。
 pub fn run() {
@@ -25,6 +26,8 @@ pub fn run() {
             app_logging::application_log_open_directory,
             client_preferences::lore_client_preferences_load,
             client_preferences::lore_client_preferences_save,
+            revision_author_cache::lore_revision_author_cache_get,
+            revision_author_cache::lore_revision_author_cache_store,
             lore_adapter::auth::lore_runtime_info,
             lore_adapter::auth::lore_auth_list,
             lore_adapter::auth::lore_auth_local_user_info,

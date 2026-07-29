@@ -867,11 +867,7 @@ export async function loadRepositorySnapshot(repositoryPath: string, scan = fals
     limit: 100,
     revision: historyAnchor || null
   })
-  const resolvedRevisionAuthors = await resolveRevisionAuthorNames(
-    repositoryPath,
-    history.events,
-    statusRepository.online
-  )
+  const resolvedRevisionAuthors = await resolveRevisionAuthorNames(statusRepository, history.events)
   const tags = await listTags(repositoryPath)
   const config = await loadRepositoryConfig(repositoryPath)
 
@@ -1898,7 +1894,7 @@ export async function loadRevisionHistory(
     date: query.beforeDate || null,
     onlyBranch: query.onlyBranch
   })
-  const resolvedRevisionAuthors = await resolveRevisionAuthorNames(repository.path, result.events, repository.online)
+  const resolvedRevisionAuthors = await resolveRevisionAuthorNames(repository, result.events)
   return parseRevisions(result.events, repository, branches, resolvedRevisionAuthors)
 }
 
@@ -2486,29 +2482,38 @@ function collectRevisionAuthorIdentities(events: LoreEvent[]): string[] {
  * 这是不可依赖的显示增强：未绑定账户、离线、无权限、旧服务器
  * 或部分 ID 不存在时都返回已成功的子集，调用方继续使用原 identity。
  */
-async function resolveRevisionAuthorNames(
-  repositoryPath: string,
-  events: LoreEvent[],
-  repositoryOnline: boolean
-): Promise<Map<string, string>> {
+async function resolveRevisionAuthorNames(repository: Repository, events: LoreEvent[]): Promise<Map<string, string>> {
   const identities = collectRevisionAuthorIdentities(events)
   if (identities.length === 0) return new Map()
+  /*
+   * 持久化缓存是离线基线；在线或 Token Store 中的已验证资料只会覆盖它。
+   * 缓存键包含稳定 Repository ID，不能把其他仓库或 Auth 域的相同 userId 串入。
+   */
+  const resolved = await loadCachedRevisionAuthorNames(repository.id, identities)
 
-  if (repositoryOnline) {
+  if (repository.online) {
     try {
       const result = await runOperation('lore_auth_user_info', {
-        repositoryPath,
+        repositoryPath: repository.path,
         userIds: identities
       })
-      const resolved = new Map<string, string>()
+      const remotelyResolved = new Map<string, string>()
       for (const event of result.events) {
         if (event.tagName !== 'authUserInfo') continue
         const userId = readString(event.data.id).trim()
         const username = readString(event.data.name).trim()
-        if (userId && username && username !== userId) {
-          resolved.set(userId, username)
+        if (
+          userId &&
+          username &&
+          username !== userId &&
+          username.length <= 512 &&
+          !containsIdentityControlCharacter(username)
+        ) {
+          remotelyResolved.set(userId, username)
         }
       }
+      await rememberRevisionAuthorNames(repository.id, remotelyResolved)
+      for (const [userId, username] of remotelyResolved) resolved.set(userId, username)
       return resolved
     } catch {
       // 在线状态与 Auth 服务可用性并不等价；远端查询失败后继续尝试本地绑定缓存。
@@ -2521,7 +2526,7 @@ async function resolveRevisionAuthorNames(
    */
   try {
     const localResult = await runOperation('lore_auth_repository_local_user_info', {
-      repositoryPath,
+      repositoryPath: repository.path,
       userIds: identities
     })
     const locallyResolved = new Map<string, string>()
@@ -2529,13 +2534,58 @@ async function resolveRevisionAuthorNames(
       if (event.tagName !== 'authUserInfo') continue
       const userId = readString(event.data.id).trim()
       const username = readString(event.data.name).trim()
-      if (userId && username && username !== userId) {
+      if (
+        userId &&
+        username &&
+        username !== userId &&
+        username.length <= 512 &&
+        !containsIdentityControlCharacter(username)
+      ) {
         locallyResolved.set(userId, username)
       }
     }
-    return locallyResolved
+    await rememberRevisionAuthorNames(repository.id, locallyResolved)
+    for (const [userId, username] of locallyResolved) resolved.set(userId, username)
+    return resolved
+  } catch {
+    return resolved
+  }
+}
+
+type RevisionAuthorCacheEntry = {
+  userId: string
+  displayName: string
+}
+
+/** 独立缓存文件损坏或不可读不能阻断历史读取；失败时退回 Revision 原始 identity。 */
+async function loadCachedRevisionAuthorNames(
+  repositoryId: string,
+  userIds: readonly string[]
+): Promise<Map<string, string>> {
+  try {
+    const entries = await invokeLogged<RevisionAuthorCacheEntry[]>('lore_revision_author_cache_get', {
+      repositoryId,
+      userIds
+    })
+    return new Map(entries.map((entry) => [entry.userId, entry.displayName]))
   } catch {
     return new Map()
+  }
+}
+
+/** 只把 Auth 已确认的显示名交给 Rust；Token、JWT 与头像地址从不进入该 IPC。 */
+async function rememberRevisionAuthorNames(
+  repositoryId: string,
+  resolvedNames: ReadonlyMap<string, string>
+): Promise<void> {
+  if (resolvedNames.size === 0) return
+  try {
+    await invokeLogged('lore_revision_author_cache_store', {
+      repositoryId,
+      authors: [...resolvedNames].map(([userId, displayName]) => ({ userId, displayName }))
+    })
+  } catch {
+    // 显示缓存属于尽力增强；写盘失败不能把成功的在线作者查询降级为操作失败。
   }
 }
 

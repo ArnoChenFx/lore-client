@@ -568,6 +568,17 @@ describe('repository snapshot branch loading', () => {
           ]
         }
       }
+      if (command === 'lore_revision_author_cache_get') {
+        expect(args).toEqual({ repositoryId: 'repository-id', userIds: ['user-42', 'Artist Team'] })
+        return []
+      }
+      if (command === 'lore_revision_author_cache_store') {
+        expect(args).toEqual({
+          repositoryId: 'repository-id',
+          authors: [{ userId: 'user-42', displayName: 'Arno Chen <arno@example.com>' }]
+        })
+        return null
+      }
       throw new Error(`The test does not handle command: ${command}`)
     })
 
@@ -575,7 +586,7 @@ describe('repository snapshot branch loading', () => {
 
     expect(revisions[0]).toMatchObject({ author: 'Arno Chen', authorEmail: 'arno@example.com' })
     expect(revisions[1]).toMatchObject({ author: 'Artist Team', authorEmail: undefined })
-    expect(invokeMock).toHaveBeenCalledTimes(2)
+    expect(invokeMock).toHaveBeenCalledTimes(4)
   })
 
   it('keeps revision identities when remote author resolution is unavailable', async () => {
@@ -611,6 +622,7 @@ describe('repository snapshot branch loading', () => {
       if (command === 'lore_auth_user_info') {
         throw new Error('Auth service unavailable')
       }
+      if (command === 'lore_revision_author_cache_get') return []
       throw new Error(`The test does not handle command: ${command}`)
     })
 
@@ -641,6 +653,7 @@ describe('repository snapshot branch loading', () => {
         }
       }
       if (command === 'lore_auth_user_info') throw new Error('Offline history must not query the remote Auth service')
+      if (command === 'lore_revision_author_cache_get') return []
       if (command === 'lore_auth_repository_local_user_info') {
         expect(args).toEqual({ repositoryPath: 'E:\\Worlds\\RealLore', userIds: ['user-42'] })
         return {
@@ -649,12 +662,55 @@ describe('repository snapshot branch loading', () => {
           events: [{ tagName: 'authUserInfo', data: { id: 'user-42', name: 'Arno Chen' } }]
         }
       }
+      if (command === 'lore_revision_author_cache_store') {
+        expect(args).toEqual({
+          repositoryId: 'repository-id',
+          authors: [{ userId: 'user-42', displayName: 'Arno Chen' }]
+        })
+        return null
+      }
       throw new Error(`The test does not handle command: ${command}`)
     })
 
     await expect(loadRevisionHistory(repository, [], { onlyBranch: false, limit: 100 })).resolves.toEqual([
       expect.objectContaining({ author: 'Arno Chen', authorEmail: undefined })
     ])
+  })
+
+  it('uses the persistent author cache without a bound account while the repository is offline', async () => {
+    const repository = loreEventParsers.parseRepository('E:\\Worlds\\RealLore', [
+      {
+        tagName: 'repositoryStatusRevision',
+        data: { repository: 'repository-id', branchName: 'main', revision: 'tip' }
+      }
+    ])
+    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+      if (command === 'lore_revision_history') {
+        return {
+          operation: 'revision.history',
+          status: 0,
+          events: [
+            { tagName: 'revisionHistoryEntry', data: { revision: 'tip', revisionNumber: 1, parent: [] } },
+            {
+              tagName: 'metadata',
+              data: { key: 'committed-by', value: { tagName: 'string', data: 'user-42' } }
+            }
+          ]
+        }
+      }
+      if (command === 'lore_revision_author_cache_get') {
+        expect(args).toEqual({ repositoryId: 'repository-id', userIds: ['user-42'] })
+        return [{ userId: 'user-42', displayName: 'Cached Author <cached@example.com>' }]
+      }
+      if (command === 'lore_auth_user_info') throw new Error('Offline history must not query remote Auth')
+      if (command === 'lore_auth_repository_local_user_info') throw new Error('No bound account')
+      throw new Error(`The test does not handle command: ${command}`)
+    })
+
+    await expect(loadRevisionHistory(repository, [], { onlyBranch: false, limit: 100 })).resolves.toEqual([
+      expect.objectContaining({ author: 'Cached Author', authorEmail: 'cached@example.com' })
+    ])
+    expect(invokeMock).not.toHaveBeenCalledWith('lore_auth_user_info', expect.anything())
   })
 
   it('loads remote repository details before Clone', async () => {

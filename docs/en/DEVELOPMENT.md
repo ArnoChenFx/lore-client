@@ -54,6 +54,7 @@ bun tauri build --debug --no-bundle
 | Stable frontend data types                                             | `src/types.ts`                                          |
 | Frontend Lore calls                                                    | `src/services/lore.ts`                                  |
 | Native Lore operations                                                 | `src-tauri/src/lore_adapter.rs`, `src-tauri/src/lib.rs` |
+| Offline Revision author display cache                                  | `src-tauri/src/revision_author_cache.rs`, `src/services/lore.ts` |
 | Preferences and persisted layout                                       | `src/services/preferences.ts`, `src/hooks/`             |
 | English and Chinese UI text                                            | `src/i18n/locales/`                                     |
 | Browser-preview sample data                                            | `src/data.ts`                                           |

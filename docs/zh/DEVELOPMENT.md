@@ -54,6 +54,7 @@ bun tauri build --debug --no-bundle
 | 前端稳定数据类型 | `src/types.ts` |
 | 前端 Lore 调用 | `src/services/lore.ts` |
 | 原生 Lore 操作 | `src-tauri/src/lore_adapter.rs`、`src-tauri/src/lib.rs` |
+| Revision 作者离线显示缓存 | `src-tauri/src/revision_author_cache.rs`、`src/services/lore.ts` |
 | 偏好与持久化布局 | `src/services/preferences.ts`、`src/hooks/` |
 | 中英文界面文案 | `src/i18n/locales/` |
 | 浏览器预览样例数据 | `src/data.ts` |
