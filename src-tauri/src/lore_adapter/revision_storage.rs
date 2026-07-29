@@ -847,15 +847,15 @@ pub(super) fn is_known_binary_revision_path(path: &str) -> bool {
 }
 
 /**
- * 把轻量 JSON 元数据与原始载荷组成 Raw IPC 信封。
+ * 把轻量 JSON 元数据与原始载荷组成稳定 IPC 信封。
  *
- * 前四字节是小端元数据长度，随后依次是 UTF-8 JSON 和受控二进制载荷。Tauri 会把
- * Raw 响应直接交给 WebView 的 `ArrayBuffer`，避免 Rust Base64、JSON 字符串与前端
- * `atob` 在同一时刻保留多份大对象。
+ * 前四字节是小端元数据长度，随后依次是 UTF-8 JSON 和受控二进制载荷。信封既可供
+ * 诊断入口作为单个 Raw 响应返回，也可由正式预览入口分块送入 WebView；两条路径都
+ * 避免 Rust Base64、JSON 字符串与前端 `atob` 在同一时刻保留多份大对象。
  */
-pub(super) fn encode_file_preview_response(
+pub(super) fn encode_file_preview_envelope(
     preview: LoreFilePreview,
-) -> Result<tauri::ipc::Response, LoreCommandError> {
+) -> Result<Vec<u8>, LoreCommandError> {
     let LoreFilePreview {
         path,
         kind,
@@ -889,7 +889,14 @@ pub(super) fn encode_file_preview_response(
     envelope.extend_from_slice(&metadata_length.to_le_bytes());
     envelope.extend_from_slice(&metadata);
     envelope.extend_from_slice(&data);
-    Ok(tauri::ipc::Response::new(envelope))
+    Ok(envelope)
+}
+
+/// 为仍依赖单响应 Raw IPC 的诊断入口保留兼容包装。
+pub(super) fn encode_file_preview_response(
+    preview: LoreFilePreview,
+) -> Result<tauri::ipc::Response, LoreCommandError> {
+    encode_file_preview_envelope(preview).map(tauri::ipc::Response::new)
 }
 
 /// 构造单文件预览 DTO；内容在 Rust 边界内保持连续原始字节，不再生成 Base64。

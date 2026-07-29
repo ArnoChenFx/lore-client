@@ -200,6 +200,15 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
   }
 }
 
+/** 判断两份 Diff 参数是否会产生相同的读取结果。 */
+function areDiffPreferencesEqual(left: ClientPreferences['diff'], right: ClientPreferences['diff']): boolean {
+  return (
+    left.contextLines === right.contextLines &&
+    left.ignoreWhitespaceEol === right.ignoreWhitespaceEol &&
+    left.ignoreWhitespaceInline === right.ignoreWhitespaceInline
+  )
+}
+
 function notifyListeners(): void {
   for (const listener of listeners) {
     listener(cachedPreferences, preferencesReady, preferencesError)
@@ -368,7 +377,7 @@ export async function initializeClientPreferences(): Promise<ClientPreferences> 
 }
 
 export function updateClientPreferences(patch: Partial<ClientPreferences>): void {
-  const nextPreferences = normalizePreferences({
+  const normalizedPreferences = normalizePreferences({
     ...cachedPreferences,
     ...patch,
     workspaceLayout: patch.workspaceLayout
@@ -378,6 +387,17 @@ export function updateClientPreferences(patch: Partial<ClientPreferences>): void
         }
       : cachedPreferences.workspaceLayout
   })
+  const nextPreferences: ClientPreferences = {
+    ...normalizedPreferences,
+    /*
+     * Revision 与本地变更的 Diff 读取 effect 都依赖此对象的引用。拖动分割线等
+     * 无关布局更新会经过完整规范化；当三个读取参数均未变化时复用旧引用，避免
+     * React 把等值对象误判为新的读取条件。任一参数真实变化时仍保留新对象。
+     */
+    diff: areDiffPreferencesEqual(normalizedPreferences.diff, cachedPreferences.diff)
+      ? cachedPreferences.diff
+      : normalizedPreferences.diff
+  }
   // 布局适配和 ResizeObserver 可能重复提交同一个值；无变化时不通知，避免
   // “偏好更新 → 组件同步 → 再次偏好更新”的无意义渲染与磁盘写入循环。
   if (JSON.stringify(nextPreferences) === JSON.stringify(cachedPreferences)) {

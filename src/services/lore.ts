@@ -1,4 +1,4 @@
-import { isTauri } from '@tauri-apps/api/core'
+import { Channel, isTauri } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { open, save } from '@tauri-apps/plugin-dialog'
 
@@ -1361,13 +1361,120 @@ export async function loadBinaryFilePreview(
   revision?: string,
   metadataOnly = false
 ): Promise<BinaryFilePreview> {
-  const envelope = await invokeCommand<ArrayBuffer>('lore_file_preview', {
-    repositoryPath,
-    path,
-    revision,
-    metadataOnly
-  })
+  const assembler = createBinaryPreviewStreamAssembler()
+  const onChunk = new Channel<BinaryPreviewStreamMessage>((message) => assembler.accept(message))
+  try {
+    await invokeCommand<void>('lore_file_preview_stream', {
+      repositoryPath,
+      path,
+      revision,
+      metadataOnly,
+      onChunk
+    })
+    assembler.complete()
+  } catch (error) {
+    // 统一让下方等待中的 Promise 传播失败，避免 invoke 失败时产生一个无人消费的
+    // rejection；这条路径仍会保留 invokeCommand 已完成的结构化错误映射。
+    assembler.fail(error)
+  }
+  const envelope = await assembler.result
   return decodeBinaryFilePreviewEnvelope(envelope)
+}
+
+interface BinaryPreviewStreamHeader {
+  byteLength: number
+}
+
+type BinaryPreviewStreamMessage = BinaryPreviewStreamHeader | ArrayBuffer
+
+interface BinaryPreviewStreamAssembler {
+  result: Promise<ArrayBuffer>
+  accept: (message: BinaryPreviewStreamMessage) => void
+  complete: () => void
+  fail: (error: unknown) => void
+}
+
+/**
+ * 汇集 Tauri Channel 的有序二进制预览小块。
+ *
+ * 第一条 JSON 消息声明最终长度，后续每个 Raw ArrayBuffer 都只做一次有界 `set`。
+ * 这避免 WebView2 在一个 IPC 回调里接收、复制完整 20 MiB 载荷；最终仍保持现有稳定
+ * DTO 所需的单一连续 ArrayBuffer，组件和取消队列无需感知传输细节。
+ */
+export function createBinaryPreviewStreamAssembler(): BinaryPreviewStreamAssembler {
+  let target: Uint8Array<ArrayBuffer> | null = null
+  let receivedBytes = 0
+  let commandCompleted = false
+  let settled = false
+  let completionTimeout: ReturnType<typeof setTimeout> | null = null
+  let resolveResult: (value: ArrayBuffer) => void = () => undefined
+  let rejectResult: (reason?: unknown) => void = () => undefined
+  const result = new Promise<ArrayBuffer>((resolve, reject) => {
+    resolveResult = resolve
+    rejectResult = reject
+  })
+
+  const fail = (error: unknown) => {
+    if (settled) return
+    settled = true
+    if (completionTimeout) clearTimeout(completionTimeout)
+    rejectResult(error instanceof Error ? error : new Error(String(error)))
+  }
+
+  const finishIfReady = () => {
+    if (settled || !commandCompleted || !target || receivedBytes !== target.byteLength) return
+    settled = true
+    if (completionTimeout) clearTimeout(completionTimeout)
+    resolveResult(target.buffer)
+  }
+
+  const accept = (message: BinaryPreviewStreamMessage) => {
+    if (settled) return
+    if (!(message instanceof ArrayBuffer)) {
+      if (target || !Number.isSafeInteger(message.byteLength) || message.byteLength <= 0) {
+        fail(new Error('Binary preview IPC stream header is invalid'))
+        return
+      }
+      target = new Uint8Array(message.byteLength)
+      finishIfReady()
+      return
+    }
+    if (!target) {
+      fail(new Error('Binary preview IPC stream payload arrived before its header'))
+      return
+    }
+    const chunk = new Uint8Array(message)
+    if (receivedBytes + chunk.byteLength > target.byteLength) {
+      fail(new Error('Binary preview IPC stream exceeds its declared length'))
+      return
+    }
+    // Rust 将单块限制为 256 KiB；每次复制都是有界短任务，浏览器可在消息间绘制和响应输入。
+    target.set(chunk, receivedBytes)
+    receivedBytes += chunk.byteLength
+    finishIfReady()
+  }
+
+  const complete = () => {
+    commandCompleted = true
+    finishIfReady()
+    if (settled) return
+    /*
+     * Rust 命令返回只说明所有 Channel 消息已经排入 WebView；较大的 Raw 消息仍可能在
+     * 独立 fetch 中传输，不能在 invoke resolve 时误判为缺块。超时只防御底层通道异常，
+     * 正常 20 MiB 上限远低于该窗口。
+     */
+    completionTimeout = setTimeout(() => {
+      fail(
+        new Error(
+          target
+            ? 'Binary preview IPC stream completed before all bytes arrived'
+            : 'Binary preview IPC stream completed without a header'
+        )
+      )
+    }, 30_000)
+  }
+
+  return { result, accept, complete, fail }
 }
 
 interface BinaryFilePreviewMetadata extends Omit<BinaryFilePreview, 'data'> {}

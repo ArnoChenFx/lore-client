@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { decodeBinaryFilePreviewEnvelope } from './lore'
+import { createBinaryPreviewStreamAssembler, decodeBinaryFilePreviewEnvelope } from './lore'
 
 function createEnvelope(metadata: object, payload: Uint8Array): ArrayBuffer {
   const metadataBytes = new TextEncoder().encode(JSON.stringify(metadata))
@@ -12,6 +12,48 @@ function createEnvelope(metadata: object, payload: Uint8Array): ArrayBuffer {
 }
 
 describe('binary preview Raw IPC envelope', () => {
+  it('assembles ordered stream chunks into one envelope', async () => {
+    const envelope = createEnvelope(
+      {
+        path: 'Content/Sky.png',
+        kind: 'image',
+        mimeType: 'image/png',
+        size: 6,
+        contentState: 'available',
+        structuredPreview: null
+      },
+      new Uint8Array([1, 2, 3, 4, 5, 6])
+    )
+    const bytes = new Uint8Array(envelope)
+    const assembler = createBinaryPreviewStreamAssembler()
+
+    assembler.accept({ byteLength: bytes.byteLength })
+    assembler.accept(bytes.slice(0, 5).buffer)
+    assembler.accept(bytes.slice(5, 11).buffer)
+    assembler.accept(bytes.slice(11).buffer)
+    assembler.complete()
+
+    const preview = decodeBinaryFilePreviewEnvelope(await assembler.result)
+    expect(Array.from(preview.data)).toEqual([1, 2, 3, 4, 5, 6])
+  })
+
+  it('waits for queued channel chunks after the command completes', async () => {
+    const assembler = createBinaryPreviewStreamAssembler()
+    assembler.complete()
+    assembler.accept({ byteLength: 3 })
+    assembler.accept(new Uint8Array([1, 2, 3]).buffer)
+
+    expect(Array.from(new Uint8Array(await assembler.result))).toEqual([1, 2, 3])
+  })
+
+  it('rejects a stream payload larger than its declared length', async () => {
+    const assembler = createBinaryPreviewStreamAssembler()
+    assembler.accept({ byteLength: 2 })
+    assembler.accept(new Uint8Array([1, 2, 3]).buffer)
+
+    await expect(assembler.result).rejects.toThrow('exceeds its declared length')
+  })
+
   it('keeps the payload as a view over the original ArrayBuffer', () => {
     const envelope = createEnvelope(
       {

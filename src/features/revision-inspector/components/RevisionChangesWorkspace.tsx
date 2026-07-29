@@ -450,6 +450,7 @@ export function RevisionChangesWorkspace({
         role="option"
         aria-selected={selected}
         tabIndex={selected ? 0 : -1}
+        data-change-path={changeFilePath(file)}
         className={`revision-change-row is-file ${selected ? 'is-selected' : ''} ${primaryObjectId === objectId ? 'is-primary' : ''}`}
         style={{ '--tree-depth': depth } as CSSProperties}
         onClick={(event) => selectObject(objectId, event)}

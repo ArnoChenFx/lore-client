@@ -6373,7 +6373,8 @@ body.is-resizing-panes {
   min-width: 0;
   min-height: 0;
   grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
-  grid-auto-rows: minmax(260px, 1fr);
+  /* 单版本保留紧凑的可用下限；双版本比较会在下方覆盖为完全弹性的等分行。 */
+  grid-auto-rows: minmax(220px, 1fr);
   gap: 8px;
   overflow: auto;
   /*
@@ -6384,10 +6385,23 @@ body.is-resizing-panes {
   background: var(--bg-workspace);
 }
 
+/*
+ * 双版本在横排时共用一整行，在窄面板自动竖排时由两个 1fr 行平分可用高度。
+ * 比较模式不允许内容最小高度反向撑开根网格，否则会挤占相邻工作区。
+ */
+.binary-diff-preview.has-comparison {
+  grid-auto-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.binary-diff-preview.has-comparison > .binary-diff-preview__card {
+  min-height: 0;
+}
+
 .binary-diff-preview__card {
   display: grid;
   min-width: 0;
-  min-height: 260px;
+  min-height: 220px;
   grid-template-rows: 30px minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid var(--line);
@@ -6464,8 +6478,16 @@ body.is-resizing-panes {
 .binary-diff-preview__model-viewer {
   display: grid;
   min-width: 0;
-  min-height: 320px;
+  min-height: 280px;
   grid-template-rows: minmax(0, 1fr) auto;
+}
+
+/*
+ * 比较卡片的标题由外层固定，模型信息栏由查看器的 auto 行固定；中间画布及其
+ * 绝对定位宿主必须允许收缩，确保所有剩余空间都用于模型内容且信息栏始终可见。
+ */
+.binary-diff-preview.has-comparison .binary-diff-preview__model-viewer {
+  min-height: 0;
 }
 
 .binary-diff-preview__pdf-surface {
@@ -6493,25 +6515,37 @@ body.is-resizing-panes {
   position: absolute;
   inset: 0;
   min-width: 0;
-  min-height: 280px;
+  min-height: 240px;
+}
+
+.binary-diff-preview.has-comparison .binary-diff-preview__model-host {
+  min-height: 0;
 }
 
 .binary-diff-preview__model-host > canvas {
   display: block;
   width: 100%;
   height: 100%;
-  min-height: 280px;
+  min-height: 240px;
   touch-action: none;
   user-select: none;
+}
+
+.binary-diff-preview.has-comparison .binary-diff-preview__model-host > canvas {
+  min-height: 0;
 }
 
 .binary-diff-preview__model-surface > canvas {
   display: block;
   width: 100%;
   height: 100%;
-  min-height: 280px;
+  min-height: 240px;
   touch-action: none;
   user-select: none;
+}
+
+.binary-diff-preview.has-comparison .binary-diff-preview__model-surface > canvas {
+  min-height: 0;
 }
 
 .binary-diff-preview__model-hint {
@@ -6527,7 +6561,7 @@ body.is-resizing-panes {
 .binary-diff-preview__csv-viewer {
   display: grid;
   min-width: 0;
-  min-height: 320px;
+  min-height: 280px;
   grid-template-rows: minmax(0, 1fr) auto;
 }
 
@@ -6536,14 +6570,14 @@ body.is-resizing-panes {
   position: relative;
   display: grid;
   min-width: 0;
-  min-height: 320px;
+  min-height: 280px;
   grid-template-rows: minmax(0, 1fr) auto;
   overflow: hidden;
 }
 
 .binary-diff-preview__texture-host {
   min-width: 0;
-  min-height: 280px;
+  min-height: 240px;
   background-color: var(--bg-code);
   background-image:
     linear-gradient(45deg, var(--line-soft) 25%, transparent 25%),
@@ -6562,13 +6596,13 @@ body.is-resizing-panes {
   display: block;
   width: 100%;
   height: 100%;
-  min-height: 280px;
+  min-height: 240px;
 }
 
 .binary-diff-preview__audio-viewer {
   display: flex;
   min-width: 0;
-  min-height: 320px;
+  min-height: 240px;
   align-items: stretch;
   justify-content: center;
   flex-direction: column;
@@ -6627,7 +6661,7 @@ body.is-resizing-panes {
 .binary-diff-preview__font-viewer {
   display: grid;
   min-width: 0;
-  min-height: 320px;
+  min-height: 280px;
   grid-template-rows: 38px minmax(0, 1fr);
   background: var(--bg-code);
 }
@@ -6677,7 +6711,7 @@ body.is-resizing-panes {
 .binary-diff-preview__structured-viewer {
   display: grid;
   min-width: 0;
-  min-height: 320px;
+  min-height: 200px;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   align-content: start;
   overflow: hidden;

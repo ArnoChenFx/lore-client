@@ -107,6 +107,7 @@ pub fn run() {
             lore_adapter::workspace::lore_revision_diff,
             lore_adapter::workspace::lore_revision_files,
             lore_adapter::workspace::lore_file_preview,
+            lore_adapter::workspace::lore_file_preview_stream,
             lore_adapter::workspace::lore_file_history,
             lore_adapter::workspace::lore_discard_workspace_files,
             lore_adapter::workspace::lore_open_workspace_file,

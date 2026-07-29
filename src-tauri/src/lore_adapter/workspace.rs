@@ -5,6 +5,17 @@
 
 use super::*;
 
+/// 单个 Channel 消息保持在较小范围内，避免 WebView2 为大 ArrayBuffer 执行一次长时间
+/// 的 fetch/复制任务。该值远高于 Tauri 的 Raw 直接执行阈值，因此仍走高效 fetch IPC，
+/// 同时把每次主线程工作限制在可交互的时间片内。
+const FILE_PREVIEW_STREAM_CHUNK_BYTES: usize = 256 * 1024;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LoreFilePreviewStreamHeader {
+    byte_length: usize,
+}
+
 /// 在显式 Stage 之前清除旧客户端留下的“只有 dirty、没有真实 Stage”的 anchor。
 ///
 /// 旧实现会让工作区扫描创建 staged anchor。直接在读路径迁移会再次产生副作用，
@@ -282,6 +293,64 @@ pub async fn lore_file_preview(
             metadata_only.unwrap_or(false),
         )
         .and_then(encode_file_preview_response)
+    })
+    .await
+}
+
+/// 以有序小块把单文件预览送入 WebView。
+///
+/// 后端读取、格式校验和资产预处理仍完整位于 blocking 任务；变化只发生在 IPC 交付
+/// 边界。第一条消息是 JSON 总长度，后续消息均为 Raw ArrayBuffer。Tauri Channel 会
+/// 保证消息顺序，前端可一次预分配最终信封并逐块写入，而不必接收一个会独占主线程的
+/// 20 MiB 响应。
+#[tauri::command]
+pub async fn lore_file_preview_stream(
+    repository_path: String,
+    path: String,
+    revision: Option<String>,
+    metadata_only: Option<bool>,
+    on_chunk: tauri::ipc::Channel<tauri::ipc::Response>,
+) -> Result<(), LoreCommandError> {
+    let revision = revision
+        .map(|value| validate_revision(&value))
+        .transpose()?;
+    run_heavy_lore_task(&FILE_PREVIEW_READ_LANE, move || {
+        let envelope = build_file_preview(
+            &repository_path,
+            &path,
+            revision.as_deref(),
+            metadata_only.unwrap_or(false),
+        )
+        .and_then(encode_file_preview_envelope)?;
+        let header = serde_json::to_string(&LoreFilePreviewStreamHeader {
+            byte_length: envelope.len(),
+        })
+        .map_err(|error| {
+            LoreCommandError::new(
+                "binary_preview_encode_failed",
+                format!("Failed to encode binary preview stream header: {error}"),
+            )
+        })?;
+        on_chunk
+            .send(tauri::ipc::Response::new(header))
+            .map_err(|error| {
+                LoreCommandError::new(
+                    "binary_preview_stream_failed",
+                    format!("Failed to send binary preview stream header: {error}"),
+                )
+            })?;
+
+        for chunk in envelope.chunks(FILE_PREVIEW_STREAM_CHUNK_BYTES) {
+            on_chunk
+                .send(tauri::ipc::Response::new(chunk.to_vec()))
+                .map_err(|error| {
+                    LoreCommandError::new(
+                        "binary_preview_stream_failed",
+                        format!("Failed to send a binary preview stream chunk: {error}"),
+                    )
+                })?;
+        }
+        Ok(())
     })
     .await
 }

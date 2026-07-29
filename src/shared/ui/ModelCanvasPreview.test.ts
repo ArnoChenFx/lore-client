@@ -5,9 +5,10 @@ import { disposeObject3D, disposeWebGLRenderer } from './ModelCanvasPreview'
 describe('model canvas resource disposal', () => {
   it('disposes shared material textures exactly once', () => {
     const disposeTexture = vi.fn()
+    const closeImageBitmap = vi.fn()
     const disposeMaterial = vi.fn()
     const disposeGeometry = vi.fn()
-    const texture = { isTexture: true, dispose: disposeTexture }
+    const texture = { isTexture: true, dispose: disposeTexture, source: { data: { close: closeImageBitmap } } }
     const geometry = { dispose: disposeGeometry }
     const material = {
       map: texture,
@@ -24,6 +25,7 @@ describe('model canvas resource disposal', () => {
     disposeObject3D(root as never)
 
     expect(disposeTexture).toHaveBeenCalledTimes(1)
+    expect(closeImageBitmap).toHaveBeenCalledTimes(1)
     expect(disposeMaterial).toHaveBeenCalledTimes(1)
     expect(disposeGeometry).toHaveBeenCalledTimes(1)
   })

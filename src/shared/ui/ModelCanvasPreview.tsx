@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next'
 import type { Object3D, PerspectiveCamera, Scene, WebGLRenderer } from 'three'
 
 import { t } from '../../i18n'
+import { createModelPreviewObject, startModelPreviewWorker } from './modelPreviewWorkerClient'
+import type { ModelPreviewFormat } from './modelPreviewWorkerProtocol'
 interface ModelCanvasPreviewProps {
   fileName: string
   label: string
@@ -16,37 +18,6 @@ type OrbitControlsLike = {
   target: { set: (x: number, y: number, z: number) => void }
   update: () => void
   dispose: () => void
-}
-
-type LoadingManagerConstructor = typeof import('three').LoadingManager
-
-/** 1×1 透明 PNG，用作被拦截外部贴图的占位，避免加载器因抛错中断几何解析。 */
-const BLOCKED_TEXTURE_DATA_URL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
-
-/**
- * 拦截外部 URL / 相对路径，但不要抛错中断 FBX/GLTF 解析。
- *
- * 空字符串与相对路径若原样放行，会打到 Vite 开发服务器并产生 404；统一替换为
- * data URL 占位，既阻止真实网络读取，也不中断几何解析。
- */
-function createIsolatedLoadingManager(LoadingManager: LoadingManagerConstructor) {
-  const manager = new LoadingManager()
-  manager.setURLModifier((url) => {
-    const normalized = url.trim()
-    if (normalized.startsWith('blob:') || normalized.startsWith('data:') || normalized.startsWith('data%3A')) {
-      return url
-    }
-    return BLOCKED_TEXTURE_DATA_URL
-  })
-  return manager
-}
-
-/** 把 Raw IPC 字节拷成独立 ArrayBuffer，避免解析器转移 React state 的底层缓冲。 */
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const copy = new Uint8Array(bytes.byteLength)
-  copy.set(bytes)
-  return copy.buffer
 }
 
 /**
@@ -80,6 +51,8 @@ function resolveSceneBackground(surface: HTMLElement, THREE: typeof import('thre
 interface DisposableTexture {
   isTexture: true
   dispose: () => void
+  image?: unknown
+  source?: { data?: unknown }
 }
 
 interface DisposableMaterial {
@@ -97,7 +70,12 @@ function disposeTextureValue(value: unknown, disposedTextures: Set<object>) {
   if (!value || typeof value !== 'object' || !('isTexture' in value) || value.isTexture !== true) return
   if (disposedTextures.has(value)) return
   disposedTextures.add(value)
-  ;(value as DisposableTexture).dispose()
+  const texture = value as DisposableTexture
+  const image = texture.source?.data ?? texture.image
+  if (image && typeof image === 'object' && 'close' in image && typeof image.close === 'function') {
+    image.close()
+  }
+  texture.dispose()
 }
 
 /** 释放网格几何、材质及其纹理，避免切换前后版本时 GPU 资源泄漏。 */
@@ -185,6 +163,7 @@ export function ModelCanvasPreview({ fileName, label, data }: ModelCanvasPreview
     let root: Object3D | null = null
     let resizeObserver: ResizeObserver | null = null
     let hostCanvas: HTMLCanvasElement | null = null
+    let modelWorkerTask: ReturnType<typeof startModelPreviewWorker> | null = null
 
     setLoading(true)
     setError(null)
@@ -199,41 +178,27 @@ export function ModelCanvasPreview({ fileName, label, data }: ModelCanvasPreview
           throw new Error(t('currentFileSupported3dModel_5266'))
         }
 
-        const THREE = await import('three')
-        if (cancelled) return
-
-        const [{ OrbitControls }, { OBJLoader }, { FBXLoader }, { GLTFLoader }] = await Promise.all([
+        const format = extension as ModelPreviewFormat
+        modelWorkerTask = startModelPreviewWorker(format, data)
+        // Worker 解析与主线程加载渲染器代码并行进行，任何一次选择变化都会终止前者。
+        const [THREE, { OrbitControls }, parsed] = await Promise.all([
+          import('three'),
           import('three/addons/controls/OrbitControls.js'),
-          import('three/addons/loaders/OBJLoader.js'),
-          import('three/addons/loaders/FBXLoader.js'),
-          import('three/addons/loaders/GLTFLoader.js')
+          modelWorkerTask.promise
         ])
         if (cancelled) return
 
-        // 解析器需要独占 ArrayBuffer；toArrayBuffer 已完成一次必要复制，不能再预复制。
-        const arrayBuffer = toArrayBuffer(data)
-        const manager = createIsolatedLoadingManager(THREE.LoadingManager)
-        let loaded: Object3D
-        let nextHint: string | null = null
-
-        if (extension === 'obj') {
-          const text = new TextDecoder().decode(data)
-          loaded = new OBJLoader().parse(text)
-          nextHint = t('objGeometryShownSiblingMtl_3f05')
-        } else if (extension === 'fbx') {
-          loaded = new FBXLoader(manager).parse(arrayBuffer, '')
-          nextHint = t('currentFbxFileParsedExternal_9cc6')
-        } else {
-          loaded = await new Promise<Object3D>((resolve, reject) => {
-            new GLTFLoader(manager).parse(
-              arrayBuffer,
-              '',
-              (gltf) => resolve(gltf.scene),
-              (loaderError) => reject(loaderError)
-            )
-          })
-          nextHint = extension === 'gltf' ? t('externalGltfBinTexturesLoaded_b0db') : null
-        }
+        const rebuilt = createModelPreviewObject(THREE, parsed)
+        const loaded = rebuilt.root
+        const precomputedBounds = { center: rebuilt.center, size: rebuilt.size }
+        const nextHint =
+          extension === 'obj'
+            ? t('objGeometryShownSiblingMtl_3f05')
+            : extension === 'fbx'
+              ? t('currentFbxFileParsedExternal_9cc6')
+              : extension === 'gltf'
+                ? t('externalGltfBinTexturesLoaded_b0db')
+                : null
 
         if (cancelled) {
           disposeObject3D(loaded)
@@ -276,11 +241,13 @@ export function ModelCanvasPreview({ fileName, label, data }: ModelCanvasPreview
         root = loaded
         scene.add(root)
 
-        const box = new THREE.Box3().setFromObject(root)
-        const size = new THREE.Vector3()
-        const center = new THREE.Vector3()
-        box.getSize(size)
-        box.getCenter(center)
+        const size = precomputedBounds?.size ?? new THREE.Vector3()
+        const center = precomputedBounds?.center ?? new THREE.Vector3()
+        if (!precomputedBounds) {
+          const box = new THREE.Box3().setFromObject(root)
+          box.getSize(size)
+          box.getCenter(center)
+        }
         if (Number.isFinite(center.x) && Number.isFinite(center.y) && Number.isFinite(center.z)) {
           root.position.sub(center)
         }
@@ -330,6 +297,9 @@ export function ModelCanvasPreview({ fileName, label, data }: ModelCanvasPreview
 
     return () => {
       cancelled = true
+      // Worker.terminate 可以中断 OBJ/FBX 同步解析和 GLTF Promise 链；仅设 cancelled
+      // 只能忽略结果，无法阻止过期任务继续占用 CPU 与内存。
+      modelWorkerTask?.cancel()
       window.cancelAnimationFrame(animationFrame)
       resizeObserver?.disconnect()
       controls?.dispose()

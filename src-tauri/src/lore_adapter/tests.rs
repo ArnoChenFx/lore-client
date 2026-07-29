@@ -1259,6 +1259,37 @@ fn workspace_binary_preview_returns_validated_real_file_content() {
 }
 
 #[test]
+fn file_preview_envelope_preserves_metadata_and_payload() {
+    let payload = vec![0x89, b'P', b'N', b'G'];
+    let envelope = encode_file_preview_envelope(LoreFilePreview {
+        path: "Content/Images/Preview.png".to_string(),
+        kind: "image",
+        mime_type: "image/png",
+        data: payload.clone(),
+        size: payload.len() as u64,
+        content_state: LoreFilePreviewContentState::Available,
+        structured_preview: None,
+    })
+    .expect("A valid preview should be encoded into an IPC envelope");
+
+    // 流式 IPC 直接切分该信封，因此这里固定头部长度、JSON 元数据和尾部原始载荷的
+    // 边界，防止后端传输方式变化时破坏前端稳定解码协议。
+    let metadata_length = u32::from_le_bytes(
+        envelope[..4]
+            .try_into()
+            .expect("The envelope should start with a four-byte metadata length"),
+    ) as usize;
+    let metadata_end = 4 + metadata_length;
+    let metadata: serde_json::Value = serde_json::from_slice(&envelope[4..metadata_end])
+        .expect("The envelope metadata should contain valid JSON");
+
+    assert_eq!(metadata["path"], "Content/Images/Preview.png");
+    assert_eq!(metadata["kind"], "image");
+    assert_eq!(metadata["contentState"], "available");
+    assert_eq!(&envelope[metadata_end..], payload.as_slice());
+}
+
+#[test]
 fn disabled_workspace_binary_diff_returns_metadata_without_reading_content() {
     let (repository_path, _cleanup) =
         create_configuration_test_repository("workspace-disabled-binary-preview", "");

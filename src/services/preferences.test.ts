@@ -157,6 +157,34 @@ describe('client preferences stored on disk', () => {
     })
   })
 
+  it('preserves Diff preference identity across layout-only updates', () => {
+    const before = getClientPreferences()
+
+    updateClientPreferences({
+      revisionChangesBrowserWidth: before.revisionChangesBrowserWidth + 1
+    })
+
+    const after = getClientPreferences()
+    expect(after.revisionChangesBrowserWidth).toBe(before.revisionChangesBrowserWidth + 1)
+    // React effect 以对象身份判断依赖；无关布局更新不得伪装成 Diff 参数变化。
+    expect(after.diff).toBe(before.diff)
+  })
+
+  it('replaces Diff preference identity when a Diff value changes', () => {
+    const before = getClientPreferences()
+
+    updateClientPreferences({
+      diff: {
+        ...before.diff,
+        ignoreWhitespaceEol: !before.diff.ignoreWhitespaceEol
+      }
+    })
+
+    const after = getClientPreferences()
+    expect(after.diff).not.toBe(before.diff)
+    expect(after.diff.ignoreWhitespaceEol).toBe(!before.diff.ignoreWhitespaceEol)
+  })
+
   it('persists the two Diff panel visibility preferences independently', () => {
     updateClientPreferences({
       localChangesDiffVisible: false,
