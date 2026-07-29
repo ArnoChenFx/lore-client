@@ -1968,6 +1968,49 @@ fn external_tool_command_name_resolves_from_supplied_path() {
     assert_eq!(resolved.as_deref(), Some(executable.as_path()));
 }
 
+#[cfg(windows)]
+#[test]
+fn external_tool_resolution_prefers_windows_launcher_over_extensionless_shell_script() {
+    let directory = tempfile::tempdir().unwrap();
+    let shell_script = directory.path().join("code");
+    let windows_launcher = directory.path().join("code.cmd");
+    fs::write(&shell_script, b"#!/usr/bin/env sh\n").unwrap();
+    fs::write(&windows_launcher, b"@echo off\r\n").unwrap();
+    let path_value = std::env::join_paths([directory.path()]).unwrap();
+
+    let resolved = resolve_external_executable_with(
+        "code",
+        Some(path_value.as_os_str()),
+        &[".CMD".to_owned(), String::new()],
+    );
+
+    assert_eq!(
+        resolved.and_then(|path| fs::canonicalize(path).ok()),
+        fs::canonicalize(windows_launcher).ok(),
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn absolute_extensionless_external_tool_path_prefers_windows_launcher() {
+    let directory = tempfile::tempdir().unwrap();
+    let shell_script = directory.path().join("cursor");
+    let windows_launcher = directory.path().join("cursor.cmd");
+    fs::write(&shell_script, b"#!/usr/bin/env sh\n").unwrap();
+    fs::write(&windows_launcher, b"@echo off\r\n").unwrap();
+
+    let resolved = resolve_external_executable_with(
+        shell_script.to_string_lossy().as_ref(),
+        None,
+        &[".CMD".to_owned(), String::new()],
+    );
+
+    assert_eq!(
+        resolved.and_then(|path| fs::canonicalize(path).ok()),
+        fs::canonicalize(windows_launcher).ok(),
+    );
+}
+
 #[test]
 fn external_merge_arguments_require_and_replace_all_four_paths() {
     let tool = ExternalDiffTool {

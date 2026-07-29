@@ -186,7 +186,13 @@ pub(super) fn resolve_external_executable_with(
     }
     let path = Path::new(executable);
     if path.is_absolute() {
-        return path.is_file().then(|| path.to_path_buf());
+        if path.extension().is_some() {
+            return path.is_file().then(|| path.to_path_buf());
+        }
+        return extensions
+            .iter()
+            .map(|extension| PathBuf::from(format!("{executable}{extension}")))
+            .find(|candidate| candidate.is_file());
     }
     if path.components().count() > 1 {
         return None;
@@ -220,8 +226,11 @@ pub(super) fn resolve_external_executable(executable: &str) -> Option<PathBuf> {
         if path.extension().is_some() {
             vec![String::new()]
         } else {
-            std::iter::once(String::new())
-                .chain(configured)
+            configured
+                .into_iter()
+                // Git Bash 等工具可能同时放置 `code` shell 脚本和 `code.cmd`；
+                // Windows 必须先选择 PATHEXT 声明的可启动入口，最后才回退裸文件。
+                .chain(std::iter::once(String::new()))
                 .collect::<Vec<_>>()
         }
     };
