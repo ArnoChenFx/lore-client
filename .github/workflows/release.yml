@@ -116,6 +116,11 @@ jobs:
           # 生成准确的版本区间提交记录需要完整历史与全部标签，浅克隆无法解析上一个版本。
           fetch-depth: 0
 
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
       - name: Generate release notes from commits
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -153,5 +158,9 @@ jobs:
         run: |
           gh release download "${{ github.ref_name }}" --pattern latest.json --dir updater-manifest
           test -s updater-manifest/latest.json
-          # 所有平台资产就绪后，以精确提交区间覆盖草稿正文并一次性公开 Release。
+          # tauri-action 在构建阶段会把临时 releaseBody 同时写入 latest.json；发布前必须
+          # 将最终正文同步回更新清单，否则客户端版本号正确但会显示草稿占位说明。
+          node scripts/sync-updater-manifest-notes.mjs updater-manifest/latest.json release-notes.md "${{ github.ref_name }}"
+          gh release upload "${{ github.ref_name }}" updater-manifest/latest.json --clobber
+          # 只有更新清单替换成功后才公开 Release，避免用户观察到正文与客户端说明不一致。
           gh release edit "${{ github.ref_name }}" --notes-file release-notes.md --draft=false
