@@ -138,13 +138,13 @@ jobs:
               echo "Changes since [$previous_tag](https://github.com/${GITHUB_REPOSITORY}/releases/tag/$previous_tag):"
               echo
               git log "$previous_tag..$CURRENT_TAG" \
-                --pretty=format:"- %s ([%h](https://github.com/${GITHUB_REPOSITORY}/commit/%H)) — %an"
+                --pretty=format:"- %s ([%h](https://github.com/${GITHUB_REPOSITORY}/commit/%H))"
             else
               # 首次发布没有可比较版本，退化为列出当前标签可达的完整提交历史。
               echo "Changes included in this first release:"
               echo
               git log "$CURRENT_TAG" \
-                --pretty=format:"- %s ([%h](https://github.com/${GITHUB_REPOSITORY}/commit/%H)) — %an"
+                --pretty=format:"- %s ([%h](https://github.com/${GITHUB_REPOSITORY}/commit/%H))"
             fi
             echo
             echo
