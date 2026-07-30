@@ -487,8 +487,9 @@ export type StructuredAssetPreview =
 /**
  * 从工作区文件或不可变 Revision Store 按需读取的单个二进制预览。
  *
- * Rust 边界负责路径、类型和大小校验；Raw IPC 直接返回字节，组件不接触 Lore
+ * Rust 边界负责路径、类型和大小校验；Raw IPC 直接返回受控载荷，组件不接触 Lore
  * 内容地址或平台绝对路径，也不在 React 状态中保留体积膨胀约 1/3 的 Base64 字符串。
+ * `asset` 的 data 只允许承载已验证并重编码的编辑器 PNG 缩略图，不会传输原始专有资产。
  */
 export interface BinaryFilePreview {
   path: string
@@ -496,7 +497,7 @@ export interface BinaryFilePreview {
   mimeType: string
   data: Uint8Array
   size: number
-  /** 超限或格式不支持时只返回大小元数据，`data` 为空且文件正文从未被读取。 */
+  /** 普通超限或格式不支持时只返回大小元数据；支持有界缩略图的大型工作区资产仍可为 `available`。 */
   contentState: 'available' | 'tooLarge' | 'unsupported' | 'metadataOnly'
   /** 只有 KTX2、归档和引擎资产携带；普通媒体继续使用受控原始载荷。 */
   structuredPreview?: StructuredAssetPreview | null

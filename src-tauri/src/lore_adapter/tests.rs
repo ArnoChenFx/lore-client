@@ -1163,6 +1163,7 @@ fn text_like_paths_cover_unity_godot_and_common_scripts() {
     assert!(is_text_like_revision_path("tools/build.bat"));
     assert!(is_text_like_revision_path("tools/setup.bash"));
     assert!(is_text_like_revision_path(".gitignore"));
+    assert!(is_text_like_revision_path("Nested/Workspace/.LOREIGNORE"));
     assert!(is_text_like_revision_path("Dockerfile"));
     assert!(!is_text_like_revision_path("Content/Map.umap"));
     assert!(!is_text_like_revision_path("Content/Actor.uasset"));
@@ -1256,6 +1257,102 @@ fn workspace_binary_preview_returns_validated_real_file_content() {
         preview.data,
         [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]
     );
+}
+
+#[test]
+fn workspace_blender_preview_returns_only_embedded_thumbnail_payload() {
+    let (repository_path, _cleanup) =
+        create_configuration_test_repository("workspace-blender-thumbnail-preview", "");
+    let asset_directory = repository_path.join("Art");
+    std::fs::create_dir_all(&asset_directory).expect("Temporary asset directory should be created");
+
+    // 最小旧版 Blend：1×1 `TEST` 块后跟 `ENDB`。原始专有资产不会进入 IPC，
+    // `build_file_preview` 应只返回 Rust 边界重编码的 PNG 和结构化元数据。
+    let mut thumbnail_body = Vec::new();
+    thumbnail_body.extend_from_slice(&1u32.to_le_bytes());
+    thumbnail_body.extend_from_slice(&1u32.to_le_bytes());
+    thumbnail_body.extend_from_slice(&[12, 34, 56, 255]);
+    let mut blend = b"BLENDER-v300".to_vec();
+    for (code, body, count) in [
+        (b"TEST", thumbnail_body.as_slice(), 1u32),
+        (b"ENDB", &[][..], 0u32),
+    ] {
+        blend.extend_from_slice(code);
+        blend.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        blend.extend_from_slice(&0u64.to_le_bytes());
+        blend.extend_from_slice(&0u32.to_le_bytes());
+        blend.extend_from_slice(&count.to_le_bytes());
+        blend.extend_from_slice(body);
+    }
+    std::fs::write(asset_directory.join("Hero.blend"), &blend)
+        .expect("Temporary Blend file should be written");
+
+    let preview = build_file_preview(
+        repository_path.to_string_lossy().as_ref(),
+        "Art/Hero.blend",
+        None,
+        false,
+    )
+    .expect("A Blend TEST block should return an embedded thumbnail preview");
+
+    assert_eq!(preview.kind, "asset");
+    assert_eq!(preview.mime_type, "image/png");
+    assert_eq!(preview.size, blend.len() as u64);
+    assert!(preview.data.starts_with(b"\x89PNG\r\n\x1a\n"));
+    assert!(preview.structured_preview.is_some());
+}
+
+#[test]
+fn workspace_large_blender_preview_bypasses_full_content_limit() {
+    let (repository_path, _cleanup) =
+        create_configuration_test_repository("workspace-large-blender-thumbnail-preview", "");
+    let asset_directory = repository_path.join("Art");
+    std::fs::create_dir_all(&asset_directory).expect("Temporary asset directory should be created");
+
+    let mut thumbnail_body = Vec::new();
+    thumbnail_body.extend_from_slice(&1u32.to_le_bytes());
+    thumbnail_body.extend_from_slice(&1u32.to_le_bytes());
+    thumbnail_body.extend_from_slice(&[12, 34, 56, 255]);
+    let mut blend_prefix = b"BLENDER-v300".to_vec();
+    for (code, body, count) in [
+        (b"TEST", thumbnail_body.as_slice(), 1u32),
+        (b"ENDB", &[][..], 0u32),
+    ] {
+        blend_prefix.extend_from_slice(code);
+        blend_prefix.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        blend_prefix.extend_from_slice(&0u64.to_le_bytes());
+        blend_prefix.extend_from_slice(&0u32.to_le_bytes());
+        blend_prefix.extend_from_slice(&count.to_le_bytes());
+        blend_prefix.extend_from_slice(body);
+    }
+
+    // 通过稀疏尾部把源文件扩展到 24 MiB；随机读取器应只消费开头的头部与 TEST 块。
+    let asset_path = asset_directory.join("LargeHero.blend");
+    let mut asset = std::fs::File::create(&asset_path).expect("Temporary Blend file should open");
+    std::io::Write::write_all(&mut asset, &blend_prefix)
+        .expect("Temporary Blend prefix should be written");
+    asset
+        .set_len(24 * 1024 * 1024)
+        .expect("Temporary Blend file should be enlarged");
+    drop(asset);
+
+    let preview = build_file_preview(
+        repository_path.to_string_lossy().as_ref(),
+        "Art/LargeHero.blend",
+        None,
+        false,
+    )
+    .expect("A large Blend TEST block should bypass the full-content limit");
+
+    assert_eq!(preview.kind, "asset");
+    assert_eq!(preview.mime_type, "image/png");
+    assert_eq!(preview.size, 24 * 1024 * 1024);
+    assert_eq!(
+        preview.content_state,
+        LoreFilePreviewContentState::Available
+    );
+    assert!(preview.data.starts_with(b"\x89PNG\r\n\x1a\n"));
+    assert!(preview.structured_preview.is_some());
 }
 
 #[test]

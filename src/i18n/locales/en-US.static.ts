@@ -40,6 +40,10 @@ const enUSStatic = {
   assetMetadataUnavailable: 'No structured metadata is available for this file',
   assetMetadataVersion: 'Version',
   assetMetadataWidth: 'Width',
+  assetWarningBlenderEmbeddedThumbnailUnavailable:
+    'This Blend file has no saved editor thumbnail; safely parsed metadata is still shown.',
+  assetWarningBlenderMetadataDecompressionLimited:
+    'The decompressed Blend data exceeds the safety limit, so its metadata and thumbnail were not parsed.',
   assetWarningGodotEncryptedDirectory:
     'The Godot PCK directory is encrypted; only unencrypted container metadata is shown.',
   assetWarningGodotResourceHeaderOnly:
@@ -59,6 +63,8 @@ const enUSStatic = {
   assetWarningUnrealPakInvalidIndex: 'The Unreal Pak declares an invalid index range, so its directory was not read.',
   assetWarningUnrealPakVersionedIndex:
     'Unreal Pak uses a versioned index; trusted container information is shown without guessing entries.',
+  assetWarningUnrealEmbeddedThumbnailUnavailable:
+    'This Unreal package has no validated editor thumbnail; images in the asset body were not guessed.',
   assetWarningUnrealVersionedSummaryOnly:
     'Unreal Package Summary varies by engine version; only stable fields are shown.',
   audioPlaybackUnsupported: 'The current system media decoder cannot play this audio.',

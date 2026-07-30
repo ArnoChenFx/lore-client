@@ -273,8 +273,8 @@ pub async fn lore_revision_files(
 /// 按需读取一个工作区文件或指定 Revision 中的二进制预览或大小元数据。
 ///
 /// `revision` 为空时读取工作区真实文件；非空时只读取该不可变 Revision Tree 中
-/// 精确匹配的内容。受支持格式执行 20 MB 大小限制；未知格式或 metadata-only 请求只
-/// 返回大小且不读取正文。
+/// 精确匹配的内容。完整正文执行 20 MiB 大小限制；大型 Blender/Unreal 主包只读取
+/// 有界缩略图区间，未知格式或 metadata-only 请求只返回大小且不读取正文。
 #[tauri::command]
 pub async fn lore_file_preview(
     repository_path: String,

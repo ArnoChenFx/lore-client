@@ -55,4 +55,20 @@ describe('binary diff preview layout', () => {
     expect(readRule(css, '.binary-diff-preview__texture-host')).toMatch(/min-height:\s*240px/)
     expect(readRule(css, '.binary-diff-preview__texture-host > canvas')).toMatch(/min-height:\s*240px/)
   })
+
+  it('places asset metadata before an optional thumbnail without clipping either section', () => {
+    const css = readFileSync(new URL('../../styles.css', import.meta.url), 'utf8')
+    const assetLayout = readRule(css, '.binary-diff-preview__asset-layout')
+    const assetLayoutWithThumbnail = readRule(css, '.binary-diff-preview__asset-layout.has-thumbnail')
+    const assetMetadata = readRule(css, '.binary-diff-preview__asset-layout > .binary-diff-preview__structured-viewer')
+    const assetThumbnail = readRule(css, '.binary-diff-preview__asset-thumbnail')
+
+    // 无缩略图时只有自然高度元数据轨道；有缩略图时，图片位于其下方并由同一容器滚动。
+    expect(assetLayout).toMatch(/grid-template-rows:\s*max-content/)
+    expect(assetLayout).toMatch(/overflow:\s*auto/)
+    expect(assetLayoutWithThumbnail).toMatch(/grid-template-rows:\s*max-content\s+minmax\(160px,\s*1fr\)/)
+    expect(assetMetadata).toMatch(/grid-auto-rows:\s*max-content/)
+    expect(assetMetadata).toMatch(/overflow:\s*visible/)
+    expect(assetThumbnail).toMatch(/border-top:\s*1px\s+solid\s+var\(--line\)/)
+  })
 })

@@ -1,6 +1,6 @@
 [package]
 name = "lore-client"
-version = "0.1.16"
+version = "0.2.0"
 description = "Lore desktop version control client"
 authors = ["Lore Client Contributors"]
 edition = "2021"
@@ -15,11 +15,13 @@ toml_edit = "0.25.13"
 
 [dependencies]
 # 仅用于把浏览器无法直接显示的 TGA/TIFF 转成 PNG；不引入完整编解码全家桶。
-image = { version = "0.25", default-features = false, features = ["dds", "exr", "png", "tga", "tiff"] }
+image = { version = "0.25", default-features = false, features = ["dds", "exr", "jpeg", "png", "tga", "tiff"] }
 # Diff 预览只解码单张受限尺寸纹理。EXR 默认的 Rayon 并行解码会把短命像素块
 # 分散到全局工作线程的分配器缓存，在 Windows 上每次刷新都抬高数百 MiB Private Bytes。
 exr = { version = "1.74", default-features = false }
 zstd = "0.13"
+# Blender 旧版压缩文件使用 gzip；关闭系统 zlib，保持桌面构建可复现且不引入额外动态库。
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 glob-match = "0.2.1"
 lore = { git = "https://github.com/EpicGames/lore.git", rev = "6fd18e6cf54b84c8715c3a7ac5922617a2399e02" }
 # 认证变更需要调用 Lore 顶层 crate 尚未暴露的 Transport 连接失效入口；

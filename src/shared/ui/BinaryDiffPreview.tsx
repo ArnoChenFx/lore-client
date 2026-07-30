@@ -95,6 +95,7 @@ function ImagePreview({
  * 不依赖 WebView2 原生插件，也不创建可执行链接、表单或脚本层。
  */
 function PreviewCard({ label, fileName, preview }: PreviewCardProps) {
+  const hasAssetThumbnail = preview.kind === 'asset' && preview.mimeType === 'image/png' && preview.data.byteLength > 0
   return (
     <article className={`binary-diff-preview__card is-${preview.kind}`}>
       <header>
@@ -119,7 +120,21 @@ function PreviewCard({ label, fileName, preview }: PreviewCardProps) {
           <AudioPreview fileName={fileName} label={label} mimeType={preview.mimeType} data={preview.data} />
         ) : preview.kind === 'font' ? (
           <FontPreview fileName={fileName} label={label} data={preview.data} />
-        ) : preview.kind === 'archive' || preview.kind === 'asset' ? (
+        ) : preview.kind === 'asset' ? (
+          <div className={`binary-diff-preview__asset-layout${hasAssetThumbnail ? ' has-thumbnail' : ''}`}>
+            <StructuredAssetPreview
+              fileName={fileName}
+              label={label}
+              preview={preview.structuredPreview}
+              size={preview.size}
+            />
+            {hasAssetThumbnail && (
+              <div className="binary-diff-preview__asset-thumbnail">
+                <ImagePreview fileName={fileName} label={label} data={preview.data} mimeType={preview.mimeType} />
+              </div>
+            )}
+          </div>
+        ) : preview.kind === 'archive' ? (
           <StructuredAssetPreview
             fileName={fileName}
             label={label}

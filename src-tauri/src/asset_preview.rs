@@ -1,12 +1,13 @@
 //! 不可信游戏资产的只读结构化预览。
 //!
-//! 本模块只处理已经通过仓库相对路径、符号链接和 20 MiB 原始文件限制的内存字节。
-//! 所有解析器仍需自行限制目录项、路径长度、声明尺寸和递归深度，避免容器元数据触发
-//! 过量分配。这里只读取目录与稳定头部；不会提取文件、执行脚本或追随外部资源。
+//! 普通预览只处理已经通过仓库相对路径、符号链接和 20 MiB 原始文件限制的内存字节；
+//! 大型 Blender/Unreal 主包另走 `Read + Seek` 有界区间读取。所有解析器仍需自行限制
+//! 目录项、路径长度、声明尺寸和递归深度，避免容器元数据触发过量分配。这里只读取目录、
+//! 稳定头部和编辑器明确引用的缩略图；不会提取文件、执行脚本或追随外部资源。
 
 use serde::Serialize;
 use std::collections::BTreeMap;
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
 
 const MAX_DIRECTORY_ENTRIES: usize = 500;
@@ -14,6 +15,16 @@ const MAX_DECLARED_ENTRIES: usize = 100_000;
 const MAX_PATH_BYTES: usize = 4_096;
 const MAX_UNITY_BLOCK_INFO_BYTES: usize = 4 * 1024 * 1024;
 const MAX_BLENDER_DECOMPRESSED_BYTES: usize = 64 * 1024 * 1024;
+const MAX_EMBEDDED_THUMBNAIL_BYTES: usize = 16 * 1024 * 1024;
+const MAX_EMBEDDED_THUMBNAIL_DIMENSION: u32 = 1_024;
+/// Unreal 版本化包摘要中的 CustomVersion 数组最长约 80 KiB；128 KiB 足以覆盖它、
+/// FolderName 以及后续 512 字节候选窗口，同时不会随源资产体积增长。
+const MAX_UNREAL_SUMMARY_PREFIX_BYTES: usize = 128 * 1024;
+/// 64 个缩略图表项在最坏 UTF-16 名称长度下仍应落在该窗口内；超过时按无缩略图降级。
+const MAX_UNREAL_THUMBNAIL_TABLE_BYTES: usize = 1024 * 1024;
+const UNREAL_THUMBNAIL_TABLE_PROBE_BYTES: usize = 4 * 1024;
+/// 摘要尾部字段会随 UE 版本移动，但候选探测不能把 512 个任意整数放大成 512 MiB I/O。
+const MAX_UNREAL_THUMBNAIL_TABLE_CANDIDATES: usize = 16;
 
 /// 归档目录中可安全展示的一项；路径始终只是文本，不会用于文件系统访问。
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -53,6 +64,32 @@ pub enum StructuredAssetPreview {
         facts: Vec<AssetMetadataFact>,
         warning_codes: Vec<&'static str>,
     },
+}
+
+/// 专有资产解析的一次性结果。
+///
+/// 元数据与缩略图必须在同一轮解析中产生，避免压缩 Blender 文件被重复解压，或
+/// Unreal 包摘要被两套略有差异的游标逻辑分别解释。缩略图仍只在 Rust 边界内作为
+/// RGBA 像素存在，进入 IPC 前会统一编码成 PNG。
+struct ParsedAssetPreview {
+    structured_preview: StructuredAssetPreview,
+    thumbnail: Option<image::RgbaImage>,
+}
+
+impl ParsedAssetPreview {
+    fn metadata_only(structured_preview: StructuredAssetPreview) -> Self {
+        Self {
+            structured_preview,
+            thumbnail: None,
+        }
+    }
+}
+
+/// 完整文件预处理结果；Raw IPC 只消费这里经过约束的载荷。
+pub struct PreparedFilePreviewPayload {
+    pub mime_type: &'static str,
+    pub data: Vec<u8>,
+    pub structured_preview: Option<StructuredAssetPreview>,
 }
 
 /// 解析失败保持稳定错误码，最终由前端映射成多语言提示。
@@ -236,32 +273,32 @@ fn metadata(
     }
 }
 
-/// 根据扩展名选择结构化解析器。普通图片、音频、字体、PDF 和模型返回 `None`，
-/// 因为它们的原始字节会交给对应的受控应用内查看器。
-///
-/// 当扩展名匹配但文件内容不合法（magic 不匹配等）时返回 `None` 而非错误，
-/// 使前端仍可显示原始字节预览。
-pub fn build_structured_preview(
+/// 选择解析器并同时保留可能存在的编辑器缩略图。
+fn build_parsed_asset_preview(
     path: &Path,
     bytes: &[u8],
-) -> Result<Option<StructuredAssetPreview>, AssetPreviewError> {
+) -> Result<Option<ParsedAssetPreview>, AssetPreviewError> {
     let extension = path
         .extension()
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
     let preview = match extension.as_str() {
-        "ktx2" => try_parse(parse_ktx2_metadata, bytes)?,
-        "zip" => try_parse(parse_zip_directory, bytes)?,
-        "pak" => try_parse(parse_pak, bytes)?,
-        "assetbundle" | "bundle" | "unity3d" => try_parse(parse_unity_bundle, bytes)?,
-        "pck" => try_parse(parse_godot_pck, bytes)?,
-        "uasset" | "umap" | "uexp" | "ubulk" => {
-            try_parse_with_ext(parse_unreal_asset, &extension, bytes)?
+        "ktx2" => try_parse(parse_ktx2_metadata, bytes)?.map(ParsedAssetPreview::metadata_only),
+        "zip" => try_parse(parse_zip_directory, bytes)?.map(ParsedAssetPreview::metadata_only),
+        "pak" => try_parse(parse_pak, bytes)?.map(ParsedAssetPreview::metadata_only),
+        "assetbundle" | "bundle" | "unity3d" => {
+            try_parse(parse_unity_bundle, bytes)?.map(ParsedAssetPreview::metadata_only)
         }
-        "assets" => try_parse(parse_unity_serialized_file, bytes)?,
-        "res" => try_parse(parse_godot_resource, bytes)?,
-        "blend" => try_parse(parse_blender, bytes)?,
+        "pck" => try_parse(parse_godot_pck, bytes)?.map(ParsedAssetPreview::metadata_only),
+        "uasset" | "umap" | "uexp" | "ubulk" => {
+            try_parse_asset_with_ext(parse_unreal_asset, &extension, bytes)?
+        }
+        "assets" => {
+            try_parse(parse_unity_serialized_file, bytes)?.map(ParsedAssetPreview::metadata_only)
+        }
+        "res" => try_parse(parse_godot_resource, bytes)?.map(ParsedAssetPreview::metadata_only),
+        "blend" => try_parse_asset(parse_blender, bytes)?,
         _ => None,
     };
     Ok(preview)
@@ -280,12 +317,24 @@ fn try_parse(
     }
 }
 
-/// 与 `try_parse` 相同逻辑，但解析器需要额外的扩展名参数。
-fn try_parse_with_ext(
-    parser: fn(&str, &[u8]) -> Result<StructuredAssetPreview, AssetPreviewError>,
+/// 对会同时产生元数据与缩略图的解析器应用相同的 magic 不匹配降级规则。
+fn try_parse_asset(
+    parser: fn(&[u8]) -> Result<ParsedAssetPreview, AssetPreviewError>,
+    bytes: &[u8],
+) -> Result<Option<ParsedAssetPreview>, AssetPreviewError> {
+    match parser(bytes) {
+        Ok(preview) => Ok(Some(preview)),
+        Err(error) if error.code == "binary_preview_invalid_asset" => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+/// 与 `try_parse_asset` 相同，但解析器需要扩展名区分主包与伴随文件。
+fn try_parse_asset_with_ext(
+    parser: fn(&str, &[u8]) -> Result<ParsedAssetPreview, AssetPreviewError>,
     ext: &str,
     bytes: &[u8],
-) -> Result<Option<StructuredAssetPreview>, AssetPreviewError> {
+) -> Result<Option<ParsedAssetPreview>, AssetPreviewError> {
     match parser(ext, bytes) {
         Ok(preview) => Ok(Some(preview)),
         Err(error) if error.code == "binary_preview_invalid_asset" => Ok(None),
@@ -797,13 +846,13 @@ fn parse_godot_pck(bytes: &[u8]) -> Result<StructuredAssetPreview, AssetPreviewE
 fn parse_unreal_asset(
     extension: &str,
     bytes: &[u8],
-) -> Result<StructuredAssetPreview, AssetPreviewError> {
+) -> Result<ParsedAssetPreview, AssetPreviewError> {
     if matches!(extension, "uexp" | "ubulk") {
-        return Ok(metadata(
+        return Ok(ParsedAssetPreview::metadata_only(metadata(
             format!("Unreal companion .{extension}"),
             vec![fact("fileSize", bytes.len())],
             vec!["unrealCompanionRequiresPackage"],
-        ));
+        )));
     }
     if bytes.len() < 20 {
         return Err(AssetPreviewError::invalid(
@@ -830,20 +879,403 @@ fn parse_unreal_asset(
     } else {
         cursor.i32_le()?
     };
-    Ok(metadata(
-        if extension == "umap" {
-            "Unreal map package"
-        } else {
-            "Unreal asset package"
-        },
-        vec![
-            fact("fileSize", bytes.len()),
-            fact("legacyVersion", legacy_version),
-            fact("legacyUe3Version", legacy_ue3_version),
-            fact("endianness", if byte_swapped { "big" } else { "little" }),
-        ],
-        vec!["unrealVersionedSummaryOnly"],
-    ))
+    let thumbnail = if byte_swapped {
+        None
+    } else {
+        unreal_summary_thumbnail(bytes)
+    };
+    let mut warning_codes = vec!["unrealVersionedSummaryOnly"];
+    if thumbnail.is_none() {
+        warning_codes.push("unrealEmbeddedThumbnailUnavailable");
+    }
+    Ok(ParsedAssetPreview {
+        structured_preview: metadata(
+            if extension == "umap" {
+                "Unreal map package"
+            } else {
+                "Unreal asset package"
+            },
+            vec![
+                fact("fileSize", bytes.len()),
+                fact("legacyVersion", legacy_version),
+                fact("legacyUe3Version", legacy_ue3_version),
+                fact("endianness", if byte_swapped { "big" } else { "little" }),
+            ],
+            warning_codes,
+        ),
+        thumbnail,
+    })
+}
+
+/// 读取 Unreal `FString`；正长度表示含尾零的 UTF-8 字节数，负长度表示 UTF-16LE
+/// code unit 数。长度在读取和分配前受限，损坏包不能借此触发大内存分配。
+fn read_unreal_fstring(
+    cursor: &mut ByteCursor<'_>,
+    maximum_units: i32,
+) -> Result<String, AssetPreviewError> {
+    let length = cursor.i32_le()?;
+    if length == 0 {
+        return Ok(String::new());
+    }
+    if length > 0 {
+        if length > maximum_units {
+            return Err(AssetPreviewError::invalid(
+                "Unreal package",
+                "FString length exceeds preview limit",
+            ));
+        }
+        let bytes = cursor.take(length as usize)?;
+        return Ok(String::from_utf8_lossy(bytes.strip_suffix(&[0]).unwrap_or(bytes)).into_owned());
+    }
+
+    let unit_count = length
+        .checked_neg()
+        .ok_or_else(|| AssetPreviewError::invalid("Unreal package", "FString length overflows"))?;
+    if unit_count > maximum_units {
+        return Err(AssetPreviewError::invalid(
+            "Unreal package",
+            "FString length exceeds preview limit",
+        ));
+    }
+    let byte_count = (unit_count as usize).checked_mul(2).ok_or_else(|| {
+        AssetPreviewError::invalid("Unreal package", "FString byte length overflows")
+    })?;
+    let bytes = cursor.take(byte_count)?;
+    let mut units = bytes
+        .chunks_exact(2)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect::<Vec<_>>();
+    if units.last() == Some(&0) {
+        units.pop();
+    }
+    Ok(String::from_utf16_lossy(&units))
+}
+
+/// 从版本化包摘要中寻找并验证 `ThumbnailTableOffset`。
+///
+/// UE 4.11 以后摘要前缀相对稳定，但尾部字段会随版本增删。这里只解析到 NameOffset，
+/// 再在后续 512 字节的小窗口中探测候选 i32；候选必须完整通过缩略图表、字符串、
+/// 文件偏移和 `FObjectThumbnail` 图像校验才会被接受。与全文件 magic scan 不同，
+/// 该方法不会把资源正文中的任意 PNG/JPEG 冒充为编辑器缩略图。
+fn unreal_summary_thumbnail(bytes: &[u8]) -> Option<image::RgbaImage> {
+    let candidates = unreal_thumbnail_table_candidates(bytes, bytes.len() as u64)?;
+    for candidate in candidates {
+        let candidate = usize::try_from(candidate).ok()?;
+        if let Some(thumbnail) = unreal_thumbnail_table(bytes, candidate) {
+            return Some(thumbnail);
+        }
+    }
+    None
+}
+
+/// 只从已读取的摘要前缀中提取可能的 `ThumbnailTableOffset`。
+///
+/// `file_size` 使用真实源文件大小校验绝对偏移，因此调用方可以只提供 128 KiB 前缀；
+/// 候选仍必须在后续缩略图表和图片对象解析中完整通过验证，不能仅凭一个整数命中。
+fn unreal_thumbnail_table_candidates(bytes: &[u8], file_size: u64) -> Option<Vec<u64>> {
+    let mut cursor = ByteCursor::new(bytes);
+    if cursor.u32_le().ok()? != 0x9E2A_83C1 {
+        return None;
+    }
+    let legacy_version = cursor.i32_le().ok()?;
+    if !(-12..=-6).contains(&legacy_version) {
+        return None;
+    }
+    cursor.skip(4).ok()?; // LegacyUE3Version
+    cursor.skip(4).ok()?; // FileVersionUE4
+    if legacy_version <= -8 {
+        cursor.skip(4).ok()?; // FileVersionUE5
+    }
+    cursor.skip(4).ok()?; // FileVersionLicenseeUE4
+    if legacy_version <= -9 {
+        cursor.skip(20).ok()?; // UE 5.5+ SavedHash (FIoHash)
+        cursor.skip(4).ok()?; // UE 5.5+ 提前的 TotalHeaderSize
+    }
+    let custom_version_count = cursor.i32_le().ok()?;
+    if !(0..=4_096).contains(&custom_version_count) {
+        return None;
+    }
+    cursor
+        .skip((custom_version_count as usize).checked_mul(20)?)
+        .ok()?; // FGuid + i32
+    if legacy_version > -9 {
+        cursor.skip(4).ok()?; // UE 5.4 及更早位置的 TotalHeaderSize
+    }
+    read_unreal_fstring(&mut cursor, 4_096).ok()?; // FolderName / PackageName
+    cursor.skip(4).ok()?; // PackageFlags
+    cursor.skip(8).ok()?; // NameCount + NameOffset
+
+    let start = cursor.position();
+    let end = start
+        .checked_add(512)?
+        .min(bytes.len().saturating_sub(std::mem::size_of::<i32>()));
+    let mut candidates = Vec::new();
+    for position in start..end {
+        let candidate = i32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?);
+        if candidate <= 0 || candidate as u64 >= file_size {
+            continue;
+        }
+        let candidate = candidate as u64;
+        if !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    }
+    Some(candidates)
+}
+
+/// 验证 Unreal 缩略图表并返回第一张能够安全解码的对象缩略图。
+fn unreal_thumbnail_table(bytes: &[u8], offset: usize) -> Option<image::RgbaImage> {
+    let thumbnail_offsets =
+        unreal_thumbnail_offsets_from_table(bytes.get(offset..)?, bytes.len() as u64)?;
+    thumbnail_offsets.into_iter().find_map(|thumbnail_offset| {
+        usize::try_from(thumbnail_offset)
+            .ok()
+            .and_then(|thumbnail_offset| unreal_object_thumbnail(bytes, thumbnail_offset))
+    })
+}
+
+/// 解析以表起点为零的有界缓冲，并保留其中声明的绝对对象偏移。
+fn unreal_thumbnail_offsets_from_table(bytes: &[u8], file_size: u64) -> Option<Vec<u64>> {
+    let mut cursor = ByteCursor::new(bytes);
+    let entry_count = cursor.i32_le().ok()?;
+    if !(1..=64).contains(&entry_count) {
+        return None;
+    }
+
+    let mut thumbnail_offsets = Vec::with_capacity(entry_count as usize);
+    for _ in 0..entry_count {
+        let class_name = read_unreal_fstring(&mut cursor, 1_024).ok()?;
+        if class_name.is_empty()
+            || !class_name
+                .chars()
+                .all(|character| character.is_ascii_graphic())
+        {
+            return None;
+        }
+        read_unreal_fstring(&mut cursor, 4_096).ok()?; // ObjectPathWithoutPackageName
+        let thumbnail_offset = cursor.i32_le().ok()?;
+        if thumbnail_offset <= 0 || thumbnail_offset as u64 >= file_size {
+            return None;
+        }
+        thumbnail_offsets.push(thumbnail_offset as u64);
+    }
+    Some(thumbnail_offsets)
+}
+
+/// 解析 `FObjectThumbnail` 的宽、高和压缩字节数组；负尺寸只携带压缩变体标记，
+/// 因而在校验前取绝对值。压缩图像仍须通过明确的 PNG/JPEG magic 与解码限制。
+fn unreal_object_thumbnail(bytes: &[u8], offset: usize) -> Option<image::RgbaImage> {
+    let mut cursor = ByteCursor::with_position(bytes, offset).ok()?;
+    let width = cursor.i32_le().ok()?.unsigned_abs();
+    let height = cursor.i32_le().ok()?.unsigned_abs();
+    let compressed_size = cursor.i32_le().ok()?;
+    if width == 0 || height == 0 || width > 4_096 || height > 4_096 {
+        return None;
+    }
+    if compressed_size <= 0 || compressed_size as usize > MAX_EMBEDDED_THUMBNAIL_BYTES {
+        return None;
+    }
+    let compressed = cursor.take(compressed_size as usize).ok()?;
+    decode_embedded_thumbnail(compressed)
+}
+
+/// 只解码 Unreal 缩略图表明确引用的 PNG/JPEG；最大边和总分配同时受限。
+fn decode_embedded_thumbnail(bytes: &[u8]) -> Option<image::RgbaImage> {
+    let format = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        image::ImageFormat::Png
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        image::ImageFormat::Jpeg
+    } else {
+        return None;
+    };
+    let mut limits = image_preview_limits();
+    limits.max_image_width = Some(MAX_EMBEDDED_THUMBNAIL_DIMENSION);
+    limits.max_image_height = Some(MAX_EMBEDDED_THUMBNAIL_DIMENSION);
+    limits.max_alloc = Some(64 * 1024 * 1024);
+    let mut reader = image::ImageReader::with_format(Cursor::new(bytes), format);
+    reader.limits(limits);
+    let decoded = reader.decode().ok()?.to_rgba8();
+    if decoded.width().max(decoded.height()) > MAX_EMBEDDED_THUMBNAIL_DIMENSION {
+        return None;
+    }
+    Some(decoded)
+}
+
+/// 从可定位读取器取得一个受限区间；结果长度永远不会超过调用方给定预算。
+fn read_bounded_range(
+    reader: &mut (impl Read + Seek),
+    file_size: u64,
+    offset: u64,
+    maximum_length: usize,
+) -> Result<Vec<u8>, AssetPreviewError> {
+    if offset > file_size {
+        return Err(AssetPreviewError::invalid(
+            "asset",
+            "bounded read offset exceeds file size",
+        ));
+    }
+    let remaining = file_size.saturating_sub(offset);
+    let length = remaining.min(maximum_length as u64) as usize;
+    reader.seek(SeekFrom::Start(offset)).map_err(|error| {
+        AssetPreviewError::invalid("asset", format!("bounded seek failed: {error}"))
+    })?;
+    let mut bytes = vec![0; length];
+    reader.read_exact(&mut bytes).map_err(|error| {
+        AssetPreviewError::invalid("asset", format!("bounded read failed: {error}"))
+    })?;
+    Ok(bytes)
+}
+
+/// 从可定位读取器取得精确区间；先用真实文件大小校验，避免损坏偏移触发越界 Seek。
+fn read_exact_range(
+    reader: &mut (impl Read + Seek),
+    file_size: u64,
+    offset: u64,
+    length: usize,
+) -> Result<Vec<u8>, AssetPreviewError> {
+    let end = offset
+        .checked_add(length as u64)
+        .ok_or_else(|| AssetPreviewError::invalid("asset", "bounded range overflowed"))?;
+    if end > file_size {
+        return Err(AssetPreviewError::invalid(
+            "asset",
+            "bounded range exceeds file size",
+        ));
+    }
+    read_bounded_range(reader, end, offset, length)
+}
+
+/// 从大型 Unreal 主包中按“摘要 → 缩略图表 → 图片对象”三段随机读取缩略图。
+/// 任何候选都必须经过与完整内存解析相同的 FString、绝对偏移和图片解码校验。
+fn parse_unreal_asset_from_reader(
+    extension: &str,
+    file_size: u64,
+    reader: &mut (impl Read + Seek),
+) -> Result<ParsedAssetPreview, AssetPreviewError> {
+    let summary = read_bounded_range(reader, file_size, 0, MAX_UNREAL_SUMMARY_PREFIX_BYTES)?;
+    if summary.len() < 20 {
+        return Err(AssetPreviewError::invalid(
+            "Unreal package",
+            "summary is truncated",
+        ));
+    }
+
+    let mut cursor = ByteCursor::new(&summary);
+    let tag = cursor.u32_le()?;
+    let byte_swapped = tag == 0xC1832A9E;
+    if tag != 0x9E2A83C1 && !byte_swapped {
+        return Err(AssetPreviewError::invalid(
+            "Unreal package",
+            "package tag is missing",
+        ));
+    }
+    let legacy_version = if byte_swapped {
+        i32::from_be_bytes(cursor.take(4)?.try_into().unwrap())
+    } else {
+        cursor.i32_le()?
+    };
+    let legacy_ue3_version = if byte_swapped {
+        i32::from_be_bytes(cursor.take(4)?.try_into().unwrap())
+    } else {
+        cursor.i32_le()?
+    };
+
+    let mut thumbnail = None;
+    if !byte_swapped {
+        if let Some(mut table_offsets) = unreal_thumbnail_table_candidates(&summary, file_size) {
+            // 缩略图表通常位于包尾；优先验证较大的绝对偏移，可避开摘要中的 Count、
+            // Version 等小整数，同时把恶意摘要可放大的随机读取次数固定在 16 次以内。
+            table_offsets.sort_unstable_by(|left, right| right.cmp(left));
+            table_offsets.truncate(MAX_UNREAL_THUMBNAIL_TABLE_CANDIDATES);
+            'tables: for table_offset in table_offsets {
+                let table_probe = read_bounded_range(
+                    reader,
+                    file_size,
+                    table_offset,
+                    UNREAL_THUMBNAIL_TABLE_PROBE_BYTES,
+                )?;
+                let thumbnail_offsets =
+                    unreal_thumbnail_offsets_from_table(&table_probe, file_size).or_else(|| {
+                        let entry_count = table_probe
+                            .get(..4)
+                            .and_then(|bytes| bytes.try_into().ok())
+                            .map(i32::from_le_bytes)?;
+                        if !(1..=64).contains(&entry_count)
+                            || table_probe.len() >= MAX_UNREAL_THUMBNAIL_TABLE_BYTES
+                        {
+                            return None;
+                        }
+                        // 只有首字段已经像真实表项数、但 4 KiB 不足时才扩大读取；绝大
+                        // 多数摘要整数候选在探针阶段即被淘汰，不会各自放大成 1 MiB I/O。
+                        let table = read_bounded_range(
+                            reader,
+                            file_size,
+                            table_offset,
+                            MAX_UNREAL_THUMBNAIL_TABLE_BYTES,
+                        )
+                        .ok()?;
+                        unreal_thumbnail_offsets_from_table(&table, file_size)
+                    });
+                let Some(thumbnail_offsets) = thumbnail_offsets else {
+                    continue;
+                };
+                for thumbnail_offset in thumbnail_offsets {
+                    let Ok(object_header) =
+                        read_exact_range(reader, file_size, thumbnail_offset, 12)
+                    else {
+                        continue;
+                    };
+                    let compressed_size =
+                        i32::from_le_bytes(object_header[8..12].try_into().unwrap());
+                    if compressed_size <= 0
+                        || compressed_size as usize > MAX_EMBEDDED_THUMBNAIL_BYTES
+                    {
+                        continue;
+                    }
+                    let object_size =
+                        12usize
+                            .checked_add(compressed_size as usize)
+                            .ok_or_else(|| {
+                                AssetPreviewError::invalid(
+                                    "Unreal package",
+                                    "thumbnail object size overflowed",
+                                )
+                            })?;
+                    let Ok(object) =
+                        read_exact_range(reader, file_size, thumbnail_offset, object_size)
+                    else {
+                        continue;
+                    };
+                    if let Some(decoded) = unreal_object_thumbnail(&object, 0) {
+                        thumbnail = Some(decoded);
+                        break 'tables;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut warning_codes = vec!["unrealVersionedSummaryOnly"];
+    if thumbnail.is_none() {
+        warning_codes.push("unrealEmbeddedThumbnailUnavailable");
+    }
+    Ok(ParsedAssetPreview {
+        structured_preview: metadata(
+            if extension == "umap" {
+                "Unreal map package"
+            } else {
+                "Unreal asset package"
+            },
+            vec![
+                fact("fileSize", file_size),
+                fact("legacyVersion", legacy_version),
+                fact("legacyUe3Version", legacy_ue3_version),
+                fact("endianness", if byte_swapped { "big" } else { "little" }),
+            ],
+            warning_codes,
+        ),
+        thumbnail,
+    })
 }
 
 fn parse_unity_serialized_file(bytes: &[u8]) -> Result<StructuredAssetPreview, AssetPreviewError> {
@@ -932,35 +1364,250 @@ fn parse_godot_resource(bytes: &[u8]) -> Result<StructuredAssetPreview, AssetPre
     ))
 }
 
-fn parse_blender(bytes: &[u8]) -> Result<StructuredAssetPreview, AssetPreviewError> {
-    // Blender 5.0+ 可以使用 zstd 压缩存储。不能使用 decode_all：损坏或恶意文件
-    // 可以声明超大解压结果。局部缓冲在解析结束后立即释放，不在全局状态中常驻容量。
+fn parse_blender(bytes: &[u8]) -> Result<ParsedAssetPreview, AssetPreviewError> {
+    // Blender 5 可以使用 zstd，旧版本也可能使用 gzip。两种压缩路径都只读取到
+    // `MAX_BLENDER_DECOMPRESSED_BYTES + 1`，不能使用无界 decode_all/read_to_end。
     const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
-    if bytes.len() < 4 || bytes[..4] != ZSTD_MAGIC {
-        return parse_uncompressed_blender(bytes);
+    const GZIP_MAGIC: [u8; 2] = [0x1F, 0x8B];
+    if bytes.starts_with(&ZSTD_MAGIC) {
+        let decoder = zstd::Decoder::new(Cursor::new(bytes)).map_err(|error| {
+            AssetPreviewError::invalid("Blender", format!("zstd decompression failed: {error}"))
+        })?;
+        return parse_compressed_blender(decoder, bytes.len() as u64, "zstd");
     }
+    if bytes.starts_with(&GZIP_MAGIC) {
+        let decoder = flate2::read::GzDecoder::new(Cursor::new(bytes));
+        return parse_compressed_blender(decoder, bytes.len() as u64, "gzip");
+    }
+    parse_uncompressed_blender(bytes)
+}
 
-    let decoder = zstd::Decoder::new(Cursor::new(bytes)).map_err(|error| {
-        AssetPreviewError::invalid("Blender", format!("zstd decompression failed: {error}"))
-    })?;
+/// 有界解压 Blender 文件，并把压缩方式加入稳定元数据。
+fn parse_compressed_blender(
+    decoder: impl Read,
+    compressed_size: u64,
+    compression: &'static str,
+) -> Result<ParsedAssetPreview, AssetPreviewError> {
     let mut decompressed = Vec::new();
     decoder
         .take((MAX_BLENDER_DECOMPRESSED_BYTES + 1) as u64)
         .read_to_end(&mut decompressed)
         .map_err(|error| {
-            AssetPreviewError::invalid("Blender", format!("zstd decompression failed: {error}"))
+            AssetPreviewError::invalid(
+                "Blender",
+                format!("{compression} decompression failed: {error}"),
+            )
         })?;
     if decompressed.len() > MAX_BLENDER_DECOMPRESSED_BYTES {
-        return Ok(metadata(
+        return Ok(ParsedAssetPreview::metadata_only(metadata(
             "Blender",
-            vec![fact("fileSize", bytes.len()), fact("compression", "zstd")],
+            vec![
+                fact("fileSize", compressed_size),
+                fact("compression", compression),
+            ],
             vec!["blenderMetadataDecompressionLimited"],
-        ));
+        )));
     }
-    parse_uncompressed_blender(&decompressed)
+
+    let mut parsed = parse_uncompressed_blender(&decompressed)?;
+    if let StructuredAssetPreview::AssetMetadata { facts, .. } = &mut parsed.structured_preview {
+        facts.push(fact("compression", compression));
+    }
+    Ok(parsed)
 }
 
-fn parse_uncompressed_blender(bytes: &[u8]) -> Result<StructuredAssetPreview, AssetPreviewError> {
+/// 大型 Blender 文件读取所需的稳定头部字段；块扫描器只依赖这些信息跳转。
+struct BlenderSeekHeader {
+    pointer_size: usize,
+    little_endian: bool,
+    version: String,
+    blocks_start: u64,
+    is_new_header: bool,
+}
+
+/// 解析 Blender 旧版 12 字节头和 5.x 17 字节头，不读取任何块正文。
+fn parse_blender_seek_header(bytes: &[u8]) -> Result<BlenderSeekHeader, AssetPreviewError> {
+    if bytes.len() < 12 || &bytes[..7] != b"BLENDER" {
+        return Err(AssetPreviewError::invalid("Blender", "header is missing"));
+    }
+    let is_new_header = bytes.len() >= 17 && bytes[7].is_ascii_digit() && bytes[8].is_ascii_digit();
+    if is_new_header {
+        let header_len = ((bytes[7] - b'0') as usize) * 10 + ((bytes[8] - b'0') as usize);
+        if bytes.len() < header_len || header_len < 17 {
+            return Err(AssetPreviewError::invalid(
+                "Blender",
+                "new header is truncated",
+            ));
+        }
+        let pointer_size = match bytes[9] {
+            b'_' => 4,
+            b'-' => 8,
+            _ => {
+                return Err(AssetPreviewError::invalid(
+                    "Blender",
+                    "pointer marker is invalid (new header)",
+                ))
+            }
+        };
+        let little_endian = match bytes[12] {
+            b'v' => true,
+            b'V' => false,
+            _ => {
+                return Err(AssetPreviewError::invalid(
+                    "Blender",
+                    "endian marker is invalid (new header)",
+                ))
+            }
+        };
+        return Ok(BlenderSeekHeader {
+            pointer_size,
+            little_endian,
+            version: String::from_utf8_lossy(&bytes[13..17]).into_owned(),
+            blocks_start: header_len as u64,
+            is_new_header,
+        });
+    }
+
+    let pointer_size = match bytes[7] {
+        b'_' => 4,
+        b'-' => 8,
+        _ => {
+            return Err(AssetPreviewError::invalid(
+                "Blender",
+                "pointer marker is invalid",
+            ))
+        }
+    };
+    let little_endian = match bytes[8] {
+        b'v' => true,
+        b'V' => false,
+        _ => {
+            return Err(AssetPreviewError::invalid(
+                "Blender",
+                "endian marker is invalid",
+            ))
+        }
+    };
+    Ok(BlenderSeekHeader {
+        pointer_size,
+        little_endian,
+        version: String::from_utf8_lossy(&bytes[9..12]).into_owned(),
+        blocks_start: 12,
+        is_new_header,
+    })
+}
+
+/// 扫描未压缩大型 Blender 文件时只读取块头；非 `TEST` 块通过 Seek 跳过正文。
+fn parse_uncompressed_blender_from_reader(
+    file_size: u64,
+    reader: &mut (impl Read + Seek),
+) -> Result<ParsedAssetPreview, AssetPreviewError> {
+    let header_bytes = read_bounded_range(reader, file_size, 0, 17)?;
+    let header = parse_blender_seek_header(&header_bytes)?;
+    let block_header_size = if header.is_new_header {
+        32usize
+    } else {
+        4 + 4 + header.pointer_size + 4 + 4
+    };
+    let mut position = header.blocks_start;
+    let mut block_count = 0usize;
+    let mut thumbnail = None;
+
+    while position < file_size && block_count < MAX_DECLARED_ENTRIES {
+        let block_header = read_exact_range(reader, file_size, position, block_header_size)?;
+        let code: [u8; 4] = block_header[..4].try_into().unwrap();
+        let data_size = if header.is_new_header {
+            let raw: [u8; 8] = block_header[16..24].try_into().unwrap();
+            let value = if header.little_endian {
+                i64::from_le_bytes(raw)
+            } else {
+                i64::from_be_bytes(raw)
+            };
+            value.max(0) as u64
+        } else {
+            let raw: [u8; 4] = block_header[4..8].try_into().unwrap();
+            if header.little_endian {
+                u32::from_le_bytes(raw) as u64
+            } else {
+                u32::from_be_bytes(raw) as u64
+            }
+        };
+        let body_start = position
+            .checked_add(block_header_size as u64)
+            .ok_or_else(|| AssetPreviewError::invalid("Blender", "block offset overflow"))?;
+        let body_end = body_start
+            .checked_add(data_size)
+            .ok_or_else(|| AssetPreviewError::invalid("Blender", "block size overflow"))?;
+        if body_end > file_size {
+            return Err(AssetPreviewError::invalid(
+                "Blender",
+                "block data exceeds file size",
+            ));
+        }
+
+        block_count += 1;
+        if &code == b"TEST" && data_size <= (MAX_EMBEDDED_THUMBNAIL_BYTES + 8) as u64 {
+            let body = read_exact_range(reader, file_size, body_start, data_size as usize)?;
+            thumbnail = decode_blender_thumbnail_block(&body, header.little_endian);
+        }
+        if thumbnail.is_some() || &code == b"ENDB" {
+            break;
+        }
+        position = body_end;
+    }
+
+    let warning_codes = if thumbnail.is_some() {
+        Vec::new()
+    } else {
+        vec!["blenderEmbeddedThumbnailUnavailable"]
+    };
+    Ok(ParsedAssetPreview {
+        structured_preview: metadata(
+            "Blender",
+            vec![
+                fact("version", header.version),
+                fact("pointerSize", header.pointer_size * 8),
+                fact(
+                    "endianness",
+                    if header.little_endian {
+                        "little"
+                    } else {
+                        "big"
+                    },
+                ),
+                fact("fileSize", file_size),
+                fact("headerVersion", if header.is_new_header { 1 } else { 0 }),
+            ],
+            warning_codes,
+        ),
+        thumbnail,
+    })
+}
+
+/// 大型 Blender 入口：未压缩文件使用随机跳转；压缩文件只从源流解压既有 64 MiB 预算。
+fn parse_blender_from_reader(
+    file_size: u64,
+    reader: &mut (impl Read + Seek),
+) -> Result<ParsedAssetPreview, AssetPreviewError> {
+    const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
+    const GZIP_MAGIC: [u8; 2] = [0x1F, 0x8B];
+    let magic = read_bounded_range(reader, file_size, 0, 4)?;
+    reader.seek(SeekFrom::Start(0)).map_err(|error| {
+        AssetPreviewError::invalid("Blender", format!("source rewind failed: {error}"))
+    })?;
+    if magic.starts_with(&ZSTD_MAGIC) {
+        let decoder = zstd::Decoder::new(reader).map_err(|error| {
+            AssetPreviewError::invalid("Blender", format!("zstd decompression failed: {error}"))
+        })?;
+        return parse_compressed_blender(decoder, file_size, "zstd");
+    }
+    if magic.starts_with(&GZIP_MAGIC) {
+        return parse_compressed_blender(flate2::read::GzDecoder::new(reader), file_size, "gzip");
+    }
+    parse_uncompressed_blender_from_reader(file_size, reader)
+}
+
+fn parse_uncompressed_blender(bytes: &[u8]) -> Result<ParsedAssetPreview, AssetPreviewError> {
     if bytes.len() < 12 || &bytes[..7] != b"BLENDER" {
         return Err(AssetPreviewError::invalid("Blender", "header is missing"));
     }
@@ -1050,6 +1697,7 @@ fn parse_uncompressed_blender(bytes: &[u8]) -> Result<StructuredAssetPreview, As
     let mut position = blocks_start;
     let mut block_count = 0usize;
     let mut counts: BTreeMap<&'static str, u64> = BTreeMap::new();
+    let mut thumbnail = None;
     while position < bytes.len() && block_count < MAX_DECLARED_ENTRIES {
         // 最小块头 = 4（code）+ 4（最短整数字段）
         if position + 8 > bytes.len() {
@@ -1113,6 +1761,16 @@ fn parse_uncompressed_blender(bytes: &[u8]) -> Result<StructuredAssetPreview, As
             (size, nr)
         };
 
+        let body_end = position
+            .checked_add(data_size)
+            .ok_or_else(|| AssetPreviewError::invalid("Blender", "block size overflow"))?;
+        if body_end > bytes.len() {
+            return Err(AssetPreviewError::invalid(
+                "Blender",
+                "block data exceeds file size",
+            ));
+        }
+
         block_count += 1;
         let semantic_key = match &code[..2] {
             b"OB" => Some("objectCount"),
@@ -1127,18 +1785,13 @@ fn parse_uncompressed_blender(bytes: &[u8]) -> Result<StructuredAssetPreview, As
         if let Some(key) = semantic_key {
             *counts.entry(key).or_default() += element_count.max(1);
         }
+        if code == b"TEST" && thumbnail.is_none() {
+            thumbnail = decode_blender_thumbnail_block(&bytes[position..body_end], little_endian);
+        }
         if code == b"ENDB" {
             break;
         }
-        position = position
-            .checked_add(data_size)
-            .ok_or_else(|| AssetPreviewError::invalid("Blender", "block size overflow"))?;
-        if position > bytes.len() {
-            return Err(AssetPreviewError::invalid(
-                "Blender",
-                "block data exceeds file size",
-            ));
-        }
+        position = body_end;
     }
     let mut facts = vec![
         fact("version", version),
@@ -1149,7 +1802,56 @@ fn parse_uncompressed_blender(bytes: &[u8]) -> Result<StructuredAssetPreview, As
         fact("headerVersion", if is_new_header { 1 } else { 0 }),
     ];
     facts.extend(counts.into_iter().map(|(key, value)| fact(key, value)));
-    Ok(metadata("Blender", facts, Vec::new()))
+    let warning_codes = if thumbnail.is_some() {
+        Vec::new()
+    } else {
+        vec!["blenderEmbeddedThumbnailUnavailable"]
+    };
+    Ok(ParsedAssetPreview {
+        structured_preview: metadata("Blender", facts, warning_codes),
+        thumbnail,
+    })
+}
+
+/// 解码 Blender `TEST` 块：`u32 width + u32 height + RGBA8`，像素行按 OpenGL
+/// 约定自下而上存储。尺寸与乘法必须在分配前校验；无效 `TEST` 块只表示缩略图不可用，
+/// 不影响同一文件中已经成功解析的对象计数等元数据。
+fn decode_blender_thumbnail_block(body: &[u8], little_endian: bool) -> Option<image::RgbaImage> {
+    if body.len() < 8 {
+        return None;
+    }
+    let read_u32 = |bytes: &[u8]| {
+        let raw: [u8; 4] = bytes.try_into().ok()?;
+        Some(if little_endian {
+            u32::from_le_bytes(raw)
+        } else {
+            u32::from_be_bytes(raw)
+        })
+    };
+    let width = read_u32(&body[..4])?;
+    let height = read_u32(&body[4..8])?;
+    if width == 0
+        || height == 0
+        || width > MAX_EMBEDDED_THUMBNAIL_DIMENSION
+        || height > MAX_EMBEDDED_THUMBNAIL_DIMENSION
+    {
+        return None;
+    }
+    let pixel_count = (width as usize).checked_mul(height as usize)?;
+    let pixel_bytes = pixel_count.checked_mul(4)?;
+    let required = 8usize.checked_add(pixel_bytes)?;
+    if required > body.len() || pixel_bytes > MAX_EMBEDDED_THUMBNAIL_BYTES {
+        return None;
+    }
+
+    let source = &body[8..required];
+    let row_bytes = (width as usize).checked_mul(4)?;
+    let mut rgba = Vec::with_capacity(pixel_bytes);
+    for row in (0..height as usize).rev() {
+        let start = row.checked_mul(row_bytes)?;
+        rgba.extend_from_slice(source.get(start..start + row_bytes)?);
+    }
+    image::RgbaImage::from_raw(width, height, rgba)
 }
 
 // ─── 纹理预览载荷 ───────────────────────────────────────────────
@@ -1202,10 +1904,10 @@ pub fn binary_preview_format(path: &Path) -> Option<(&'static str, &'static str)
     }
 }
 
-/// 判断原始资产是否超过内嵌预览上限。
+/// 判断原始资产是否超过完整正文内嵌预览上限。
 ///
-/// 调用方可在真正读取内容前用它返回轻量大小元数据，避免为了显示“文件过大”而
-/// 把整份资产载入内存。读取完成后仍须调用 `ensure_binary_preview_size` 防御并发增长。
+/// 调用方可在真正读取内容前用它返回轻量大小元数据，或转入受支持资产的有界缩略图
+/// 读取，避免为了显示预览而把整份资产载入内存。完整读取后仍须二次检查并发增长。
 pub fn binary_preview_size_exceeded(size: u64) -> bool {
     const MAX_BINARY_PREVIEW_BYTES: u64 = 20 * 1024 * 1024;
     size > MAX_BINARY_PREVIEW_BYTES
@@ -1217,6 +1919,118 @@ pub fn ensure_binary_preview_size(size: u64) -> Result<(), AssetPreviewError> {
         return Err(AssetPreviewError::too_large(size));
     }
     Ok(())
+}
+
+/// 只有能够从稳定内部索引定位缩略图的主资产格式才允许绕过 20 MiB 正文上限。
+pub fn supports_large_embedded_thumbnail(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str(),
+        "blend" | "uasset" | "umap"
+    )
+}
+
+/// 从可定位源中按需准备大型专有资产预览。
+///
+/// 该入口不接收完整 `Vec<u8>`：Unreal 最多读取摘要、1 MiB 表窗口和 16 MiB 图片对象；
+/// 未压缩 Blender 只读取文件头、块头与 `TEST` 块。最终仍只向 IPC 返回 PNG 与元数据。
+pub fn prepare_large_asset_preview_payload(
+    path: &Path,
+    file_size: u64,
+    reader: &mut (impl Read + Seek),
+) -> Result<PreparedFilePreviewPayload, AssetPreviewError> {
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let source_mime_type = match extension.as_str() {
+        "blend" => "application/x-blender",
+        "uasset" | "umap" => "application/x-unreal-asset",
+        _ => {
+            return Err(AssetPreviewError::unsupported(
+                "large asset",
+                "the format has no bounded embedded-thumbnail reader",
+            ))
+        }
+    };
+    let parsed = match extension.as_str() {
+        "blend" => parse_blender_from_reader(file_size, reader)?,
+        "uasset" | "umap" => parse_unreal_asset_from_reader(&extension, file_size, reader)?,
+        _ => unreachable!(),
+    };
+
+    if let Some(thumbnail) = parsed.thumbnail {
+        let (mime_type, data) =
+            encode_texture_preview_png(image::DynamicImage::ImageRgba8(thumbnail))?;
+        return Ok(PreparedFilePreviewPayload {
+            mime_type,
+            data,
+            structured_preview: Some(parsed.structured_preview),
+        });
+    }
+    Ok(PreparedFilePreviewPayload {
+        mime_type: source_mime_type,
+        data: Vec::new(),
+        structured_preview: Some(parsed.structured_preview),
+    })
+}
+
+/// 一次性完成结构化资产解析、内嵌缩略图提取和普通媒体预处理。
+///
+/// `.blend` 与 Unreal 主包若存在编辑器缩略图，`data` 只包含重编码后的 PNG；若没有
+/// 缩略图则保持空载荷并继续返回结构化元数据。这样 WebView 不会收到随后被界面忽略的
+/// 整份专有资产，同时工作区与 Revision 仍复用完全相同的稳定 DTO。
+pub fn prepare_file_preview_payload(
+    path: &Path,
+    kind: &'static str,
+    source_mime_type: &'static str,
+    bytes: Vec<u8>,
+) -> Result<PreparedFilePreviewPayload, AssetPreviewError> {
+    let parsed_asset = build_parsed_asset_preview(path, &bytes)?;
+    if let Some(parsed_asset) = parsed_asset {
+        if let Some(thumbnail) = parsed_asset.thumbnail {
+            let (mime_type, data) =
+                encode_texture_preview_png(image::DynamicImage::ImageRgba8(thumbnail))?;
+            return Ok(PreparedFilePreviewPayload {
+                mime_type,
+                data,
+                structured_preview: Some(parsed_asset.structured_preview),
+            });
+        }
+
+        if kind == "asset" {
+            return Ok(PreparedFilePreviewPayload {
+                mime_type: source_mime_type,
+                data: Vec::new(),
+                structured_preview: Some(parsed_asset.structured_preview),
+            });
+        }
+
+        let (mime_type, data) = prepare_preview_payload(path, kind, source_mime_type, bytes)?;
+        return Ok(PreparedFilePreviewPayload {
+            mime_type,
+            data,
+            structured_preview: Some(parsed_asset.structured_preview),
+        });
+    }
+
+    if kind == "asset" {
+        return Ok(PreparedFilePreviewPayload {
+            mime_type: source_mime_type,
+            data: Vec::new(),
+            structured_preview: None,
+        });
+    }
+    let (mime_type, data) = prepare_preview_payload(path, kind, source_mime_type, bytes)?;
+    Ok(PreparedFilePreviewPayload {
+        mime_type,
+        data,
+        structured_preview: None,
+    })
 }
 
 /// 浏览器无法直接显示的纹理在边界转成 PNG；模型与已支持图片原样透传。
@@ -1510,6 +2324,133 @@ mod tests {
     use super::*;
     use std::io::Write as _;
 
+    /// 记录随机读取器实际消费的字节数，确保测试不会只验证“结果正确”而漏掉整文件读取回归。
+    struct CountingReader {
+        inner: Cursor<Vec<u8>>,
+        bytes_read: usize,
+    }
+
+    impl CountingReader {
+        fn new(bytes: Vec<u8>) -> Self {
+            Self {
+                inner: Cursor::new(bytes),
+                bytes_read: 0,
+            }
+        }
+    }
+
+    impl std::io::Read for CountingReader {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let read = self.inner.read(buffer)?;
+            self.bytes_read += read;
+            Ok(read)
+        }
+    }
+
+    impl std::io::Seek for CountingReader {
+        fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+            self.inner.seek(position)
+        }
+    }
+
+    /// 生成 2×2 Blender 编辑器缩略图：文件中底行是红色、顶行是蓝色。
+    fn blender_thumbnail_body() -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&2u32.to_le_bytes());
+        body.extend_from_slice(&2u32.to_le_bytes());
+        body.extend_from_slice(&[255, 0, 0, 255, 255, 0, 0, 255]);
+        body.extend_from_slice(&[0, 0, 255, 255, 0, 0, 255, 255]);
+        body
+    }
+
+    fn append_classic_blender_block(output: &mut Vec<u8>, code: &[u8; 4], body: &[u8], count: u32) {
+        output.extend_from_slice(code);
+        output.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        output.extend_from_slice(&0u64.to_le_bytes());
+        output.extend_from_slice(&0u32.to_le_bytes());
+        output.extend_from_slice(&count.to_le_bytes());
+        output.extend_from_slice(body);
+    }
+
+    fn synthetic_blender_thumbnail() -> Vec<u8> {
+        let mut bytes = b"BLENDER-v300".to_vec();
+        append_classic_blender_block(&mut bytes, b"TEST", &blender_thumbnail_body(), 1);
+        append_classic_blender_block(&mut bytes, b"ENDB", &[], 0);
+        bytes
+    }
+
+    fn append_large_blender_block(output: &mut Vec<u8>, code: &[u8; 4], body: &[u8], count: u64) {
+        output.extend_from_slice(code);
+        output.extend_from_slice(&0u32.to_le_bytes());
+        output.extend_from_slice(&0u64.to_le_bytes());
+        output.extend_from_slice(&(body.len() as u64).to_le_bytes());
+        output.extend_from_slice(&count.to_le_bytes());
+        output.extend_from_slice(body);
+    }
+
+    fn synthetic_blender_v5_thumbnail() -> Vec<u8> {
+        let mut bytes = b"BLENDER17-01v0502".to_vec();
+        append_large_blender_block(&mut bytes, b"TEST", &blender_thumbnail_body(), 1);
+        append_large_blender_block(&mut bytes, b"ENDB", &[], 0);
+        bytes
+    }
+
+    fn mini_png(width: u32, height: u32) -> Vec<u8> {
+        let image = image::RgbaImage::from_pixel(width, height, image::Rgba([10, 200, 30, 255]));
+        let mut encoded = Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .expect("The synthetic thumbnail should encode");
+        encoded.into_inner()
+    }
+
+    /// Unreal ANSI `FString`：长度包含结尾的 NUL。
+    fn unreal_fstring(value: &str) -> Vec<u8> {
+        let mut encoded = ((value.len() + 1) as i32).to_le_bytes().to_vec();
+        encoded.extend_from_slice(value.as_bytes());
+        encoded.push(0);
+        encoded
+    }
+
+    /// 最小 UE 风格包：摘要内含 ThumbnailTableOffset，表项指向真实 PNG。
+    fn synthetic_unreal_thumbnail(legacy_version: i32) -> Vec<u8> {
+        let png = mini_png(4, 4);
+        let thumbnail_offset = 512usize;
+        let table_offset = thumbnail_offset + 12 + png.len();
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&0x9E2A_83C1u32.to_le_bytes());
+        bytes.extend_from_slice(&legacy_version.to_le_bytes());
+        bytes.extend_from_slice(&864i32.to_le_bytes());
+        bytes.extend_from_slice(&522i32.to_le_bytes());
+        bytes.extend_from_slice(&1009i32.to_le_bytes());
+        bytes.extend_from_slice(&0i32.to_le_bytes());
+        if legacy_version <= -9 {
+            bytes.extend_from_slice(&[0xAB; 20]);
+            bytes.extend_from_slice(&(thumbnail_offset as i32).to_le_bytes());
+        }
+        bytes.extend_from_slice(&1i32.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 20]);
+        if legacy_version > -9 {
+            bytes.extend_from_slice(&(thumbnail_offset as i32).to_le_bytes());
+        }
+        bytes.extend_from_slice(&unreal_fstring("None"));
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&8i32.to_le_bytes());
+        bytes.extend_from_slice(&64i32.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 24]);
+        bytes.extend_from_slice(&(table_offset as i32).to_le_bytes());
+        bytes.resize(thumbnail_offset, 0);
+        bytes.extend_from_slice(&4i32.to_le_bytes());
+        bytes.extend_from_slice(&(-4i32).to_le_bytes());
+        bytes.extend_from_slice(&(png.len() as i32).to_le_bytes());
+        bytes.extend_from_slice(&png);
+        bytes.extend_from_slice(&1i32.to_le_bytes());
+        bytes.extend_from_slice(&unreal_fstring("Texture2D"));
+        bytes.extend_from_slice(&unreal_fstring("T_Test"));
+        bytes.extend_from_slice(&(thumbnail_offset as i32).to_le_bytes());
+        bytes
+    }
+
     #[test]
     fn parses_ktx2_header_without_reading_level_payloads() {
         let mut bytes = b"\xABKTX 20\xBB\r\n\x1A\n".to_vec();
@@ -1649,7 +2590,9 @@ mod tests {
         unreal.extend_from_slice(&864i32.to_le_bytes());
         unreal.extend_from_slice(&[0u8; 8]);
         assert!(matches!(
-            parse_unreal_asset("uasset", &unreal).unwrap(),
+            parse_unreal_asset("uasset", &unreal)
+                .unwrap()
+                .structured_preview,
             StructuredAssetPreview::AssetMetadata { .. }
         ));
 
@@ -1677,6 +2620,94 @@ mod tests {
     }
 
     #[test]
+    fn unreal_thumbnail_table_decodes_ue5_package_generations() {
+        for (legacy_version, path) in [(-8, "Content/T_Test.uasset"), (-9, "Content/World.umap")] {
+            let prepared = prepare_file_preview_payload(
+                Path::new(path),
+                "asset",
+                "application/x-unreal-asset",
+                synthetic_unreal_thumbnail(legacy_version),
+            )
+            .expect("A validated Unreal thumbnail table should produce a preview");
+            assert_eq!(prepared.mime_type, "image/png");
+            let decoded =
+                image::load_from_memory_with_format(&prepared.data, image::ImageFormat::Png)
+                    .expect("The Unreal thumbnail should be re-encoded as PNG");
+            assert_eq!((decoded.width(), decoded.height()), (4, 4));
+            let Some(StructuredAssetPreview::AssetMetadata { warning_codes, .. }) =
+                prepared.structured_preview
+            else {
+                panic!("expected Unreal metadata alongside the thumbnail");
+            };
+            assert!(!warning_codes.contains(&"unrealEmbeddedThumbnailUnavailable"));
+        }
+    }
+
+    #[test]
+    fn large_unreal_thumbnail_reader_uses_bounded_ranges() {
+        let mut bytes = synthetic_unreal_thumbnail(-9);
+        bytes.resize(24 * 1024 * 1024, 0);
+        let file_size = bytes.len() as u64;
+        let mut reader = CountingReader::new(bytes);
+
+        let prepared = prepare_large_asset_preview_payload(
+            Path::new("Content/LargeWorld.umap"),
+            file_size,
+            &mut reader,
+        )
+        .expect("A large Unreal package should use its validated thumbnail table");
+
+        assert_eq!(prepared.mime_type, "image/png");
+        assert!(!prepared.data.is_empty());
+        assert!(reader.bytes_read < 4 * 1024 * 1024);
+    }
+
+    #[test]
+    fn unreal_body_image_without_thumbnail_table_is_not_used_as_preview() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&0x9E2A_83C1u32.to_le_bytes());
+        bytes.extend_from_slice(&(-8i32).to_le_bytes());
+        bytes.extend_from_slice(&864i32.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 8]);
+        bytes.extend_from_slice(&mini_png(8, 2));
+
+        let prepared = prepare_file_preview_payload(
+            Path::new("Content/NoTable.umap"),
+            "asset",
+            "application/x-unreal-asset",
+            bytes,
+        )
+        .expect("Missing thumbnail tables should degrade to metadata");
+        assert_eq!(prepared.mime_type, "application/x-unreal-asset");
+        assert!(prepared.data.is_empty());
+        let Some(StructuredAssetPreview::AssetMetadata { warning_codes, .. }) =
+            prepared.structured_preview
+        else {
+            panic!("expected Unreal metadata without a guessed image");
+        };
+        assert!(warning_codes.contains(&"unrealEmbeddedThumbnailUnavailable"));
+    }
+
+    #[test]
+    fn unreal_fstring_supports_utf16_and_rejects_hostile_lengths() {
+        let mut utf16 = (-3i32).to_le_bytes().to_vec();
+        for unit in [0x48u16, 0xE9, 0] {
+            utf16.extend_from_slice(&unit.to_le_bytes());
+        }
+        let mut cursor = ByteCursor::new(&utf16);
+        assert_eq!(read_unreal_fstring(&mut cursor, 64).unwrap(), "Hé");
+
+        let hostile = i32::MAX.to_le_bytes();
+        let mut cursor = ByteCursor::new(&hostile);
+        assert_eq!(
+            read_unreal_fstring(&mut cursor, 64)
+                .expect_err("A hostile FString length must be rejected")
+                .code,
+            "binary_preview_invalid_asset"
+        );
+    }
+
+    #[test]
     fn parses_blender_block_counts_with_endianness_and_pointer_size() {
         let mut bytes = b"BLENDER-v300".to_vec();
         bytes.extend_from_slice(b"OB\0\0");
@@ -1690,12 +2721,73 @@ mod tests {
         bytes.extend_from_slice(&0u32.to_le_bytes());
         bytes.extend_from_slice(&0u32.to_le_bytes());
         let preview = parse_blender(&bytes).unwrap();
-        let StructuredAssetPreview::AssetMetadata { facts, .. } = preview else {
+        let StructuredAssetPreview::AssetMetadata { facts, .. } = preview.structured_preview else {
             panic!("expected metadata preview");
         };
         assert!(facts
             .iter()
             .any(|entry| entry.key == "objectCount" && entry.value == "2"));
+    }
+
+    #[test]
+    fn blender_test_block_is_flipped_and_encoded_as_png() {
+        let prepared = prepare_file_preview_payload(
+            Path::new("Art/Hero.blend"),
+            "asset",
+            "application/x-blender",
+            synthetic_blender_thumbnail(),
+        )
+        .expect("A Blender TEST block should produce a preview");
+        assert_eq!(prepared.mime_type, "image/png");
+        let decoded = image::load_from_memory_with_format(&prepared.data, image::ImageFormat::Png)
+            .expect("The Blender thumbnail should be a valid PNG")
+            .to_rgba8();
+        assert_eq!(decoded.dimensions(), (2, 2));
+        assert_eq!(decoded.get_pixel(0, 0).0, [0, 0, 255, 255]);
+        assert_eq!(decoded.get_pixel(0, 1).0, [255, 0, 0, 255]);
+        assert!(prepared.structured_preview.is_some());
+    }
+
+    #[test]
+    fn large_blender_thumbnail_reader_skips_unrelated_file_bytes() {
+        let mut bytes = synthetic_blender_thumbnail();
+        bytes.resize(24 * 1024 * 1024, 0);
+        let file_size = bytes.len() as u64;
+        let mut reader = CountingReader::new(bytes);
+
+        let prepared = prepare_large_asset_preview_payload(
+            Path::new("Art/LargeHero.blend"),
+            file_size,
+            &mut reader,
+        )
+        .expect("A large Blender file should seek directly to its TEST block");
+
+        assert_eq!(prepared.mime_type, "image/png");
+        assert!(!prepared.data.is_empty());
+        assert!(reader.bytes_read < 1024);
+    }
+
+    #[test]
+    fn blender_v5_large_test_block_is_decoded() {
+        let parsed = parse_blender(&synthetic_blender_v5_thumbnail())
+            .expect("A Blender 5 TEST block should parse");
+        assert_eq!(parsed.thumbnail.unwrap().dimensions(), (2, 2));
+    }
+
+    #[test]
+    fn blender_zstd_and_gzip_thumbnails_use_bounded_decompression() {
+        let source = synthetic_blender_thumbnail();
+        let zstd = zstd::encode_all(source.as_slice(), 3).expect("zstd compress");
+        let mut gzip_encoder =
+            flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        gzip_encoder.write_all(&source).expect("gzip write");
+        let gzip = gzip_encoder.finish().expect("gzip finish");
+
+        for (name, compressed) in [("zstd", zstd), ("gzip", gzip)] {
+            let parsed = parse_blender(&compressed)
+                .unwrap_or_else(|error| panic!("{name} Blender should parse: {error:?}"));
+            assert_eq!(parsed.thumbnail.unwrap().dimensions(), (2, 2), "{name}");
+        }
     }
 
     #[test]
@@ -1715,7 +2807,7 @@ mod tests {
         bytes.extend_from_slice(&0i64.to_le_bytes()); // len
         bytes.extend_from_slice(&0i64.to_le_bytes()); // nr
         let preview = parse_blender(&bytes).unwrap();
-        let StructuredAssetPreview::AssetMetadata { facts, .. } = preview else {
+        let StructuredAssetPreview::AssetMetadata { facts, .. } = preview.structured_preview else {
             panic!("expected metadata preview");
         };
         assert!(facts
@@ -1924,7 +3016,7 @@ mod tests {
         );
 
         let preview = parse_blender(&compressed).expect("zstd blender should parse");
-        let StructuredAssetPreview::AssetMetadata { facts, .. } = preview else {
+        let StructuredAssetPreview::AssetMetadata { facts, .. } = preview.structured_preview else {
             panic!("expected metadata preview");
         };
         assert!(facts.iter().any(|f| f.key == "version" && f.value == "300"));
@@ -1934,7 +3026,7 @@ mod tests {
     fn invalid_pck_extension_returns_none_structured_preview() {
         // 文件扩展名为 .pck 但内容不是 Godot PCK 格式时，应返回 None 而非错误。
         let not_pck = b"this is not a PCK file";
-        let result = build_structured_preview(Path::new("rand.pck"), not_pck)
+        let result = build_parsed_asset_preview(Path::new("rand.pck"), not_pck)
             .expect("should not propagate error for mismatched content");
         assert!(
             result.is_none(),

@@ -607,12 +607,16 @@ pub(super) fn is_text_like_revision_path(path: &str) -> bool {
             | ".dockerignore"
             | ".editorconfig"
             | ".env"
+            | ".env.example"
             | ".eslintrc"
             | ".gitattributes"
             | ".gitignore"
             | ".npmrc"
             | ".nvmrc"
             | ".prettierrc"
+            | ".loreignore"
+            | "bun.lock"
+            | "Cargo.lock"
             | "cmakelists.txt"
             | "dockerfile"
             | "gemfile"
@@ -899,6 +903,26 @@ pub(super) fn encode_file_preview_response(
     encode_file_preview_envelope(preview).map(tauri::ipc::Response::new)
 }
 
+/// 统一把工作区文件或 Revision 临时文件交给大型资产随机读取器。
+fn build_large_asset_preview_from_reader(
+    relative_path: &Path,
+    normalized_path: String,
+    size: u64,
+    reader: &mut (impl std::io::Read + std::io::Seek),
+) -> Result<LoreFilePreview, LoreCommandError> {
+    let prepared = prepare_large_asset_preview_payload(relative_path, size, reader)
+        .map_err(|error| LoreCommandError::new(error.code, error.message))?;
+    Ok(LoreFilePreview {
+        path: normalized_path,
+        kind: "asset",
+        mime_type: prepared.mime_type,
+        data: prepared.data,
+        size,
+        content_state: LoreFilePreviewContentState::Available,
+        structured_preview: prepared.structured_preview,
+    })
+}
+
 /// 构造单文件预览 DTO；内容在 Rust 边界内保持连续原始字节，不再生成 Base64。
 pub(super) fn build_file_preview(
     repository_path: &str,
@@ -954,6 +978,8 @@ pub(super) fn build_file_preview(
             ));
         }
         if binary_preview_size_exceeded(file.size) {
+            // 固定 Lore Store 没有区间读取接口。大型 Revision 资产必须保持元数据降级，
+            // 不能为了一个缩略图把完整远端对象下载到临时文件。
             return Ok(metadata_only_preview(
                 file.size,
                 LoreFilePreviewContentState::TooLarge,
@@ -986,6 +1012,44 @@ pub(super) fn build_file_preview(
             ));
         }
         if binary_preview_size_exceeded(size) {
+            if supports_large_embedded_thumbnail(&relative_path) {
+                let source = std::fs::File::open(&workspace_path).map_err(|error| {
+                    LoreCommandError::new(
+                        "workspace_preview_read_failed",
+                        format!(
+                            "Failed to open preview file {}: {error}",
+                            workspace_path.display()
+                        ),
+                    )
+                })?;
+                // 读取边界以已经打开的句柄为准，避免检查路径元数据后文件并发缩放使
+                // 随机读取器继续相信过期长度；这与小文件读取后的二次大小检查等价。
+                let opened_size = source
+                    .metadata()
+                    .map_err(|error| {
+                        LoreCommandError::new(
+                            "workspace_preview_metadata_unavailable",
+                            format!(
+                                "Failed to recheck preview file size for {}: {error}",
+                                workspace_path.display()
+                            ),
+                        )
+                    })?
+                    .len();
+                let mut reader = std::io::BufReader::new(source);
+                return match build_large_asset_preview_from_reader(
+                    &relative_path,
+                    normalized_path.clone(),
+                    opened_size,
+                    &mut reader,
+                ) {
+                    Ok(preview) => Ok(preview),
+                    Err(error) if error.code == "binary_preview_invalid_asset" => Ok(
+                        metadata_only_preview(opened_size, LoreFilePreviewContentState::TooLarge),
+                    ),
+                    Err(error) => Err(error),
+                };
+            }
             return Ok(metadata_only_preview(
                 size,
                 LoreFilePreviewContentState::TooLarge,
@@ -1004,19 +1068,17 @@ pub(super) fn build_file_preview(
     ensure_binary_preview_size(bytes.len() as u64)?;
     // size 报告原始资产字节；纹理转码后的 PNG 只进入 Raw IPC data。
     let original_size = bytes.len() as u64;
-    let structured_preview = build_structured_preview(&relative_path, &bytes)
+    let prepared = prepare_file_preview_payload(&relative_path, kind, source_mime_type, bytes)
         .map_err(|error| LoreCommandError::new(error.code, error.message))?;
-    let (mime_type, preview_bytes) =
-        prepare_preview_payload(&relative_path, kind, source_mime_type, bytes)?;
 
     Ok(LoreFilePreview {
         path: normalized_path,
         kind,
-        mime_type,
-        data: preview_bytes,
+        mime_type: prepared.mime_type,
+        data: prepared.data,
         size: original_size,
         content_state: LoreFilePreviewContentState::Available,
-        structured_preview,
+        structured_preview: prepared.structured_preview,
     })
 }
 

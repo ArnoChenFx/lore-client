@@ -106,6 +106,12 @@ function AssetWarning({ code }: { code: string }) {
       return t('assetWarningUnityObjectTableVersionDependent')
     case 'godotResourceHeaderOnly':
       return t('assetWarningGodotResourceHeaderOnly')
+    case 'blenderEmbeddedThumbnailUnavailable':
+      return t('assetWarningBlenderEmbeddedThumbnailUnavailable')
+    case 'blenderMetadataDecompressionLimited':
+      return t('assetWarningBlenderMetadataDecompressionLimited')
+    case 'unrealEmbeddedThumbnailUnavailable':
+      return t('assetWarningUnrealEmbeddedThumbnailUnavailable')
     default:
       return t('assetWarningLimitedPreview')
   }

@@ -27,6 +27,11 @@ describe('text-like file detection', () => {
     expect(isTextLikeFile('scripts/deploy.sh')).toBe(true)
   })
 
+  it('recognizes Lore ignore files as text configuration', () => {
+    expect(isTextLikeFile('.loreignore')).toBe(true)
+    expect(isTextLikeFile('Nested/Workspace/.LOREIGNORE')).toBe(true)
+  })
+
   it('rejects engine binaries and unknown asset containers', () => {
     expect(isTextLikeFile('Content/Map.umap')).toBe(false)
     expect(isTextLikeFile('Content/Actor.uasset')).toBe(false)

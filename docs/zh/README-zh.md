@@ -49,7 +49,7 @@ Revision History 默认使用平铺模式，只聚焦当前分支的修订、该
 - 双向查看精确文件依赖图，使用鼠标左键自由平移、滚轮围绕指针缩放，检查带标签的连线与循环，并通过带状态引导的范围参数配置依赖驱动克隆或同步。
 - 克隆精确修订或分支、创建 Bare 工作区、在兼容性诊断时启用直接文件 I/O，并通过可选的修订匹配元数据键组合初始 Layer。
 - 查看和管理 Layer 与链接仓库。
-- 在应用内预览 DDS/KTX2/EXR 现代纹理、WAV/OGG/MP3/FLAC 音频、ZIP/PAK/AssetBundle 与 Godot PCK 目录、TTF/OTF 字体、常见三维资产，以及 Unreal/Unity/Godot/Blender 元数据。
+- 在应用内预览 DDS/KTX2/EXR 现代纹理、WAV/OGG/MP3/FLAC 音频、ZIP/PAK/AssetBundle 与 Godot PCK 目录、TTF/OTF 字体、常见三维资产、Blender 与 Unreal 编辑器内嵌缩略图，以及 Unreal/Unity/Godot/Blender 元数据。
 
 ---
 

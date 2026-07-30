@@ -270,6 +270,72 @@ describe('binary diff preview', () => {
     expect(html).not.toContain('data:application/x-blender')
   })
 
+  it('combines an editor thumbnail with structured asset metadata without a data URL', () => {
+    const html = renderToStaticMarkup(
+      <BinaryDiffPreview
+        fileName="Hero.blend"
+        loading={false}
+        error={null}
+        preview={{
+          after: {
+            path: 'Art/Hero.blend',
+            kind: 'asset',
+            mimeType: 'image/png',
+            data: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+            size: 512,
+            contentState: 'available',
+            structuredPreview: {
+              type: 'assetMetadata',
+              format: 'Blender',
+              facts: [{ key: 'version', value: '500' }],
+              warningCodes: []
+            }
+          }
+        }}
+      />
+    )
+
+    expect(html).toContain('binary-diff-preview__asset-layout has-thumbnail')
+    expect(html).toContain('binary-diff-preview__asset-thumbnail')
+    expect(html).toContain('Blender')
+    expect(html).toContain('Version')
+    expect(html.indexOf('binary-diff-preview__structured-viewer')).toBeLessThan(
+      html.indexOf('binary-diff-preview__asset-thumbnail')
+    )
+    expect(html).not.toContain('data:image/png')
+  })
+
+  it('explains when an Unreal editor thumbnail is unavailable without guessing asset images', () => {
+    const html = renderToStaticMarkup(
+      <BinaryDiffPreview
+        fileName="World.umap"
+        loading={false}
+        error={null}
+        preview={{
+          after: {
+            path: 'Content/World.umap',
+            kind: 'asset',
+            mimeType: 'application/x-unreal-asset',
+            data: new Uint8Array(),
+            size: 512,
+            contentState: 'available',
+            structuredPreview: {
+              type: 'assetMetadata',
+              format: 'Unreal map package',
+              facts: [],
+              warningCodes: ['unrealEmbeddedThumbnailUnavailable']
+            }
+          }
+        }}
+      />
+    )
+
+    expect(html).toContain('has no validated editor thumbnail')
+    expect(html).toContain('class="binary-diff-preview__asset-layout"')
+    expect(html).not.toContain('binary-diff-preview__asset-layout has-thumbnail')
+    expect(html).not.toContain('binary-diff-preview__asset-thumbnail')
+  })
+
   it('copies PDF Raw IPC data into an independent byte array', () => {
     const source = new Uint8Array([37, 80, 68, 70])
     const copy = copyPdfData(source)

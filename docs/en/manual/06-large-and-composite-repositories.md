@@ -78,17 +78,22 @@ missing directory is reported even if its configuration still exists.
 | ZIP, Quake PAK | Read-only directory and size information without extracting entry bodies. |
 | Unity AssetBundle, Godot PCK | Bounded directories; LZMA, legacy, or encrypted directories explicitly fall back to container information. |
 | Unreal PAK | Reliable footer and index metadata; versioned indexes are not guessed as directory entries. |
-| UAsset/UMap, Unity `.assets`, Godot `.res`, Blender `.blend` | Stable headers, versions, sizes, and safely countable object types. |
+| Unreal `.uasset`, `.umap` | Validated editor thumbnails from the package thumbnail table and stable Summary fields, including large workspace packages; asset-body images are not guessed when no thumbnail exists. |
+| Blender `.blend` | Editor thumbnails from the `TEST` block, including large workspace files, plus versions, block counts, and safely countable object types. |
+| Unity `.assets`, Godot `.res` | Stable headers, versions, sizes, and safely countable object types. |
 | Other binary | Metadata/comparison or an explicit unsupported reason. |
 
 Content is read on demand for the primary selection. Disabling Binary Diff stops those
 reads in both workspace and Revision changes.
 
-Container directories are entry-limited, texture decoding has dimension and memory budgets,
-and every source file remains subject to the 20 MiB embedded-preview limit. When either side of
-a Diff exceeds that limit, Lore Client reads only file metadata and displays the before/after sizes
-and signed size change; it does not load or decode the oversized content. Previewing never extracts
-archives, executes scripts, follows symlinks, or reads resources outside the container.
+Container directories are entry-limited, texture decoding has dimension and memory budgets, and
+full source payloads remain subject to the 20 MiB embedded-preview limit. Large workspace `.blend`,
+`.uasset`, and `.umap` files are the narrow exception: Lore Client reads only bounded headers,
+thumbnail tables, and the referenced image instead of loading or transferring the complete asset.
+The fixed Lore Store API has no range-read operation, so immutable Revision files above 20 MiB stay
+in metadata-only mode and are never fully downloaded just to extract a thumbnail. Other oversized
+content uses the same file-size fallback. Previewing never extracts archives, executes scripts,
+follows symlinks, or reads resources outside the container.
 
 ## Choosing the mechanism
 

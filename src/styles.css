@@ -3161,11 +3161,21 @@ kbd {
 
 .revision-composer__input > div > span {
   display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
   align-items: center;
   gap: 4px;
+  overflow: hidden;
   padding-left: 4px;
   color: var(--faint);
   font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.revision-composer__input > div > span > svg {
+  /* 身份文字被截断时保留状态图标，避免图标也跟随可变文本一起收缩。 */
+  flex: 0 0 auto;
 }
 
 .revision-composer__input > div > .revision-composer__identity-warning {
@@ -3174,7 +3184,9 @@ kbd {
 
 .revision-composer__input > div > button {
   display: flex;
+  flex: 0 0 auto;
   height: 23px;
+  min-width: max-content;
   align-items: center;
   gap: 7px;
   padding: 0 8px;
@@ -3184,6 +3196,7 @@ kbd {
   color: var(--button-primary-text);
   font-size: 11px;
   font-weight: 650;
+  white-space: nowrap;
 }
 
 .revision-composer__input > div > button:hover:not(:disabled) {
@@ -6716,6 +6729,52 @@ body.is-resizing-panes {
   align-content: start;
   overflow: hidden;
   background: var(--bg-code);
+}
+
+/*
+ * 专有资产始终先显示自然高度的元数据，再显示可收缩缩略图。整个资产区域承担滚动，
+ * 因此窄比较卡片不会裁掉元数据；没有缩略图时也不会生成占位轨道。
+ */
+.binary-diff-preview__asset-layout {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: max-content;
+  align-content: start;
+  overflow: auto;
+  background: var(--bg-code);
+}
+
+.binary-diff-preview__asset-layout.has-thumbnail {
+  grid-template-rows: max-content minmax(160px, 1fr);
+  align-content: stretch;
+}
+
+.binary-diff-preview__asset-thumbnail {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+  overflow: hidden;
+  padding: 10px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-code);
+}
+
+.binary-diff-preview__asset-thumbnail img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+
+.binary-diff-preview__asset-layout > .binary-diff-preview__structured-viewer {
+  min-height: 0;
+  grid-template-rows: auto;
+  grid-auto-rows: max-content;
+  align-content: start;
+  overflow: visible;
 }
 
 .binary-diff-preview__structured-viewer > header {
