@@ -277,7 +277,6 @@ const zhCNStatic = {
   directorySelectionRealLoreCalls_e03f: '目录选择和真实 Lore 调用只在 Tauri 桌面应用中启用',
   discardChanges: '丢弃更改…',
   discardLocalChanges: '丢弃本地更改',
-  doubleClickWorkspaceFileView_7e51: '双击工作区文件查看 Diff；选择历史记录可定位主历史视图',
   dragReorderAltLeftRight_29b5: '拖动排序，Alt+左右方向键调整顺序',
   dragReorderPressAltLeft_a76c: '拖动排序；按 Alt+左右方向键调整顺序',
   dragResizeAreaHeightDouble_4185: '拖动调整区域高度；双击恢复默认',

@@ -306,8 +306,6 @@ const enUSStatic = {
     'Directory selection and real Lore calls are only available in the Tauri desktop app',
   discardChanges: 'Discard Changes…',
   discardLocalChanges: 'Discard Local Changes',
-  doubleClickWorkspaceFileView_7e51:
-    'Double-click a workspace file to view its Diff; select a history entry to locate it in the main history view',
   dragReorderAltLeftRight_29b5: 'drag to reorder, Alt+Left/Right to move',
   dragReorderPressAltLeft_a76c: 'Drag to reorder; press Alt+Left/Right to move',
   dragResizeAreaHeightDouble_4185: 'Drag to resize the area height; double-click to restore the default',

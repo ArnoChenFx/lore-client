@@ -50,7 +50,12 @@ import type {
 import { RevisionChangesWorkspace, type RevisionWorkspaceSelectionRequest } from './RevisionChangesWorkspace'
 import { RevisionFileContextMenu, type RevisionFileMenuRequest } from './RevisionFileContextMenu'
 import { resolveRevisionTreeReveal, type RevisionTreeRevealResult } from './revisionTreeReveal'
-import { reconcileRevisionTreeSelection, type RevisionTreeSelectionState } from './revisionTreeSelection'
+import {
+  createEmptyRevisionTreeSelection,
+  findRevisionTreePrimaryFile,
+  reconcileRevisionTreeSelection,
+  type RevisionTreeSelectionState
+} from './revisionTreeSelection'
 
 interface InspectorProps {
   revision: Revision | null
@@ -520,7 +525,7 @@ function FileTreeTab({
     )
   }
 
-  const primaryFile = files.find((file) => file.id === selectedFileId) ?? files[0]
+  const primaryFile = findRevisionTreePrimaryFile(files, selectedFileId)
 
   return (
     <div className="file-tree-tab">
@@ -670,11 +675,7 @@ export function Inspector({
   const { preferences, update: updatePreferences } = useClientPreferences()
   const [contextMenu, setContextMenu] = useState<RevisionFileMenuRequest | null>(null)
   const [selectionRequest, setSelectionRequest] = useState<RevisionWorkspaceSelectionRequest | null>(null)
-  const [treeSelection, setTreeSelection] = useState<RevisionTreeSelectionState>({
-    selectedIds: [],
-    primaryId: '',
-    anchorId: null
-  })
+  const [treeSelection, setTreeSelection] = useState<RevisionTreeSelectionState>(createEmptyRevisionTreeSelection)
   const treeSelectionRevisionRef = useRef<string | undefined>(undefined)
   const pendingTreeRevealRef = useRef<{
     revisionId: string | undefined
@@ -698,7 +699,6 @@ export function Inspector({
   useEffect(() => {
     setContextMenu(null)
     setSelectionRequest(null)
-    const firstFileId = effectiveTreeFiles[0]?.id ?? ''
     const revisionChanged = treeSelectionRevisionRef.current !== revision?.id
     treeSelectionRevisionRef.current = revision?.id
 
@@ -706,20 +706,16 @@ export function Inspector({
       if (pendingTreeRevealRef.current?.revisionId !== revision?.id) {
         pendingTreeRevealRef.current = null
       }
-      // Revision 上下文变化后必须从新文件集重新建立主选区，不能让相同路径或
-      // 相同演示 ID 把上一 Revision 的操作上下文带入当前 Revision。
-      setTreeSelection({
-        selectedIds: treeReady && firstFileId ? [firstFileId] : [],
-        primaryId: treeReady ? firstFileId : '',
-        anchorId: treeReady ? firstFileId || null : null
-      })
+      // Revision 上下文变化后清空文件选区；不能让相同路径或演示 ID 把上一
+      // Revision 的操作上下文带入当前 Revision，也不能默认首项并触发自动滚动。
+      setTreeSelection(createEmptyRevisionTreeSelection())
       return
     }
 
     /*
      * 同一 Revision 的完整树可能因惰性加载或父级偏好状态更新而产生新数组引用。
      * 这里只剔除已经不存在的文件，避免“在文件树中显示”的批量选区被 effect
-     * 紧接着重置；当原选区全部失效时才安全回退到第一项。
+     * 紧接着重置；当原选区全部失效时保持空选区，等待用户显式选择。
      */
     setTreeSelection((current) => reconcileRevisionTreeSelection(treeReady, effectiveTreeFiles, current))
   }, [effectiveTreeFiles, revision?.id, treeReady])

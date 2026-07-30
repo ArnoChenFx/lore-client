@@ -128,7 +128,6 @@ export function FileHistoryDialog({
           )}
         </div>
         <footer className="task-dialog__footer">
-          <span>{t('doubleClickWorkspaceFileView_7e51')}</span>
           <button type="button" onClick={onClose}>
             {t('close')}
           </button>
