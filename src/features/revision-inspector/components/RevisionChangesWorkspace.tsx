@@ -30,6 +30,8 @@ import {
   isChangeDirectoryObjectId,
   LatestTaskQueue,
   parseUnifiedDiff,
+  repositoryFileContentKind,
+  resolvedDiffContentKind,
   resolveSelectedChangeFiles,
   selectChangeContext,
   selectChangeFile,
@@ -208,6 +210,7 @@ export function RevisionChangesWorkspace({
   const diffLines = useMemo(() => (primaryDiff?.patch ? parseUnifiedDiff(primaryDiff.patch) : []), [primaryDiff?.patch])
   const diffLineCounts = useMemo(() => countUnifiedDiffLines(diffLines), [diffLines])
   const previewableKind = primaryFile ? binaryPreviewKind(changeFilePath(primaryFile)) : null
+  const primaryContentKind = resolvedDiffContentKind(primaryFile, primaryDiff)
 
   useEffect(() => {
     const queue = previewQueue.current
@@ -253,7 +256,12 @@ export function RevisionChangesWorkspace({
     setBinaryPreview(null)
     setBinaryPreviewError(null)
 
-    if (!contentSelectionAuthorized || !diffVisible || !primaryFile || (!primaryFile.binary && !previewableKind)) {
+    if (
+      !contentSelectionAuthorized ||
+      !diffVisible ||
+      !primaryFile ||
+      (primaryContentKind !== 'binary' && !previewableKind)
+    ) {
       setBinaryPreviewLoading(false)
       return
     }
@@ -326,6 +334,7 @@ export function RevisionChangesWorkspace({
     onLoadBinaryPreview,
     preferences.binaryDiffVisible,
     previewableKind,
+    primaryContentKind,
     primaryFile,
     revision.id,
     revision.parentIds,
@@ -459,7 +468,7 @@ export function RevisionChangesWorkspace({
         <span className={`file-status is-${file.status}`} title={transitionDescription ?? t(file.status)}>
           {statusLabels[file.status]}
         </span>
-        {file.binary ? <Binary size={14} /> : <FileCode2 size={14} />}
+        {repositoryFileContentKind(file) === 'binary' ? <Binary size={14} /> : <FileCode2 size={14} />}
         <span>
           <strong>{file.name}</strong>
           {(viewMode === 'flat' || transitionText) && (
@@ -672,7 +681,7 @@ export function RevisionChangesWorkspace({
               <span className="revision-diff-pane__file-icon" aria-hidden="true">
                 {primaryDirectory ? (
                   <Folder size={15} />
-                ) : primaryFile?.binary ? (
+                ) : primaryContentKind === 'binary' ? (
                   <Binary size={15} />
                 ) : (
                   <FileCode2 size={15} />
@@ -694,9 +703,10 @@ export function RevisionChangesWorkspace({
                 </small>
               </div>
               <DiffOptionsControl />
-              {(primaryDiff && !diffLoading && !diffError && !primaryFile?.binary) || selectedObjectIds.length > 1 ? (
+              {(primaryDiff && !diffLoading && !diffError && primaryContentKind !== 'binary') ||
+              selectedObjectIds.length > 1 ? (
                 <em className="revision-diff-pane__summary">
-                  {primaryDiff && !diffLoading && !diffError && !primaryFile?.binary && (
+                  {primaryDiff && !diffLoading && !diffError && primaryContentKind !== 'binary' && (
                     <span className="diff-line-counts revision-diff-pane__line-counts">
                       <b>+{diffLineCounts.additions}</b>
                       <i>−{diffLineCounts.deletions}</i>
@@ -737,7 +747,7 @@ export function RevisionChangesWorkspace({
                 <FileQuestion size={28} />
                 <strong>{t('selectFileViewDiff_ddf0')}</strong>
               </div>
-            ) : (primaryFile.binary || previewableKind) &&
+            ) : (primaryContentKind === 'binary' || previewableKind) &&
               !preferences.binaryDiffVisible &&
               !binaryPreview &&
               !binaryPreviewLoading ? (
@@ -746,7 +756,7 @@ export function RevisionChangesWorkspace({
                 <strong>{t('binaryDiffHidden')}</strong>
                 <span>{t('enableBinaryDiffInOptions')}</span>
               </div>
-            ) : previewableKind || primaryFile.binary ? (
+            ) : previewableKind || primaryContentKind === 'binary' ? (
               <BinaryDiffPreview
                 fileName={primaryFile.name}
                 preview={binaryPreview}

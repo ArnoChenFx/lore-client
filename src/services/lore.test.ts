@@ -121,7 +121,8 @@ describe('Lore event adapter', () => {
           size: 4096,
           action: 'keep',
           type: 'file',
-          flagStaged: true
+          flagStaged: true,
+          contentClassification: { kind: 'unknown', source: 'deferred' }
         }
       }
     ]
@@ -144,7 +145,9 @@ describe('Lore event adapter', () => {
         name: 'World.umap',
         status: 'modified',
         staged: true,
-        size: '4.0 KB'
+        size: '4.0 KB',
+        contentClassification: { kind: 'unknown', source: 'deferred' },
+        binary: false
       })
     ])
   })
@@ -963,7 +966,8 @@ describe('Lore event adapter', () => {
       {
         path: 'Source/App.tsx',
         action: 'keep',
-        patch: "@@ -1,2 +1,2 @@\n-const mode = 'dark';\n+const mode = 'light';"
+        patch: "@@ -1,2 +1,2 @@\n-const mode = 'dark';\n+const mode = 'light';",
+        contentClassification: { kind: 'text', source: 'loreDiff' }
       }
     ])
   })

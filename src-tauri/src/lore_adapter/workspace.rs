@@ -263,6 +263,9 @@ pub async fn lore_revision_files(
                 .map(|file| LoreRevisionFile {
                     path: file.path,
                     size: file.size,
+                    // 固定 Lore Storage 不支持前缀范围读取；文件树保持轻量，当前主要选择
+                    // 的真实 Diff 会在按需读取后给出权威 text/binary 结论。
+                    content_classification: FileContentClassification::deferred(),
                 })
                 .collect()
         })

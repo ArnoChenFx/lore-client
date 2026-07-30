@@ -1153,20 +1153,53 @@ fn merge_history_reports_secondary_parent_read_failures() {
 }
 
 #[test]
-fn text_like_paths_cover_unity_godot_and_common_scripts() {
-    assert!(is_text_like_revision_path("Assets/Hero.prefab"));
-    assert!(is_text_like_revision_path("Assets/Hero.cs.meta"));
-    assert!(is_text_like_revision_path("Scripts/Player.gd"));
-    assert!(is_text_like_revision_path("Scenes/Main.tscn"));
-    assert!(is_text_like_revision_path("src/main.zig"));
-    assert!(is_text_like_revision_path("src/app.odin"));
-    assert!(is_text_like_revision_path("tools/build.bat"));
-    assert!(is_text_like_revision_path("tools/setup.bash"));
-    assert!(is_text_like_revision_path(".gitignore"));
-    assert!(is_text_like_revision_path("Nested/Workspace/.LOREIGNORE"));
-    assert!(is_text_like_revision_path("Dockerfile"));
-    assert!(!is_text_like_revision_path("Content/Map.umap"));
-    assert!(!is_text_like_revision_path("Content/Actor.uasset"));
+fn workspace_status_classifies_content_without_extension_hints() {
+    let (repository_path, _cleanup) =
+        create_configuration_test_repository("workspace-content-classification", "");
+    std::fs::write(repository_path.join("custom-script"), "print('lore')\n")
+        .expect("Extensionless UTF-8 text should be written");
+    std::fs::write(repository_path.join("custom-payload"), [0_u8, 1, 2, 3])
+        .expect("Extensionless binary content should be written");
+
+    let mut events = vec![
+        serde_json::json!({
+            "tagName": "repositoryStatusFile",
+            "data": {
+                "path": "custom-script",
+                "type": "file",
+                "flagStaged": false
+            }
+        }),
+        serde_json::json!({
+            "tagName": "repositoryStatusFile",
+            "data": {
+                "path": "custom-payload",
+                "type": "file",
+                "flagStaged": false
+            }
+        }),
+        serde_json::json!({
+            "tagName": "repositoryStatusFile",
+            "data": {
+                "path": "custom-script",
+                "type": "file",
+                "flagStaged": true
+            }
+        }),
+    ];
+
+    enrich_workspace_status_content_classification(
+        repository_path.to_string_lossy().as_ref(),
+        &mut events,
+    );
+
+    assert_eq!(events[0]["data"]["contentClassification"]["kind"], "text");
+    assert_eq!(events[0]["data"]["contentClassification"]["source"], "utf8");
+    assert_eq!(events[1]["data"]["contentClassification"]["kind"], "binary");
+    assert_eq!(
+        events[2]["data"]["contentClassification"],
+        serde_json::json!({ "kind": "unknown", "source": "deferred" })
+    );
 }
 
 #[test]
@@ -2091,30 +2124,35 @@ fn revision_change_list_compares_only_tree_metadata_and_detects_common_actions()
                 source_path: None,
                 action: "add",
                 size: 20,
+                content_classification: FileContentClassification::deferred(),
             },
             LoreRevisionChange {
                 path: "copy-new.txt".to_owned(),
                 source_path: None,
                 action: "copy",
                 size: 10,
+                content_classification: FileContentClassification::deferred(),
             },
             LoreRevisionChange {
                 path: "deleted.txt".to_owned(),
                 source_path: None,
                 action: "delete",
                 size: 11,
+                content_classification: FileContentClassification::deferred(),
             },
             LoreRevisionChange {
                 path: "modified.txt".to_owned(),
                 source_path: None,
                 action: "modify",
                 size: 21,
+                content_classification: FileContentClassification::deferred(),
             },
             LoreRevisionChange {
                 path: "moved-new.txt".to_owned(),
                 source_path: Some("moved-old.txt".to_owned()),
                 action: "move",
                 size: 13,
+                content_classification: FileContentClassification::deferred(),
             },
         ]
     );
@@ -2136,6 +2174,7 @@ fn root_revision_change_list_marks_the_entire_target_tree_as_added() {
             source_path: None,
             action: "add",
             size: 42,
+            content_classification: FileContentClassification::deferred(),
         }]
     );
 }

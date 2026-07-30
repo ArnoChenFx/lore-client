@@ -318,6 +318,29 @@ export interface LoreRevisionBisectResult {
   done: boolean
 }
 
+/** 文件正文是否适合文本 Diff；`unknown` 表示当前轻量阶段没有足够证据。 */
+export type FileContentKind = 'text' | 'binary' | 'unknown'
+
+/** 内容分类所依据的证据，便于区分真实探测、延迟探测和不可用现场。 */
+export type FileContentClassificationSource =
+  | 'empty'
+  | 'bom'
+  | 'signature'
+  | 'utf8'
+  | 'utf16'
+  | 'controlBytes'
+  | 'invalidEncoding'
+  | 'deferred'
+  | 'unavailable'
+  | 'changedDuringRead'
+  | 'loreDiff'
+
+/** Rust 边界与 Lore Diff 共同产出的稳定内容分类。 */
+export interface FileContentClassification {
+  kind: FileContentKind
+  source: FileContentClassificationSource
+}
+
 /**
  * 仓库内单个文件的稳定身份。
  *
@@ -328,6 +351,12 @@ export interface RepositoryFileReference {
   id: string
   path: string
   name: string
+  /**
+   * 权威内容分类。旧演示夹具可能暂时缺省，此时兼容层才读取 `binary`。
+   * 新的真实后端结果不得再根据扩展名生成该字段。
+   */
+  contentClassification?: FileContentClassification
+  /** @deprecated 仅保留给旧组件与演示夹具；真实结果由 `contentClassification` 投影。 */
   binary?: boolean
   size?: string
 }
@@ -363,6 +392,8 @@ export interface WorkingTreeDiff {
   path: string
   patch: string
   action: string
+  /** Lore unified diff marker 给出的当前文件真实内容分类。 */
+  contentClassification?: FileContentClassification
 }
 
 /** 工作区与历史 Revision Diff 共用的持久化显示参数。 */

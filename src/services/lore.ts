@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { open, save } from '@tauri-apps/plugin-dialog'
 
 import { t } from '../i18n'
-import { isTextLikeFile, repositoryAccentFromIndex, revisionAuthorFromIdentity } from '../shared/lib'
+import { repositoryAccentFromIndex, revisionAuthorFromIdentity } from '../shared/lib'
 import type {
   BinaryFilePreview,
   Branch,
@@ -17,6 +17,7 @@ import type {
   ExternalDiffRequest,
   ExternalDiffToolPreference,
   ExternalMergeRequest,
+  FileContentClassification,
   FileHistoryEntry,
   LoreCommandError,
   LoreCloneResult,
@@ -1273,6 +1274,7 @@ interface LoreRevisionChangeResult {
   sourcePath?: string
   action: string
   size: number
+  contentClassification: FileContentClassification
 }
 
 /**
@@ -1303,6 +1305,7 @@ export async function loadRevisionChanges(
           : action === 'move'
             ? 'renamed'
             : 'modified'
+    const contentClassification = readFileContentClassification(change.contentClassification, 'deferred')
     return {
       id: fullPath || `revision-change-${index}`,
       path: separatorIndex >= 0 ? fullPath.slice(0, separatorIndex) : '.',
@@ -1311,7 +1314,8 @@ export async function loadRevisionChanges(
       staged: false,
       additions: 0,
       deletions: 0,
-      binary: !isTextLikeFile(fullPath),
+      contentClassification,
+      binary: contentClassification.kind === 'binary',
       size: formatBytes(change.size),
       previousPath: change.sourcePath?.replaceAll('\\', '/') || undefined
     }
@@ -1322,6 +1326,7 @@ export async function loadRevisionChanges(
 interface LoreRevisionFileResult {
   path: string
   size: number
+  contentClassification: FileContentClassification
 }
 
 /**
@@ -1338,12 +1343,14 @@ export async function loadRevisionFiles(repositoryPath: string, revision: string
   return files.map((file, index) => {
     const fullPath = file.path.replaceAll('\\', '/')
     const separatorIndex = fullPath.lastIndexOf('/')
+    const contentClassification = readFileContentClassification(file.contentClassification, 'deferred')
     return {
       id: `revision-tree-file:${fullPath || index}`,
       path: separatorIndex >= 0 ? fullPath.slice(0, separatorIndex) : '.',
       name: separatorIndex >= 0 ? fullPath.slice(separatorIndex + 1) : fullPath,
       size: formatBytes(file.size),
-      binary: !isTextLikeFile(fullPath)
+      contentClassification,
+      binary: contentClassification.kind === 'binary'
     }
   })
 }
@@ -1568,6 +1575,12 @@ export function revisionDiffsToChangeFiles(diffs: readonly WorkingTreeDiff[]): C
           : action === 'move' || action === 'rename'
             ? 'renamed'
             : 'modified'
+    const contentClassification =
+      diff.contentClassification ??
+      ({
+        kind: diff.patch.includes('Binary files differ') ? 'binary' : 'text',
+        source: 'loreDiff'
+      } satisfies FileContentClassification)
     const patchLines = diff.patch.split(/\r?\n/)
 
     return {
@@ -1582,7 +1595,8 @@ export function revisionDiffsToChangeFiles(diffs: readonly WorkingTreeDiff[]): C
        * Lore 已经按真实内容识别二进制。只要没有明确 marker，就不能再因为 `.gd`
        * 或无扩展名等未列入白名单的路径把内容隐藏；空补丁表示零字节结构变化。
        */
-      binary: diff.patch.includes('Binary files differ')
+      contentClassification,
+      binary: contentClassification.kind === 'binary'
     }
   })
 }
@@ -2538,6 +2552,7 @@ function parseChanges(events: LoreEvent[]): ChangeFile[] {
             : action === 'move'
               ? 'renamed'
               : 'modified'
+      const contentClassification = readFileContentClassification(event.data.contentClassification, 'unavailable')
 
       return {
         // 路径在一次仓库快照内唯一，使用它作为稳定 ID，视图切换和刷新后仍能保留选择。
@@ -2548,7 +2563,8 @@ function parseChanges(events: LoreEvent[]): ChangeFile[] {
         staged: readBoolean(event.data.flagStaged),
         additions: 0,
         deletions: 0,
-        binary: !isTextLikeFile(fullPath),
+        contentClassification,
+        binary: contentClassification.kind === 'binary',
         size: formatBytes(readNumber(event.data.size)),
         previousPath: readString(event.data.fromPath).replaceAll('\\', '/') || undefined,
         conflict: readBoolean(event.data.flagConflict),
@@ -2560,13 +2576,18 @@ function parseChanges(events: LoreEvent[]): ChangeFile[] {
 function parseWorkingTreeDiffs(events: LoreEvent[]): WorkingTreeDiff[] {
   return events
     .filter((event) => event.tagName === 'fileDiff')
-    .map(
-      (event): WorkingTreeDiff => ({
+    .map((event): WorkingTreeDiff => {
+      const patch = readString(event.data.patch)
+      return {
         path: readString(event.data.path),
-        patch: readString(event.data.patch),
-        action: readString(event.data.action, 'keep').toLowerCase()
-      })
-    )
+        patch,
+        action: readString(event.data.action, 'keep').toLowerCase(),
+        contentClassification: {
+          kind: patch.includes('Binary files differ') ? 'binary' : 'text',
+          source: 'loreDiff'
+        }
+      }
+    })
     .filter((diff) => diff.path.length > 0)
 }
 
@@ -2912,6 +2933,42 @@ function readRevisionId(value: unknown): string {
 
 function readNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+/**
+ * 解析 Rust 返回的结构化内容分类；旧后端或异常字段只能降级为 unknown，不能恢复路径枚举。
+ */
+function readFileContentClassification(
+  value: unknown,
+  fallbackSource: FileContentClassification['source']
+): FileContentClassification {
+  if (!isRecord(value)) {
+    return { kind: 'unknown', source: fallbackSource }
+  }
+  const kind = readString(value.kind)
+  const source = readString(value.source)
+  const allowedKinds: FileContentClassification['kind'][] = ['text', 'binary', 'unknown']
+  const allowedSources: FileContentClassification['source'][] = [
+    'empty',
+    'bom',
+    'signature',
+    'utf8',
+    'utf16',
+    'controlBytes',
+    'invalidEncoding',
+    'deferred',
+    'unavailable',
+    'changedDuringRead',
+    'loreDiff'
+  ]
+  return {
+    kind: allowedKinds.includes(kind as FileContentClassification['kind'])
+      ? (kind as FileContentClassification['kind'])
+      : 'unknown',
+    source: allowedSources.includes(source as FileContentClassification['source'])
+      ? (source as FileContentClassification['source'])
+      : fallbackSource
+  }
 }
 
 function readBoolean(value: unknown): boolean {

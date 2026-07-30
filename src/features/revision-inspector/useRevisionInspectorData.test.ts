@@ -52,7 +52,7 @@ describe('revision inspector projection', () => {
         loadedRepositoryPath: 'E:\\Repos\\previous',
         loadedRevisionId: 'revision-2',
         primaryPath: 'src/file.ts',
-        primaryFileBinary: false
+        primaryFileSupportsTextDiff: true
       })
     ).toBe(false)
     expect(
@@ -62,7 +62,7 @@ describe('revision inspector projection', () => {
         loadedRepositoryPath: 'E:\\Repos\\current',
         loadedRevisionId: 'revision-2',
         primaryPath: 'src/file.ts',
-        primaryFileBinary: false
+        primaryFileSupportsTextDiff: true
       })
     ).toBe(true)
     expect(
@@ -72,7 +72,7 @@ describe('revision inspector projection', () => {
         loadedRepositoryPath: 'E:\\Repos\\current',
         loadedRevisionId: 'revision-2',
         primaryPath: 'Content/texture.png',
-        primaryFileBinary: true
+        primaryFileSupportsTextDiff: false
       })
     ).toBe(false)
   })

@@ -9,6 +9,8 @@ import {
   createDemoWorkingTreeDiff,
   LatestTaskQueue,
   readErrorMessage,
+  resolvedDiffContentKind,
+  shouldLoadRepositoryTextDiff,
   settleTasksSequentially
 } from '../../../shared/lib'
 import type {
@@ -73,6 +75,7 @@ export function WorkingTreeDiffContainer({
       loadBinaryFilePreview(repositoryPath, path, revision, metadataOnly, preferences.binaryPreviewLimitMib),
     [preferences.binaryPreviewLimitMib, repositoryPath]
   )
+  const effectiveContentKind = resolvedDiffContentKind(file, diff)
 
   /** 主要文件变化时按需读取真实文本 Diff，并丢弃来自旧选择的响应。 */
   useEffect(() => {
@@ -86,10 +89,11 @@ export function WorkingTreeDiffContainer({
       setDiffLoading(false)
       return
     }
-    if (file.binary) {
+    const path = changeFilePath(file)
+    if (!shouldLoadRepositoryTextDiff(file, path)) {
       setDiffLoading(false)
       setDiff({
-        path: changeFilePath(file),
+        path,
         patch: '',
         action: file.status
       })
@@ -103,12 +107,12 @@ export function WorkingTreeDiffContainer({
 
     setDiffLoading(true)
     void diffQueue.current
-      .run(() => loadWorkingTreeDiff(repositoryPath, [changeFilePath(file)], preferences.diff))
+      .run(() => loadWorkingTreeDiff(repositoryPath, [path], preferences.diff))
       .then((diffs) => {
         if (requestId !== diffRequestCounter.current) return
         setDiff(
           diffs[0] ?? {
-            path: changeFilePath(file),
+            path,
             patch: '',
             action: file.status
           }
@@ -140,7 +144,7 @@ export function WorkingTreeDiffContainer({
     setBinaryPreviewError(null)
 
     const path = file ? changeFilePath(file) : ''
-    if (!file || (!file.binary && !binaryPreviewKind(path))) {
+    if (!file || (effectiveContentKind !== 'binary' && !binaryPreviewKind(path))) {
       setBinaryPreviewLoading(false)
       return
     }
@@ -205,7 +209,14 @@ export function WorkingTreeDiffContainer({
       setBinaryPreview(null)
       setBinaryPreviewError(null)
     }
-  }, [applicationMode, currentRevisionId, file, loadRepositoryBinaryPreview, preferences.binaryDiffVisible])
+  }, [
+    applicationMode,
+    currentRevisionId,
+    effectiveContentKind,
+    file,
+    loadRepositoryBinaryPreview,
+    preferences.binaryDiffVisible
+  ])
 
   return (
     <WorkingTreeDiffView

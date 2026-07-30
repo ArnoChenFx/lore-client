@@ -589,267 +589,6 @@ pub(super) fn read_revision_file_content(
         })
 }
 
-/// 明确的文本扩展名始终读取；未知类型只在体积较小时探测 UTF-8 内容。
-///
-/// 覆盖 Unity Force Text 资产、Godot 文本场景/脚本，以及 Zig/Odin/Shell 等常见语言，
-/// 避免本地更改与根修订 Diff 把可读文本误判为二进制。未知扩展名仍按体积探测，
-/// 明确二进制类型始终只生成 marker。
-pub(super) fn is_text_like_revision_path(path: &str) -> bool {
-    let path = Path::new(path);
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    if matches!(
-        file_name.as_str(),
-        ".babelrc"
-            | ".dockerignore"
-            | ".editorconfig"
-            | ".env"
-            | ".env.example"
-            | ".eslintrc"
-            | ".gitattributes"
-            | ".gitignore"
-            | ".npmrc"
-            | ".nvmrc"
-            | ".prettierrc"
-            | ".loreignore"
-            | "bun.lock"
-            | "Cargo.lock"
-            | "cmakelists.txt"
-            | "dockerfile"
-            | "gemfile"
-            | "gnumakefile"
-            | "jenkinsfile"
-            | "makefile"
-            | "procfile"
-            | "rakefile"
-            | "vagrantfile"
-    ) {
-        return true;
-    }
-
-    let extension = path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    matches!(
-        extension.as_str(),
-        // 通用文档与配置
-        "txt"
-            | "md"
-            | "markdown"
-            | "rst"
-            | "adoc"
-            | "tex"
-            | "bib"
-            | "org"
-            | "json"
-            | "jsonc"
-            | "json5"
-            | "yaml"
-            | "yml"
-            | "toml"
-            | "ini"
-            | "cfg"
-            | "conf"
-            | "config"
-            | "xml"
-            | "csv"
-            | "tsv"
-            | "svg"
-            | "plist"
-            | "properties"
-            | "editorconfig"
-            // Web / 前端
-            | "ts"
-            | "tsx"
-            | "js"
-            | "jsx"
-            | "mjs"
-            | "cjs"
-            | "css"
-            | "scss"
-            | "sass"
-            | "less"
-            | "html"
-            | "htm"
-            | "vue"
-            | "svelte"
-            | "graphql"
-            | "gql"
-            // 系统 / 原生 / 通用语言
-            | "rs"
-            | "cpp"
-            | "cc"
-            | "cxx"
-            | "c"
-            | "h"
-            | "hpp"
-            | "hh"
-            | "hxx"
-            | "py"
-            | "pyi"
-            | "go"
-            | "java"
-            | "kt"
-            | "kts"
-            | "scala"
-            | "cs"
-            | "fs"
-            | "fsx"
-            | "fsi"
-            | "vb"
-            | "swift"
-            | "m"
-            | "mm"
-            | "rb"
-            | "php"
-            | "lua"
-            | "r"
-            | "sql"
-            | "proto"
-            | "dart"
-            | "nim"
-            | "groovy"
-            | "gradle"
-            | "cmake"
-            | "zig"
-            | "zon"
-            | "odin"
-            // Shell / 批处理
-            | "sh"
-            | "bash"
-            | "zsh"
-            | "fish"
-            | "ps1"
-            | "psm1"
-            | "psd1"
-            | "bat"
-            | "cmd"
-            // 着色器
-            | "glsl"
-            | "hlsl"
-            | "wgsl"
-            | "vert"
-            | "frag"
-            | "geom"
-            | "comp"
-            | "tesc"
-            | "tese"
-            | "metal"
-            | "compute"
-            // Unity 常见文本资产
-            | "meta"
-            | "unity"
-            | "prefab"
-            | "asset"
-            | "mat"
-            | "anim"
-            | "controller"
-            | "overridecontroller"
-            | "mask"
-            | "physicmaterial"
-            | "physicsmaterial2d"
-            | "guiskin"
-            | "fontsettings"
-            | "preset"
-            | "asmdef"
-            | "asmref"
-            | "inputactions"
-            | "shader"
-            | "cginc"
-            | "raytrace"
-            | "template"
-            | "uxml"
-            | "uss"
-            | "rsp"
-            | "shadergraph"
-            | "shadersubgraph"
-            | "vfx"
-            | "playable"
-            | "signal"
-            | "terrainlayer"
-            | "brush"
-            | "giparams"
-            | "wlt"
-            | "scenetemplate"
-            | "spriteatlasv2"
-            // Godot 文本场景 / 资源 / 脚本
-            | "gd"
-            | "tscn"
-            | "tres"
-            | "godot"
-            | "import"
-            | "gdshader"
-            | "gdshaderinc"
-            | "gdextension"
-            | "uid"
-    )
-}
-
-pub(super) fn is_known_binary_revision_path(path: &str) -> bool {
-    let extension = Path::new(path)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    matches!(
-        extension.as_str(),
-        "png"
-            | "jpg"
-            | "jpeg"
-            | "gif"
-            | "webp"
-            | "bmp"
-            | "ico"
-            | "tga"
-            | "tif"
-            | "tiff"
-            | "dds"
-            | "ktx2"
-            | "exr"
-            | "pdf"
-            | "obj"
-            | "fbx"
-            | "gltf"
-            | "glb"
-            | "zip"
-            | "pak"
-            | "assetbundle"
-            | "bundle"
-            | "unity3d"
-            | "pck"
-            | "7z"
-            | "rar"
-            | "gz"
-            | "bz2"
-            | "xz"
-            | "mp3"
-            | "wav"
-            | "ogg"
-            | "flac"
-            | "mp4"
-            | "mov"
-            | "avi"
-            | "dll"
-            | "exe"
-            | "so"
-            | "dylib"
-            | "uasset"
-            | "umap"
-            | "uexp"
-            | "ubulk"
-            | "assets"
-            | "res"
-            | "blend"
-            | "ttf"
-            | "otf"
-    )
-}
-
 /**
  * 把轻量 JSON 元数据与原始载荷组成稳定 IPC 信封。
  *
@@ -1084,9 +823,11 @@ pub(super) fn build_file_preview(
 }
 
 pub(super) fn should_materialize_revision_content(file: &RevisionTreeFile) -> bool {
-    const UNKNOWN_TEXT_PROBE_LIMIT: u64 = 8 * 1024 * 1024;
-    is_text_like_revision_path(&file.path)
-        || (!is_known_binary_revision_path(&file.path) && file.size <= UNKNOWN_TEXT_PROBE_LIMIT)
+    const ROOT_REVISION_CONTENT_PROBE_LIMIT: u64 = 8 * 1024 * 1024;
+    // 固定 Lore Storage 只能返回完整对象，无法像工作区一样读取 64 KiB 前缀。根
+    // Revision 的按需 Diff 因而只物化受控体积内容，再由真实 UTF-8 解码决定是否生成
+    // patch；较大文件直接返回 marker，绝不凭扩展名绕过内存边界。
+    file.size <= ROOT_REVISION_CONTENT_PROBE_LIMIT
 }
 
 /// 为根修订中的新增文本文件生成最小但完整的 unified patch。
@@ -1241,6 +982,7 @@ pub(super) fn compare_revision_tree_files(
                     source_path: None,
                     action: "modify",
                     size: target.size,
+                    content_classification: FileContentClassification::deferred(),
                 });
             }
             Some(_) => {}
@@ -1271,6 +1013,7 @@ pub(super) fn compare_revision_tree_files(
                 source_path: Some(source.path.clone()),
                 action: "move",
                 size: target.size,
+                content_classification: FileContentClassification::deferred(),
             });
             continue;
         }
@@ -1285,6 +1028,7 @@ pub(super) fn compare_revision_tree_files(
             source_path: None,
             action: if copied { "copy" } else { "add" },
             size: target.size,
+            content_classification: FileContentClassification::deferred(),
         });
     }
     changes.extend(
@@ -1296,6 +1040,7 @@ pub(super) fn compare_revision_tree_files(
                 source_path: None,
                 action: "delete",
                 size: source.size,
+                content_classification: FileContentClassification::deferred(),
             }),
     );
     changes.sort_by(|left, right| left.path.cmp(&right.path));

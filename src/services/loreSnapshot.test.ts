@@ -132,13 +132,15 @@ describe('repository snapshot branch loading', () => {
           {
             path: 'Scenes/Main.tscn',
             action: 'add',
-            size: 128
+            size: 128,
+            contentClassification: { kind: 'unknown', source: 'deferred' }
           },
           {
             path: 'assets/hero.glb',
             sourcePath: 'assets/legacy-hero.glb',
             action: 'move',
-            size: 2048
+            size: 2048,
+            contentClassification: { kind: 'unknown', source: 'deferred' }
           }
         ]
       }
@@ -432,14 +434,16 @@ describe('repository snapshot branch loading', () => {
         path: 'Scenes',
         name: 'Main.tscn',
         status: 'added',
-        binary: false
+        binary: false,
+        contentClassification: { kind: 'unknown', source: 'deferred' }
       }),
       expect.objectContaining({
         id: 'assets/hero.glb',
         path: 'assets',
         name: 'hero.glb',
         status: 'renamed',
-        binary: true,
+        binary: false,
+        contentClassification: { kind: 'unknown', source: 'deferred' },
         previousPath: 'assets/legacy-hero.glb'
       })
     ])
@@ -466,7 +470,8 @@ describe('repository snapshot branch loading', () => {
       {
         path: 'Scenes/Main.tscn',
         action: 'add',
-        patch: '+[node name="Main"]'
+        patch: '+[node name="Main"]',
+        contentClassification: { kind: 'text', source: 'loreDiff' }
       }
     ])
   })

@@ -768,6 +768,62 @@ pub(super) fn normalize_unstaged_structural_status(
     result
 }
 
+/// 为工作区 Status 文件事件补充稳定的内容分类。
+///
+/// 只有未暂存文件才能用当前工作区正文作为权威来源；Stage 内容属于独立不可变快照，
+/// 直接读取同路径工作区文件会在“暂存后继续修改”时得到错误结论，因此暂存项保持
+/// `unknown/deferred`，等主要选择加载真实 Lore Diff 后再收敛。
+pub(super) fn enrich_workspace_status_content_classification(
+    repository_path: &str,
+    events: &mut [Value],
+) {
+    for event in events {
+        if event.get("tagName").and_then(Value::as_str) != Some("repositoryStatusFile")
+            || event.pointer("/data/type").and_then(Value::as_str) == Some("directory")
+        {
+            continue;
+        }
+
+        let classification = if event.pointer("/data/flagStaged").and_then(Value::as_bool)
+            == Some(true)
+        {
+            FileContentClassification::deferred()
+        } else if let Some(path) = event.pointer("/data/path").and_then(Value::as_str) {
+            match validate_existing_workspace_file(repository_path, path).and_then(
+                |absolute_path| {
+                    classify_file_content(&absolute_path).map_err(|error| {
+                        LoreCommandError::new(
+                            "workspace_content_classification_unavailable",
+                            format!("Failed to sample workspace file {path}: {error}"),
+                        )
+                    })
+                },
+            ) {
+                Ok(classification) => classification,
+                Err(error) => {
+                    // 删除、权限变化或并发文件替换不应让完整 Status 失败。结构化 unknown
+                    // 会让前端继续尝试真实 Diff，而 debug 日志保留诊断上下文。
+                    log::debug!(
+                        "Workspace content classification unavailable for {path}: {}",
+                        error.message
+                    );
+                    FileContentClassification::unknown(FileContentClassificationSource::Unavailable)
+                }
+            }
+        } else {
+            FileContentClassification::unknown(FileContentClassificationSource::Unavailable)
+        };
+
+        if let Some(data) = event.get_mut("data").and_then(Value::as_object_mut) {
+            data.insert(
+                "contentClassification".to_owned(),
+                serde_json::to_value(classification)
+                    .expect("File content classification is always serializable"),
+            );
+        }
+    }
+}
+
 /// 找出 Lore 仍报告为未暂存 Add、但工作区文件系统已经明确返回不存在的路径。
 ///
 /// 只接受通过仓库相对路径校验且 `symlink_metadata` 返回 NotFound 的证据。权限失败、
@@ -1110,10 +1166,9 @@ pub async fn lore_repository_status(
              */
             run_read_only_repository_status(validated_repository_path, globals, callback)
         })?;
-        Ok(normalize_unstaged_structural_status(
-            &repository_path,
-            result,
-        ))
+        let mut result = normalize_unstaged_structural_status(&repository_path, result);
+        enrich_workspace_status_content_classification(&repository_path, &mut result.events);
+        Ok(result)
     })
     .await
 }

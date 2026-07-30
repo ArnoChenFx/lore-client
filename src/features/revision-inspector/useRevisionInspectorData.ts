@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { loadRevisionChanges, loadRevisionDiff, loadRevisionFiles } from '../../services/lore'
-import { changeFilePath, createDemoWorkingTreeDiff, LatestTaskQueue, readErrorMessage } from '../../shared/lib'
+import {
+  changeFilePath,
+  createDemoWorkingTreeDiff,
+  LatestTaskQueue,
+  readErrorMessage,
+  shouldLoadRepositoryTextDiff
+} from '../../shared/lib'
 import type {
   ApplicationMode,
   ChangeFile,
@@ -131,7 +137,7 @@ interface RevisionDiffRequestContext {
   loadedRepositoryPath: string
   loadedRevisionId: string
   primaryPath: string
-  primaryFileBinary: boolean
+  primaryFileSupportsTextDiff: boolean
 }
 
 /**
@@ -148,13 +154,13 @@ export function isRevisionDiffRequestCurrent({
   loadedRepositoryPath,
   loadedRevisionId,
   primaryPath,
-  primaryFileBinary
+  primaryFileSupportsTextDiff
 }: RevisionDiffRequestContext): boolean {
   return Boolean(
     repositoryPath &&
     selectedRevisionId &&
     primaryPath &&
-    !primaryFileBinary &&
+    primaryFileSupportsTextDiff &&
     loadedRepositoryPath === repositoryPath &&
     loadedRevisionId === selectedRevisionId
   )
@@ -291,11 +297,15 @@ export function useRevisionInspectorData({
       loadedRevisionId: revisionChangesRevisionId,
       primaryPath: revisionPrimaryChangePath,
       /*
-       * 二进制文件由受大小限制的 Preview IPC 读取；Lore 文本 Diff 会先遍历完整
-       * Revision 状态，随后才发现二进制并返回 marker，既无展示价值又制造大峰值。
+       * 二进制文件与 OBJ、GLTF 等专用资产由受大小限制的 Preview IPC 读取；
+       * Lore 文本 Diff 会先遍历完整 Revision 状态，既无展示价值又可能长期占用
+       * 全局重读锁。CSV 刻意保留表格预览与行级文本 Diff 两种展示方式。
        */
-      primaryFileBinary: Boolean(
-        revisionChanges.find((file) => changeFilePath(file) === revisionPrimaryChangePath)?.binary
+      primaryFileSupportsTextDiff: shouldLoadRepositoryTextDiff(
+        (applicationMode === 'browser-demo' ? demoRevisionFiles : revisionChanges).find(
+          (file) => changeFilePath(file) === revisionPrimaryChangePath
+        ),
+        revisionPrimaryChangePath
       )
     })
     if (!selectedRevision || inspectorTab !== 'changes' || !revisionChangesDiffVisible || !requestContextCurrent) {

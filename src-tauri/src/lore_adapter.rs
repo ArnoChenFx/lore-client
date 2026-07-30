@@ -88,6 +88,7 @@ pub(crate) mod branch;
 pub(crate) mod composition;
 mod configuration;
 mod external_tools;
+mod file_content;
 pub(crate) mod history;
 pub(crate) mod maintenance;
 mod operation_support;
@@ -101,6 +102,10 @@ mod tags;
 mod tests;
 mod view;
 pub(crate) mod workspace;
+
+use file_content::{
+    classify_file_content, FileContentClassification, FileContentClassificationSource,
+};
 
 // 私有导入让兄弟模块可以通过父模块复用 `pub(super)` 支撑项，同时不扩大 crate API。
 use branch::*;
@@ -429,13 +434,15 @@ pub struct LoreRepositoryPublishResult {
 
 /// 指定 Revision 中单个已提交文件的稳定 DTO。
 ///
-/// 只暴露界面构建目录树需要的仓库相对路径与字节大小；内容地址、Node ID 和
-/// Store handle 都属于固定 Lore 版本的内部细节，不能跨越 IPC 边界。
+/// 只暴露界面构建目录树需要的仓库相对路径、字节大小和内容分类；内容地址、Node ID
+/// 和 Store handle 都属于固定 Lore 版本的内部细节，不能跨越 IPC 边界。Revision 列表
+/// 不批量物化正文，因此分类在真实 Diff 加载前明确保持 `unknown/deferred`。
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoreRevisionFile {
     pub path: String,
     pub size: u64,
+    pub content_classification: FileContentClassification,
 }
 
 /// 前端可直接渲染的受控二进制文件内容。
@@ -489,6 +496,7 @@ pub struct LoreRevisionChange {
     pub source_path: Option<String>,
     pub action: &'static str,
     pub size: u64,
+    pub content_classification: FileContentClassification,
 }
 
 /// 外部 Diff 工具配置；参数按数组接收并直接交给 `Command::args`。
