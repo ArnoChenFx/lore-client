@@ -95,10 +95,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'Lore Client ${{ github.ref_name }}'
           releaseBody: |
-            Lore Client ${{ github.ref_name }} automated build.
-
-            Download the installer for your platform from the assets below. Existing installations can also check for and install updates from the client settings.
-          generateReleaseNotes: true
+            Release notes are generated after all platform artifacts have been uploaded.
           releaseDraft: true
           prerelease: false
           retryAttempts: 2
@@ -113,6 +110,42 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check out release history
+        uses: actions/checkout@v4
+        with:
+          # 生成准确的版本区间提交记录需要完整历史与全部标签，浅克隆无法解析上一个版本。
+          fetch-depth: 0
+
+      - name: Generate release notes from commits
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          CURRENT_TAG: ${{ github.ref_name }}
+        run: |
+          # 当前 Release 在此阶段仍是草稿，因此排除草稿后得到的第一项就是上一个已发布版本。
+          previous_tag="$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')"
+
+          {
+            echo "## Changes"
+            echo
+            if [ -n "$previous_tag" ]; then
+              # 区间左开右闭：不重复上一版本的提交，同时包含当前标签指向的全部新提交。
+              echo "Changes since [$previous_tag](https://github.com/${GITHUB_REPOSITORY}/releases/tag/$previous_tag):"
+              echo
+              git log "$previous_tag..$CURRENT_TAG" \
+                --pretty=format:"- %s ([%h](https://github.com/${GITHUB_REPOSITORY}/commit/%H)) — %an"
+            else
+              # 首次发布没有可比较版本，退化为列出当前标签可达的完整提交历史。
+              echo "Changes included in this first release:"
+              echo
+              git log "$CURRENT_TAG" \
+                --pretty=format:"- %s ([%h](https://github.com/${GITHUB_REPOSITORY}/commit/%H)) — %an"
+            fi
+            echo
+            echo
+            echo "Download the installer for your platform from the assets below. Existing installations can also check for and install updates from the client settings."
+          } > release-notes.md
+
       - name: Verify updater manifest and publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -120,4 +153,5 @@ jobs:
         run: |
           gh release download "${{ github.ref_name }}" --pattern latest.json --dir updater-manifest
           test -s updater-manifest/latest.json
-          gh release edit "${{ github.ref_name }}" --draft=false
+          # 所有平台资产就绪后，以精确提交区间覆盖草稿正文并一次性公开 Release。
+          gh release edit "${{ github.ref_name }}" --notes-file release-notes.md --draft=false
