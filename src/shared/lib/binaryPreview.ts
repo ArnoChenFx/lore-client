@@ -3,8 +3,8 @@ import type { BinaryPreviewKind } from '../../types'
 /**
  * 前后端共同支持的内嵌预览格式。
  *
- * SVG 即使经常被当作图片，也可能包含脚本、外部资源与链接，因此不进入二进制
- * 内嵌预览白名单；它仍可走现有“打开文件”能力交给用户选择的外部应用。
+ * SVG 虽然是文本源文件，但启用二进制 Diff 时可作为图片预览。Rust 边界必须先
+ * 拒绝外部资源并栅格化为 PNG，原始 SVG 字节绝不能进入 WebView。
  *
  * TGA/TIFF 在 Rust 边界转成 PNG 后仍以 `image` 下发；OBJ/FBX/GLTF/GLB 以
  * `model` 下发，由前端 Canvas 解析，且禁止加载器拉取外部材质或缓冲。
@@ -30,6 +30,7 @@ const previewKindsByExtension: Readonly<Record<string, BinaryPreviewKind>> = {
   gltf: 'model',
   glb: 'model',
   csv: 'csv',
+  svg: 'image',
   wav: 'audio',
   ogg: 'audio',
   mp3: 'audio',

@@ -14,6 +14,7 @@ describe('binary preview formats', () => {
     expect(binaryPreviewKind('Content/Meshes/Prop.glb')).toBe('model')
     expect(binaryPreviewKind('Content/Meshes/Rock.obj')).toBe('model')
     expect(binaryPreviewKind('Data\\Stats.CSV')).toBe('csv')
+    expect(binaryPreviewKind('Images/vector.SVG')).toBe('image')
     expect(binaryPreviewKind('Content/Textures/Sky.DDS')).toBe('image')
     expect(binaryPreviewKind('Content/Textures/Sky.ktx2')).toBe('texture')
     expect(binaryPreviewKind('Content/Textures/Lighting.exr')).toBe('image')
@@ -28,8 +29,7 @@ describe('binary preview formats', () => {
     expect(binaryPreviewKind('Art/Hero.blend')).toBe('asset')
   })
 
-  it('rejects SVG, unknown binary formats, and paths without extensions', () => {
-    expect(binaryPreviewKind('Images/vector.svg')).toBeNull()
+  it('rejects unknown binary formats and paths without extensions', () => {
     expect(binaryPreviewKind('Content/Map.unknown')).toBeNull()
     expect(binaryPreviewKind('LICENSE')).toBeNull()
   })

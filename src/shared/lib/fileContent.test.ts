@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ChangeFile, WorkingTreeDiff } from '../../types'
-import { repositoryFileContentKind, resolvedDiffContentKind, shouldLoadRepositoryTextDiff } from './fileContent'
+import {
+  repositoryFileContentKind,
+  resolvedDiffContentKind,
+  shouldLoadRepositoryTextDiff,
+  shouldUseRepositoryPreview
+} from './fileContent'
 
 const createFile = (overrides: Partial<ChangeFile> = {}): ChangeFile => ({
   id: 'file-1',
@@ -44,7 +49,7 @@ describe('file content classification helpers', () => {
     expect(repositoryFileContentKind(createFile())).toBe('unknown')
   })
 
-  it('prefers bounded asset previews over full text diffs for model files', () => {
+  it('switches text-backed CSV and SVG between bounded previews and text diffs', () => {
     const textModel = createFile({
       name: 'sphere.obj',
       contentClassification: { kind: 'text', source: 'utf8' }
@@ -57,9 +62,33 @@ describe('file content classification helpers', () => {
       name: 'metrics.csv',
       contentClassification: { kind: 'text', source: 'utf8' }
     })
+    const svg = createFile({
+      name: 'diagram.svg',
+      contentClassification: { kind: 'text', source: 'utf8' }
+    })
 
-    expect(shouldLoadRepositoryTextDiff(textModel, 'Models/sphere.obj')).toBe(false)
-    expect(shouldLoadRepositoryTextDiff(deferredModel, 'Models/sphere.obj')).toBe(false)
-    expect(shouldLoadRepositoryTextDiff(csv, 'Data/metrics.csv')).toBe(true)
+    expect(shouldLoadRepositoryTextDiff(textModel, 'Models/sphere.obj', false)).toBe(false)
+    expect(shouldLoadRepositoryTextDiff(deferredModel, 'Models/sphere.obj', false)).toBe(false)
+    expect(shouldUseRepositoryPreview(textModel, 'Models/sphere.obj', false)).toBe(true)
+
+    expect(shouldLoadRepositoryTextDiff(csv, 'Data/metrics.csv', true)).toBe(false)
+    expect(shouldUseRepositoryPreview(csv, 'Data/metrics.csv', true)).toBe(true)
+    expect(shouldLoadRepositoryTextDiff(csv, 'Data/metrics.csv', false)).toBe(true)
+    expect(shouldUseRepositoryPreview(csv, 'Data/metrics.csv', false)).toBe(false)
+
+    expect(shouldLoadRepositoryTextDiff(svg, 'Images/diagram.svg', true)).toBe(false)
+    expect(shouldUseRepositoryPreview(svg, 'Images/diagram.svg', true)).toBe(true)
+    expect(shouldLoadRepositoryTextDiff(svg, 'Images/diagram.svg', false)).toBe(true)
+    expect(shouldUseRepositoryPreview(svg, 'Images/diagram.svg', false)).toBe(false)
+  })
+
+  it('keeps real binary content on the preview path even when previews are hidden', () => {
+    const binarySvg = createFile({
+      name: 'invalid.svg',
+      contentClassification: { kind: 'binary', source: 'utf8' }
+    })
+
+    expect(shouldLoadRepositoryTextDiff(binarySvg, 'Images/invalid.svg', false)).toBe(false)
+    expect(shouldUseRepositoryPreview(binarySvg, 'Images/invalid.svg', false)).toBe(true)
   })
 })

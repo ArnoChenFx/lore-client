@@ -113,6 +113,7 @@ interface UseRevisionInspectorDataOptions {
   selectedRevision: Revision | null
   inspectorTab: InspectorTab
   diffPreferences: ClientPreferences['diff']
+  binaryDiffVisible: boolean
   revisionChangesDiffVisible: boolean
   demoRevisionFiles: ChangeFile[]
 }
@@ -178,6 +179,7 @@ export function useRevisionInspectorData({
   selectedRevision,
   inspectorTab,
   diffPreferences,
+  binaryDiffVisible,
   revisionChangesDiffVisible,
   demoRevisionFiles
 }: UseRevisionInspectorDataOptions) {
@@ -299,13 +301,15 @@ export function useRevisionInspectorData({
       /*
        * 二进制文件与 OBJ、GLTF 等专用资产由受大小限制的 Preview IPC 读取；
        * Lore 文本 Diff 会先遍历完整 Revision 状态，既无展示价值又可能长期占用
-       * 全局重读锁。CSV 刻意保留表格预览与行级文本 Diff 两种展示方式。
+       * 全局重读锁。CSV/SVG 只在关闭二进制 Diff 后进入文本路径；启用时分别交给
+       * 受限表格预览与 Rust 安全栅格化图片预览。
        */
       primaryFileSupportsTextDiff: shouldLoadRepositoryTextDiff(
         (applicationMode === 'browser-demo' ? demoRevisionFiles : revisionChanges).find(
           (file) => changeFilePath(file) === revisionPrimaryChangePath
         ),
-        revisionPrimaryChangePath
+        revisionPrimaryChangePath,
+        binaryDiffVisible
       )
     })
     if (!selectedRevision || inspectorTab !== 'changes' || !revisionChangesDiffVisible || !requestContextCurrent) {
@@ -352,6 +356,7 @@ export function useRevisionInspectorData({
       })
   }, [
     applicationMode,
+    binaryDiffVisible,
     demoRevisionFiles,
     diffPreferences,
     inspectorTab,

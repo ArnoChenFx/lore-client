@@ -10,7 +10,8 @@ import {
   changeFilePathTransition,
   countUnifiedDiffLines,
   parseUnifiedDiff,
-  resolvedDiffContentKind
+  resolvedDiffContentKind,
+  shouldUseRepositoryPreview
 } from '../../../shared/lib'
 import { BinaryDiffPreview, DiffOptionsControl } from '../../../shared/ui'
 import type {
@@ -51,7 +52,11 @@ export function WorkingTreeDiff({
   const lines = useMemo(() => (diff?.patch ? parseUnifiedDiff(diff.patch) : []), [diff?.patch])
   const lineCounts = useMemo(() => countUnifiedDiffLines(lines), [lines])
   const previewableKind = file ? binaryPreviewKind(changeFilePath(file)) : null
-  const binary = resolvedDiffContentKind(file, diff) === 'binary'
+  const contentKind = resolvedDiffContentKind(file, diff)
+  const binary = contentKind === 'binary'
+  const previewModeActive = file
+    ? shouldUseRepositoryPreview(file, changeFilePath(file), preferences.binaryDiffVisible, contentKind)
+    : false
   const pathTransition = file ? changeFilePathTransition(file) : null
   const filePathLabel = file
     ? pathTransition
@@ -135,13 +140,13 @@ export function WorkingTreeDiff({
           <strong>{t('unableToLoadFileDiff')}</strong>
           <span>{error}</span>
         </div>
-      ) : (binary || previewableKind) && !preferences.binaryDiffVisible && !binaryPreview && !binaryPreviewLoading ? (
+      ) : previewModeActive && !preferences.binaryDiffVisible && !binaryPreview && !binaryPreviewLoading ? (
         <div className="working-diff__empty">
           <Binary size={32} />
           <strong>{t('binaryDiffHidden')}</strong>
           <span>{t('enableBinaryDiffInOptions')}</span>
         </div>
-      ) : previewableKind || binary ? (
+      ) : previewModeActive ? (
         <BinaryDiffPreview
           fileName={file.name}
           preview={binaryPreview}

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import i18n from '../../../i18n'
 import { updateClientPreferences } from '../../../services/preferences'
-import type { ChangeFile } from '../../../types'
+import type { ChangeFile, WorkingTreeDiff as WorkingTreeDiffData } from '../../../types'
 import { WorkingTreeDiff } from './WorkingTreeDiff'
 
 const csvFile: ChangeFile = {
@@ -13,6 +13,7 @@ const csvFile: ChangeFile = {
   status: 'added',
   staged: false,
   binary: false,
+  contentClassification: { kind: 'text', source: 'utf8' },
   additions: 0,
   deletions: 0
 }
@@ -25,15 +26,21 @@ describe('working-tree binary Diff visibility', () => {
     updateClientPreferences({ binaryDiffVisible: true })
   })
 
-  it('renders only file size changes when binary Diff is disabled', () => {
+  it('renders CSV as a text diff when binary Diff is disabled', () => {
     updateClientPreferences({ binaryDiffVisible: false })
+    const diff: WorkingTreeDiffData = {
+      path: 'data/market.csv',
+      action: 'modify',
+      patch: '@@ -1 +1 @@\n-symbol,price\n-BTC,100\n+BTC,101',
+      contentClassification: { kind: 'text', source: 'loreDiff' }
+    }
 
     const html = renderToStaticMarkup(
       <WorkingTreeDiff
         file={csvFile}
         selectionLabel={null}
         selectedCount={1}
-        diff={null}
+        diff={diff}
         loading={false}
         error={null}
         binaryPreview={{
@@ -59,13 +66,38 @@ describe('working-tree binary Diff visibility', () => {
       />
     )
 
-    expect(html).toContain('二进制 Diff 已隐藏')
-    expect(html).toContain('文件正文保持关闭，仅显示文件大小变化。')
-    expect(html).toContain('4.0 KB')
-    expect(html).toContain('8.0 KB')
-    expect(html).toContain('+4.0 KB')
-    expect(html).toContain('binary-diff-preview__size-only')
-    expect(html).toContain('binary-diff-preview__size-delta is-increase')
+    expect(html).toContain('working-diff__code')
+    expect(html).toContain('BTC,100')
+    expect(html).toContain('BTC,101')
+    expect(html).not.toContain('二进制 Diff 已隐藏')
     expect(html).not.toContain('binary-diff-preview__csv')
+  })
+
+  it('renders CSV as a table preview when binary Diff is enabled', () => {
+    const html = renderToStaticMarkup(
+      <WorkingTreeDiff
+        file={csvFile}
+        selectionLabel={null}
+        selectedCount={1}
+        diff={null}
+        loading={false}
+        error={null}
+        binaryPreview={{
+          after: {
+            path: 'data/market.csv',
+            kind: 'csv',
+            mimeType: 'text/csv',
+            data: new TextEncoder().encode('symbol,price\nBTC,101'),
+            size: 20,
+            contentState: 'available'
+          }
+        }}
+        binaryPreviewLoading={false}
+        binaryPreviewError={null}
+      />
+    )
+
+    expect(html).toContain('binary-diff-preview__csv')
+    expect(html).not.toContain('working-diff__code')
   })
 })

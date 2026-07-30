@@ -4,13 +4,13 @@ import { useClientPreferences } from '../../../hooks/useClientPreferences'
 import { t } from '../../../i18n'
 import { loadBinaryFilePreview, loadWorkingTreeDiff } from '../../../services/lore'
 import {
-  binaryPreviewKind,
   changeFilePath,
   createDemoWorkingTreeDiff,
   LatestTaskQueue,
   readErrorMessage,
   resolvedDiffContentKind,
   shouldLoadRepositoryTextDiff,
+  shouldUseRepositoryPreview,
   settleTasksSequentially
 } from '../../../shared/lib'
 import type {
@@ -90,7 +90,7 @@ export function WorkingTreeDiffContainer({
       return
     }
     const path = changeFilePath(file)
-    if (!shouldLoadRepositoryTextDiff(file, path)) {
+    if (!shouldLoadRepositoryTextDiff(file, path, preferences.binaryDiffVisible)) {
       setDiffLoading(false)
       setDiff({
         path,
@@ -127,11 +127,11 @@ export function WorkingTreeDiffContainer({
           setDiffLoading(false)
         }
       })
-  }, [applicationMode, file, preferences.diff, repositoryPath])
+  }, [applicationMode, file, preferences.binaryDiffVisible, preferences.diff, repositoryPath])
 
   /**
-   * 预览格式只读取当前主要文件的前后版本。关闭二进制 Diff 时仍请求轻量大小元数据，
-   * Rust 不会打开正文、解析资产或通过 Raw IPC 传输二进制载荷。
+   * 预览格式只读取当前主要文件的前后版本。关闭二进制 Diff 时，真二进制与专用资产
+   * 仍请求轻量大小元数据；文本 CSV/SVG 则完全退出预览路径并改读文本 Diff。
    *
    * 新增文件没有 before，删除文件没有 after；快速切换时旧请求不会覆盖新文件。
    */
@@ -144,7 +144,7 @@ export function WorkingTreeDiffContainer({
     setBinaryPreviewError(null)
 
     const path = file ? changeFilePath(file) : ''
-    if (!file || (effectiveContentKind !== 'binary' && !binaryPreviewKind(path))) {
+    if (!file || !shouldUseRepositoryPreview(file, path, preferences.binaryDiffVisible, effectiveContentKind)) {
       setBinaryPreviewLoading(false)
       return
     }

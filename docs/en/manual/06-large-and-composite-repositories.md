@@ -69,9 +69,10 @@ missing directory is reported even if its configuration still exists.
 | Type | Preview |
 | --- | --- |
 | Images, TGA, TIFF, DDS, EXR | In-app image preview; non-browser formats are converted at the Rust boundary, with HDR tone mapping for EXR. |
+| SVG | Rasterized to a bounded PNG at the Rust boundary; scripts, links, and external/data image resources are not passed to the WebView. |
 | KTX2 | WebGL Canvas using the app-bundled Basis transcoder, without a CDN. |
 | PDF | In-app parser drawing the current page only. |
-| CSV | Bounded, read-only table. |
+| CSV | Bounded, read-only table when Binary Diff is enabled; source text Diff when disabled. |
 | OBJ, FBX, GLTF, GLB | In-app Canvas without external resource loading. |
 | WAV, OGG, MP3, FLAC | Non-autoplay in-app audio controls; the underlying codec must still be available to the system media pipeline. |
 | TTF, OTF | Lifecycle-bound in-memory font specimen, unloaded when the preview closes. |
@@ -83,8 +84,9 @@ missing directory is reported even if its configuration still exists.
 | Unity `.assets`, Godot `.res` | Stable headers, versions, sizes, and safely countable object types. |
 | Other binary | Metadata/comparison or an explicit unsupported reason. |
 
-Content is read on demand for the primary selection. Disabling Binary Diff stops those
-reads in both workspace and Revision changes.
+Content is read on demand for the primary selection. Text-backed SVG and CSV switch to source
+text Diff when Binary Diff is disabled; other preview formats stop content reads in both workspace
+and Revision changes.
 
 Container directories are entry-limited, and texture decoding has separate dimension and memory
 budgets. Full source payloads use a 20 MiB embedded-preview limit by default. Change the per-file

@@ -16,6 +16,9 @@ toml_edit = "0.25.13"
 [dependencies]
 # 仅用于把浏览器无法直接显示的 TGA/TIFF 转成 PNG；不引入完整编解码全家桶。
 image = { version = "0.25", default-features = false, features = ["dds", "exr", "jpeg", "png", "tga", "tiff"] }
+# SVG 只在 Rust 边界解析并栅格化；关闭位图嵌入与内存映射字体功能，且由调用方
+# 覆盖 href 解析器，避免预览读取本地路径、外部资源或把原始 SVG 交给 WebView。
+resvg = { version = "0.47.0", default-features = false, features = ["text", "system-fonts"] }
 # Diff 预览只解码单张受限尺寸纹理。EXR 默认的 Rayon 并行解码会把短命像素块
 # 分散到全局工作线程的分配器缓存，在 Windows 上每次刷新都抬高数百 MiB Private Bytes。
 exr = { version = "1.74", default-features = false }

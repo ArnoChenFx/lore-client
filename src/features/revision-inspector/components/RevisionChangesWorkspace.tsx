@@ -20,7 +20,6 @@ import { useTranslation } from 'react-i18next'
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
 import { t } from '../../../i18n'
 import {
-  binaryPreviewKind,
   buildChangeTreeRows,
   changeDirectoryPathFromObjectId,
   changeFileObjectId,
@@ -35,6 +34,7 @@ import {
   resolveSelectedChangeFiles,
   selectChangeContext,
   selectChangeFile,
+  shouldUseRepositoryPreview,
   settleTasksSequentially,
   type ChangeViewMode
 } from '../../../shared/lib'
@@ -209,8 +209,15 @@ export function RevisionChangesWorkspace({
     : null
   const diffLines = useMemo(() => (primaryDiff?.patch ? parseUnifiedDiff(primaryDiff.patch) : []), [primaryDiff?.patch])
   const diffLineCounts = useMemo(() => countUnifiedDiffLines(diffLines), [diffLines])
-  const previewableKind = primaryFile ? binaryPreviewKind(changeFilePath(primaryFile)) : null
   const primaryContentKind = resolvedDiffContentKind(primaryFile, primaryDiff)
+  const previewModeActive = primaryFile
+    ? shouldUseRepositoryPreview(
+        primaryFile,
+        changeFilePath(primaryFile),
+        preferences.binaryDiffVisible,
+        primaryContentKind
+      )
+    : false
 
   useEffect(() => {
     const queue = previewQueue.current
@@ -244,9 +251,8 @@ export function RevisionChangesWorkspace({
   /**
    * 只为主选择读取可预览的前后版本。
    *
-   * 目录与多选中的非主文件不会触发 Store 读取；不支持预览或关闭二进制 Diff 时只
-   * 读取 Tree 大小元数据，受支持且启用预览时才读取正文。快速切换对象时通过序号
-   * 丢弃旧请求。
+   * 目录与多选中的非主文件不会触发 Store 读取；真二进制与专用资产在关闭预览时只读
+   * Tree 大小元数据，文本 CSV/SVG 则切换到文本 Diff。快速切换对象时通过序号丢弃旧请求。
    */
   useEffect(() => {
     const queue = previewQueue.current
@@ -256,12 +262,7 @@ export function RevisionChangesWorkspace({
     setBinaryPreview(null)
     setBinaryPreviewError(null)
 
-    if (
-      !contentSelectionAuthorized ||
-      !diffVisible ||
-      !primaryFile ||
-      (primaryContentKind !== 'binary' && !previewableKind)
-    ) {
+    if (!contentSelectionAuthorized || !diffVisible || !primaryFile || !previewModeActive) {
       setBinaryPreviewLoading(false)
       return
     }
@@ -333,7 +334,7 @@ export function RevisionChangesWorkspace({
     diffVisible,
     onLoadBinaryPreview,
     preferences.binaryDiffVisible,
-    previewableKind,
+    previewModeActive,
     primaryContentKind,
     primaryFile,
     revision.id,
@@ -747,16 +748,13 @@ export function RevisionChangesWorkspace({
                 <FileQuestion size={28} />
                 <strong>{t('selectFileViewDiff_ddf0')}</strong>
               </div>
-            ) : (primaryContentKind === 'binary' || previewableKind) &&
-              !preferences.binaryDiffVisible &&
-              !binaryPreview &&
-              !binaryPreviewLoading ? (
+            ) : previewModeActive && !preferences.binaryDiffVisible && !binaryPreview && !binaryPreviewLoading ? (
               <div className="revision-diff-pane__empty">
                 <Binary size={30} />
                 <strong>{t('binaryDiffHidden')}</strong>
                 <span>{t('enableBinaryDiffInOptions')}</span>
               </div>
-            ) : previewableKind || primaryContentKind === 'binary' ? (
+            ) : previewModeActive ? (
               <BinaryDiffPreview
                 fileName={primaryFile.name}
                 preview={binaryPreview}
@@ -766,7 +764,7 @@ export function RevisionChangesWorkspace({
               />
             ) : !primaryDiff?.patch ? (
               <div className="revision-diff-pane__empty">
-                <Binary size={30} />
+                <FileCode2 size={30} />
                 <strong>{t('noTextDiffToDisplay')}</strong>
                 <span>{changeFilePath(primaryFile)}</span>
               </div>

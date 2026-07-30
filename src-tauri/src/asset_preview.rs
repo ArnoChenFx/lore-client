@@ -9,6 +9,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
+use std::sync::{Arc, OnceLock};
 
 const MAX_DIRECTORY_ENTRIES: usize = 500;
 const MAX_DECLARED_ENTRIES: usize = 100_000;
@@ -17,6 +18,8 @@ const MAX_UNITY_BLOCK_INFO_BYTES: usize = 4 * 1024 * 1024;
 const MAX_BLENDER_DECOMPRESSED_BYTES: usize = 64 * 1024 * 1024;
 const MAX_EMBEDDED_THUMBNAIL_BYTES: usize = 16 * 1024 * 1024;
 const MAX_EMBEDDED_THUMBNAIL_DIMENSION: u32 = 1_024;
+/// SVG 是可声明任意画布尺寸的文本格式；栅格化单边上限把最终 RGBA 缓冲限制在 16 MiB。
+const MAX_SVG_PREVIEW_DIMENSION: u32 = 1_024;
 /// Unreal 版本化包摘要中的 CustomVersion 数组最长约 80 KiB；128 KiB 足以覆盖它、
 /// FolderName 以及后续 512 字节候选窗口，同时不会随源资产体积增长。
 const MAX_UNREAL_SUMMARY_PREFIX_BYTES: usize = 128 * 1024;
@@ -1896,6 +1899,8 @@ pub fn binary_preview_format(path: &Path) -> Option<(&'static str, &'static str)
         "gltf" => Some(("model", "model/gltf+json")),
         "glb" => Some(("model", "model/gltf-binary")),
         "csv" => Some(("csv", "text/csv")),
+        // 源 MIME 只用于识别；原始 SVG 会在 Rust 边界拒绝资源引用并转成 PNG。
+        "svg" => Some(("image", "image/svg+xml")),
         "wav" => Some(("audio", "audio/wav")),
         "ogg" => Some(("audio", "audio/ogg")),
         "mp3" => Some(("audio", "audio/mpeg")),
@@ -2070,6 +2075,9 @@ pub fn prepare_preview_payload(
         .and_then(|extension| extension.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
+    if extension == "svg" && kind == "image" {
+        return rasterize_svg_preview(&bytes);
+    }
     let source_format = match extension.as_str() {
         "tga" if kind == "image" => Some(image::ImageFormat::Tga),
         "tif" | "tiff" if kind == "image" => Some(image::ImageFormat::Tiff),
@@ -2157,6 +2165,54 @@ pub fn prepare_preview_payload(
         image = image::DynamicImage::ImageRgba8(mapped);
     }
     encode_texture_preview_png(image)
+}
+
+/// 把不可信 SVG 栅格化成有界 PNG。
+///
+/// usvg 的默认字符串解析器会把 href 当成本地路径读取，因此这里必须同时拒绝字符串
+/// 与 data URL 资源；脚本、链接和事件属性不会进入渲染树。最终 WebView 只收到 PNG。
+fn rasterize_svg_preview(bytes: &[u8]) -> Result<(&'static str, Vec<u8>), AssetPreviewError> {
+    static FONT_DATABASE: OnceLock<Arc<resvg::usvg::fontdb::Database>> = OnceLock::new();
+
+    let mut options = resvg::usvg::Options::default();
+    options.image_href_resolver = resvg::usvg::ImageHrefResolver {
+        resolve_data: Box::new(|_, _, _| None),
+        resolve_string: Box::new(|_, _| None),
+    };
+    options.fontdb = FONT_DATABASE
+        .get_or_init(|| {
+            let mut database = resvg::usvg::fontdb::Database::new();
+            database.load_system_fonts();
+            Arc::new(database)
+        })
+        .clone();
+
+    let tree = resvg::usvg::Tree::from_data(bytes, &options).map_err(|error| {
+        AssetPreviewError::decode_failed(format!("Failed to parse SVG preview: {error}"))
+    })?;
+    let source_size = tree.size();
+    let longest_side = source_size.width().max(source_size.height());
+    let scale = (MAX_SVG_PREVIEW_DIMENSION as f32 / longest_side).min(1.0);
+    let width = (source_size.width() * scale)
+        .ceil()
+        .clamp(1.0, MAX_SVG_PREVIEW_DIMENSION as f32) as u32;
+    let height = (source_size.height() * scale)
+        .ceil()
+        .clamp(1.0, MAX_SVG_PREVIEW_DIMENSION as f32) as u32;
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height).ok_or_else(|| {
+        AssetPreviewError::decode_failed(format!(
+            "Failed to allocate SVG preview canvas: {width}x{height}"
+        ))
+    })?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::from_scale(scale, scale),
+        &mut pixmap.as_mut(),
+    );
+    let png = pixmap.encode_png().map_err(|error| {
+        AssetPreviewError::encode_failed(format!("Failed to encode SVG preview as PNG: {error}"))
+    })?;
+    Ok(("image/png", png))
 }
 
 /// 图片解码限制同时约束维度和分配；原文件读取上限并不能阻止压缩纹理解出巨幅像素。
@@ -2876,6 +2932,10 @@ mod tests {
             Some(("csv", "text/csv"))
         );
         assert_eq!(
+            binary_preview_format(Path::new("Images/vector.svg")),
+            Some(("image", "image/svg+xml"))
+        );
+        assert_eq!(
             binary_preview_format(Path::new("Content/Textures/Sky.DDS")),
             Some(("image", "image/vnd-ms.dds"))
         );
@@ -2903,7 +2963,6 @@ mod tests {
             binary_preview_format(Path::new("Content/Map.umap")),
             Some(("asset", "application/x-unreal-asset"))
         );
-        assert_eq!(binary_preview_format(Path::new("Images/vector.svg")), None);
         assert_eq!(
             binary_preview_format(Path::new("Content/Map.unknown")),
             None
@@ -2928,6 +2987,30 @@ mod tests {
                 .expect("A valid TGA should be converted to PNG");
         assert_eq!(mime_type, "image/png");
         assert!(png_bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]));
+    }
+
+    #[test]
+    fn svg_preview_is_safely_rasterized_to_a_bounded_png() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="100000" height="50000">
+          <script>alert('never executed')</script>
+          <image href="file:///definitely-not-readable/secret.png" width="10" height="10"/>
+          <rect width="100000" height="50000" fill="#78a4ff"/>
+        </svg>"##;
+
+        let (mime_type, png_bytes) = prepare_preview_payload(
+            Path::new("diagram.svg"),
+            "image",
+            "image/svg+xml",
+            svg.to_vec(),
+        )
+        .expect("A valid SVG should be rasterized without resolving external resources");
+        let raster = image::load_from_memory_with_format(&png_bytes, image::ImageFormat::Png)
+            .expect("The SVG preview payload should be a valid PNG");
+
+        assert_eq!(mime_type, "image/png");
+        assert_eq!(raster.width(), MAX_SVG_PREVIEW_DIMENSION);
+        assert_eq!(raster.height(), MAX_SVG_PREVIEW_DIMENSION / 2);
+        assert!(!png_bytes.windows(6).any(|window| window == b"script"));
     }
 
     #[test]

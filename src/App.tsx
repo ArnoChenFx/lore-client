@@ -283,6 +283,7 @@ function App() {
     selectedRevision,
     inspectorTab,
     diffPreferences: preferences.diff,
+    binaryDiffVisible: preferences.binaryDiffVisible,
     revisionChangesDiffVisible: preferences.revisionChangesDiffVisible,
     demoRevisionFiles
   })

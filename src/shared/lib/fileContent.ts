@@ -33,11 +33,40 @@ export function isBinaryRepositoryFile(file: RepositoryFileReference | null | un
  *
  * 通用内容分类回答“这些字节是否像文本”，专用预览白名单回答“产品应如何安全展示”。
  * OBJ、GLTF 等格式即使正文是 UTF-8，也必须优先走有大小限制、可取消解析的资产预览，
- * 避免 Lore 为数百万行结构化资产生成完整文本补丁。CSV 是刻意保留的例外：其只读表格
- * 预览与行级文本 Diff 都有用户价值，且两条路径分别受既有限制约束。
+ * 避免 Lore 为数百万行结构化资产生成完整文本补丁。CSV 与 SVG 是刻意保留的例外：
+ * 启用二进制 Diff 时走专用表格或安全栅格图片预览，关闭后才请求行级文本 Diff。
  */
-export function shouldLoadRepositoryTextDiff(file: RepositoryFileReference | null | undefined, path: string): boolean {
+export function shouldLoadRepositoryTextDiff(
+  file: RepositoryFileReference | null | undefined,
+  path: string,
+  binaryDiffVisible: boolean
+): boolean {
   if (!file || repositoryFileContentKind(file) === 'binary') return false
   const previewKind = binaryPreviewKind(path)
-  return previewKind === null || previewKind === 'csv'
+  return previewKind === null || (isTextBackedPreviewPath(path) && !binaryDiffVisible)
+}
+
+/**
+ * 判断当前文件是否应进入受限预览路径。
+ *
+ * 真二进制内容无论开关状态都保留在该路径：关闭时仍需读取轻量大小摘要。只有已确认
+ * 为文本的 CSV/SVG 会在关闭开关后完全退出预览路径，避免无意义的元数据请求遮住文本 Diff。
+ */
+export function shouldUseRepositoryPreview(
+  file: RepositoryFileReference | null | undefined,
+  path: string,
+  binaryDiffVisible: boolean,
+  resolvedKind: FileContentKind = repositoryFileContentKind(file)
+): boolean {
+  if (!file) return false
+  if (resolvedKind === 'binary') return true
+  if (!binaryPreviewKind(path)) return false
+  return !isTextBackedPreviewPath(path) || binaryDiffVisible
+}
+
+/** CSV/SVG 的源文件是文本，产品允许在专用预览与文本 Diff 之间切换。 */
+function isTextBackedPreviewPath(path: string): boolean {
+  const normalized = path.split(/[?#]/, 1)[0]?.replaceAll('\\', '/') ?? ''
+  const extension = normalized.split('/').at(-1)?.split('.').at(-1)?.toLocaleLowerCase()
+  return extension === 'csv' || extension === 'svg'
 }

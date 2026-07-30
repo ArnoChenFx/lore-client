@@ -43,8 +43,9 @@ include common images, TGA/TIFF/DDS/KTX2/EXR textures, one PDF page at a time, b
 CSV tables, common 3D formats, WAV/OGG/MP3/FLAC audio, TTF/OTF fonts, read-only
 ZIP/PAK/AssetBundle/PCK directories, and bounded Unreal/Unity/Godot/Blender metadata.
 Encrypted or version-dependent directories explicitly fall back to trusted container
-metadata instead of guessed entries. Disabling binary Diff stops content reads in both
-workspace and Revision views.
+metadata instead of guessed entries. For text-backed SVG and CSV, enabling binary Diff uses
+the image/table preview; disabling it switches to the source text Diff. Other binary and
+structured formats stop content reads in both workspace and Revision views when disabled.
 
 ## File context menu
 
