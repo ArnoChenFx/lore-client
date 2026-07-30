@@ -1,4 +1,4 @@
-import { FileWarning, LoaderCircle } from 'lucide-react'
+import { FileWarning } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Object3D, PerspectiveCamera, Scene, WebGLRenderer } from 'three'
@@ -318,12 +318,6 @@ export function ModelCanvasPreview({ fileName, label, data }: ModelCanvasPreview
     <div className="binary-diff-preview__model-viewer" aria-label={t('status.previewModel', { fileName, label })}>
       <div ref={surfaceRef} className="binary-diff-preview__model-surface" aria-busy={loading}>
         <div ref={hostRef} className="binary-diff-preview__model-host" />
-        {loading && !error && (
-          <div className="binary-diff-preview__pdf-status" role="status">
-            <LoaderCircle className="is-spinning" size={24} />
-            <span>{t('parsing3dModel')}</span>
-          </div>
-        )}
         {error && (
           <div className="binary-diff-preview__pdf-status is-error" role="alert">
             <FileWarning size={24} />

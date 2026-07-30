@@ -118,4 +118,25 @@ describe('working-tree binary Diff visibility', () => {
     expect(html).toContain('binary-diff-preview__csv')
     expect(html).not.toContain('working-diff__code')
   })
+
+  it('keeps the Diff body empty while loading', () => {
+    const html = renderToStaticMarkup(
+      <WorkingTreeDiff
+        file={csvFile}
+        selectionLabel={null}
+        selectedCount={1}
+        diff={null}
+        loading
+        error={null}
+        binaryPreview={null}
+        binaryPreviewLoading={false}
+        binaryPreviewError={null}
+      />
+    )
+
+    expect(html).toContain('working-diff__header')
+    expect(html).not.toContain('working-diff__empty')
+    expect(html).not.toContain('正在读取 Lore Diff')
+    expect(html).not.toContain('is-spinning')
+  })
 })

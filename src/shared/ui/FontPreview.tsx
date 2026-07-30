@@ -1,4 +1,4 @@
-import { FileWarning, LoaderCircle, Type } from 'lucide-react'
+import { FileWarning, Type } from 'lucide-react'
 import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -47,11 +47,13 @@ export function FontPreview({ fileName, label, data }: FontPreviewProps) {
     }
   }, [data, family])
 
-  if (status !== 'ready') {
+  if (status === 'loading') return null
+
+  if (status === 'error') {
     return (
-      <div className={`binary-diff-preview__pdf-status ${status === 'error' ? 'is-error' : ''}`} role="status">
-        {status === 'error' ? <FileWarning size={24} /> : <LoaderCircle className="is-spinning" size={24} />}
-        <span>{status === 'error' ? t('fontPreviewLoadFailed') : t('loadingFontPreview')}</span>
+      <div className="binary-diff-preview__pdf-status is-error" role="alert">
+        <FileWarning size={24} />
+        <span>{t('fontPreviewLoadFailed')}</span>
       </div>
     )
   }

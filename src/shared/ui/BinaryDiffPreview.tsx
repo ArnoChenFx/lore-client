@@ -1,4 +1,4 @@
-import { ArrowRight, Binary, FileWarning, LoaderCircle } from 'lucide-react'
+import { ArrowRight, Binary, FileWarning } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -220,15 +220,8 @@ function SizeOnlyPreview({
 /** 所有受控资产类型共用的 Diff 预览表面；两侧缺失时给出明确状态。 */
 export function BinaryDiffPreview({ fileName, preview, loading, error, size }: BinaryDiffPreviewProps) {
   const { t } = useTranslation()
-  if (loading) {
-    return (
-      <div className="binary-diff-preview__empty" role="status">
-        <LoaderCircle className="is-spinning" size={28} />
-        <strong>{t('loadingPreview')}</strong>
-        <span>{fileName}</span>
-      </div>
-    )
-  }
+  // Diff 在读取期间保持内容区空白，避免文件快速切换时连续闪现多级加载界面。
+  if (loading) return null
 
   if (error) {
     return (

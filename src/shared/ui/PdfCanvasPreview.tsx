@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, FileWarning, LoaderCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FileWarning } from 'lucide-react'
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs-dist'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -173,7 +173,7 @@ export function PdfCanvasPreview({ fileName, label, data }: PdfCanvasPreviewProp
   }, [pageNumber, pdfDocument, surfaceWidth])
 
   const busy = loadingDocument || renderingPage
-  const pageLabel = pageCount > 0 ? t('status.pageOf', { page: pageNumber, total: pageCount }) : t('loadingPdf')
+  const pageLabel = pageCount > 0 ? t('status.pageOf', { page: pageNumber, total: pageCount }) : ''
 
   return (
     <div className="binary-diff-preview__pdf-viewer">
@@ -181,12 +181,6 @@ export function PdfCanvasPreview({ fileName, label, data }: PdfCanvasPreviewProp
         <canvas ref={canvasRef} role="img" aria-label={`${fileName}（${label}）${pageLabel}`}>
           {t('environmentSupportCanvasPdfPreview_a040')}
         </canvas>
-        {busy && !error && (
-          <div className="binary-diff-preview__pdf-status" role="status">
-            <LoaderCircle className="is-spinning" size={24} />
-            <span>{loadingDocument ? t('parsingPdf') : t('status.renderingPage', { page: pageNumber })}</span>
-          </div>
-        )}
         {error && (
           <div className="binary-diff-preview__pdf-status is-error" role="alert">
             <FileWarning size={24} />
@@ -194,23 +188,25 @@ export function PdfCanvasPreview({ fileName, label, data }: PdfCanvasPreviewProp
           </div>
         )}
       </div>
-      <footer className="binary-diff-preview__pdf-toolbar">
-        <IconButton
-          icon={<ChevronLeft size={15} />}
-          label={t('status.pdfPreviousPage', { label })}
-          title={t('previousPage')}
-          disabled={busy || pageNumber <= 1}
-          onClick={() => setPageNumber((currentPage) => Math.max(1, currentPage - 1))}
-        />
-        <span>{pageLabel}</span>
-        <IconButton
-          icon={<ChevronRight size={15} />}
-          label={t('status.pdfNextPage', { label })}
-          title={t('nextPage')}
-          disabled={busy || pageCount === 0 || pageNumber >= pageCount}
-          onClick={() => setPageNumber((currentPage) => Math.min(pageCount, currentPage + 1))}
-        />
-      </footer>
+      {pageCount > 0 && (
+        <footer className="binary-diff-preview__pdf-toolbar">
+          <IconButton
+            icon={<ChevronLeft size={15} />}
+            label={t('status.pdfPreviousPage', { label })}
+            title={t('previousPage')}
+            disabled={busy || pageNumber <= 1}
+            onClick={() => setPageNumber((currentPage) => Math.max(1, currentPage - 1))}
+          />
+          <span>{pageLabel}</span>
+          <IconButton
+            icon={<ChevronRight size={15} />}
+            label={t('status.pdfNextPage', { label })}
+            title={t('nextPage')}
+            disabled={busy || pageCount === 0 || pageNumber >= pageCount}
+            onClick={() => setPageNumber((currentPage) => Math.min(pageCount, currentPage + 1))}
+          />
+        </footer>
+      )}
     </div>
   )
 }

@@ -10,7 +10,6 @@ import {
   FolderOpen,
   List,
   ListTree,
-  LoaderCircle,
   Search,
   TriangleAlert
 } from 'lucide-react'
@@ -607,12 +606,7 @@ export function RevisionChangesWorkspace({
             }
           }}
         >
-          {loading ? (
-            <div className="revision-change-browser__empty">
-              <LoaderCircle className="is-spinning" size={18} />
-              {t('loadingRevisionDiff')}
-            </div>
-          ) : error ? (
+          {loading ? null : error ? (
             <div className="revision-change-browser__empty is-error">
               <TriangleAlert size={18} />
               {error}
@@ -730,12 +724,7 @@ export function RevisionChangesWorkspace({
               ) : null}
             </header>
 
-            {diffLoading ? (
-              <div className="revision-diff-pane__empty">
-                <LoaderCircle className="is-spinning" size={28} />
-                <strong>{t('loadingLoreRevisionDiff')}</strong>
-              </div>
-            ) : diffError ? (
+            {diffLoading ? null : diffError ? (
               <div className="revision-diff-pane__empty is-error">
                 <TriangleAlert size={28} />
                 <strong>{t('unableToLoadRevisionDiff')}</strong>

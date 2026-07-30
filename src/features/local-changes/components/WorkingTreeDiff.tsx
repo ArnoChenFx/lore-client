@@ -1,4 +1,4 @@
-import { Binary, FileCode2, FileQuestion, Folder, LoaderCircle, LockKeyhole, TriangleAlert } from 'lucide-react'
+import { Binary, FileCode2, FileQuestion, Folder, LockKeyhole, TriangleAlert } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -123,13 +123,7 @@ export function WorkingTreeDiff({
           <strong>{selectionLabel ? t('folderSelected') : t('selectFileViewDiff_ddf0')}</strong>
           <span>{selectionLabel ? t('directoriesSingleTextDiffFiles_8d43') : t('flatTreeViewsShareSame_be9c')}</span>
         </div>
-      ) : loading ? (
-        <div className="working-diff__empty">
-          <LoaderCircle className="is-spinning" size={27} />
-          <strong>{t('loadingLoreDiff')}</strong>
-          <span>{filePathLabel}</span>
-        </div>
-      ) : error ? (
+      ) : loading ? null : error ? (
         <div className="working-diff__empty is-error">
           <TriangleAlert size={27} />
           <strong>{t('unableToLoadFileDiff')}</strong>

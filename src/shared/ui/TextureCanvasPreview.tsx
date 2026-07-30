@@ -1,4 +1,4 @@
-import { FileWarning, LoaderCircle } from 'lucide-react'
+import { FileWarning } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Mesh, OrthographicCamera, Scene, Texture, WebGLRenderer } from 'three'
@@ -137,10 +137,10 @@ export function TextureCanvasPreview({ fileName, label, data, metadata }: Textur
   return (
     <div className="binary-diff-preview__texture-viewer">
       <div ref={hostRef} className="binary-diff-preview__texture-host" aria-busy={loading} />
-      {(loading || error) && (
-        <div className={`binary-diff-preview__pdf-status ${error ? 'is-error' : ''}`} role={error ? 'alert' : 'status'}>
-          {error ? <FileWarning size={24} /> : <LoaderCircle className="is-spinning" size={24} />}
-          <span>{error ?? t('parsingKtx2Texture')}</span>
+      {error && (
+        <div className="binary-diff-preview__pdf-status is-error" role="alert">
+          <FileWarning size={24} />
+          <span>{error}</span>
         </div>
       )}
       {!loading && !error && facts.length > 0 && (

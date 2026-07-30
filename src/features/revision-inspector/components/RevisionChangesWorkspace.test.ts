@@ -108,4 +108,44 @@ describe('revision change default selection', () => {
     expect(emptyState).toContain('lucide-file-code-corner')
     expect(emptyState).not.toContain('lucide-binary')
   })
+
+  it('keeps both Revision Diff areas empty while loading', () => {
+    const revision: Revision = {
+      id: 'revision-2',
+      shortId: 'revision',
+      title: 'Loading diff',
+      description: '',
+      author: 'Author',
+      initials: 'AU',
+      timestamp: '2026-07-30T00:00:00.000Z',
+      relativeTime: 'now',
+      branchPointers: [],
+      parentCount: 1,
+      parentIds: ['revision-1'],
+      filesChanged: 1,
+      additions: 0,
+      deletions: 0,
+      size: '1 KB'
+    }
+    const html = renderToStaticMarkup(
+      createElement(RevisionChangesWorkspace, {
+        repositoryPath: 'E:\\Repos\\fixture',
+        revision,
+        files: [],
+        diffs: [],
+        loading: true,
+        error: null,
+        diffLoading: true,
+        onOpenContextMenu: () => undefined
+      })
+    )
+
+    expect(html).toContain('revision-change-browser__list')
+    expect(html).toContain('revision-diff-pane__header')
+    expect(html).not.toContain('revision-change-browser__empty')
+    expect(html).not.toContain('revision-diff-pane__empty')
+    expect(html).not.toContain('正在读取 Revision Diff')
+    expect(html).not.toContain('正在读取 Lore Revision Diff')
+    expect(html).not.toContain('is-spinning')
+  })
 })

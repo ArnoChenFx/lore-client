@@ -81,8 +81,8 @@ describe('binary diff preview', () => {
     )
 
     expect(html).toContain('<canvas')
-    expect(html).toContain('Parsing PDF')
-    expect(html).toContain('PDF previous page')
+    expect(html).not.toContain('Parsing PDF')
+    expect(html).not.toContain('is-spinning')
     expect(html).not.toContain('<iframe')
     expect(html).not.toContain('data:application/pdf')
   })
@@ -107,9 +107,10 @@ describe('binary diff preview', () => {
     )
 
     // Canvas 挂在 React 不管理的宿主里，静态渲染只验证预览壳层。
-    expect(html).toContain('Parsing 3D model')
     expect(html).toContain('class="binary-diff-preview__card is-model"')
     expect(html).toContain('binary-diff-preview__model-host')
+    expect(html).not.toContain('Parsing 3D model')
+    expect(html).not.toContain('is-spinning')
     expect(html).not.toContain('<iframe')
     expect(html).not.toContain('data:model/fbx')
   })
@@ -191,7 +192,8 @@ describe('binary diff preview', () => {
     )
 
     expect(html).toContain('binary-diff-preview__texture-host')
-    expect(html).toContain('Transcoding KTX2 texture')
+    expect(html).not.toContain('Transcoding KTX2 texture')
+    expect(html).not.toContain('is-spinning')
     expect(html).not.toContain('https://')
   })
 
@@ -214,8 +216,15 @@ describe('binary diff preview', () => {
       />
     )
 
-    expect(html).toContain('Parsing font')
+    expect(html).not.toContain('Parsing font')
+    expect(html).not.toContain('is-spinning')
     expect(html).not.toContain('data:font/otf')
+  })
+
+  it('renders no transition content while preview data is loading', () => {
+    const html = renderToStaticMarkup(<BinaryDiffPreview fileName="Hero.fbx" loading error={null} preview={null} />)
+
+    expect(html).toBe('')
   })
 
   it('renders archive entries from Rust structured metadata without extracting files', () => {
