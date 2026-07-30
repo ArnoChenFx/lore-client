@@ -1018,6 +1018,7 @@ const enUSStatic = {
   closeUpdateDialog: 'Close update dialog',
   currentVersion: 'Current version',
   downloadInstallAndRestart: 'Download, Install, and Restart',
+  retryDownloadInstallAndRestart: 'Retry Download, Install, and Restart',
   downloadingUpdate: 'Downloading update',
   installingUpdate: 'Installing; the app will restart shortly',
   latestVersionInstalled: 'You are running the latest version',
@@ -1026,7 +1027,7 @@ const enUSStatic = {
   updateCheckFailedDescription: 'Unable to check GitHub for updates. Check your network connection and try again.',
   updateDownloadProgress: 'Update download progress',
   updateInstallFailedDescription:
-    'The update could not be downloaded or installed. The current version was not replaced; try again later.',
+    'The update could not be downloaded or installed. The current version was not replaced; you can retry now.',
   updateReadyDescription: 'Installation closes and restarts Lore Client. Save any unfinished work first.',
   updateSectionLabel: 'UPDATE',
   updatesOnlyDesktopRelease: 'In-app updates are only available in release desktop builds.',

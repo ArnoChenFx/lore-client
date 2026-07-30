@@ -34,6 +34,8 @@ const releaseNotesMarkdownComponents: Components = {
 export function UpdateDialog({ state, onInstall, onClose }: UpdateDialogProps) {
   const { t } = useTranslation()
   const busy = isUpdateBusy(state.phase)
+  // 下载或安装失败后 Updater 资源仍然有效，允许用户在同一弹窗中重新发起完整流程。
+  const isInstallRetry = state.phase === 'error' && state.errorKind === 'install'
   const progress = calculateUpdateProgress(state.downloadedBytes, state.totalBytes)
   const status =
     state.phase === 'downloading'
@@ -107,9 +109,14 @@ export function UpdateDialog({ state, onInstall, onClose }: UpdateDialogProps) {
           <button type="button" disabled={busy} onClick={onClose}>
             {t('remindMeLater')}
           </button>
-          <button type="button" className="is-primary" disabled={busy || state.phase === 'error'} onClick={onInstall}>
+          <button
+            type="button"
+            className="is-primary"
+            disabled={busy || (state.phase === 'error' && !isInstallRetry)}
+            onClick={onInstall}
+          >
             <Download size={14} />
-            {busy ? status : t('downloadInstallAndRestart')}
+            {busy ? status : isInstallRetry ? t('retryDownloadInstallAndRestart') : t('downloadInstallAndRestart')}
           </button>
         </footer>
       </section>

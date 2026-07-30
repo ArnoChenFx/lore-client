@@ -147,6 +147,8 @@ export function useAppUpdater(enabled: boolean, automaticallyCheck = true) {
       await relaunch()
     } catch (error) {
       logError('application-updater-install', error)
+      // 不释放 updateRef：Tauri 的下载与安装命令只借用更新资源，保留它才能让弹窗
+      // 在瞬时网络或安装错误后直接重试，同时避免再次检查时丢失当前版本说明。
       setState((current) => ({ ...current, phase: 'error', errorKind: 'install' }))
     } finally {
       busyRef.current = false

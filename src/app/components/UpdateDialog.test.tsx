@@ -57,4 +57,19 @@ describe('UpdateDialog Markdown release notes', () => {
     expect(html).toContain('update-dialog__notes-image-alt')
     expect(html).toContain('tracking pixel')
   })
+
+  it('allows retrying after an update download or installation failure', () => {
+    const failedUpdateState: AppUpdateState = {
+      ...markdownUpdateState,
+      phase: 'error',
+      errorKind: 'install'
+    }
+    const html = renderToStaticMarkup(
+      <UpdateDialog state={failedUpdateState} onInstall={() => undefined} onClose={() => undefined} />
+    )
+
+    // 失败后必须保留同一更新上下文，并提供明确、可操作的重试入口。
+    expect(html).toContain('Retry Download, Install, and Restart')
+    expect(html).toMatch(/<button[^>]*class="is-primary"(?![^>]*disabled)[^>]*>/)
+  })
 })
