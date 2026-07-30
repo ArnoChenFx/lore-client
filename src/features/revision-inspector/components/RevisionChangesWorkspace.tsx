@@ -26,6 +26,7 @@ import {
   changeFilePath,
   changeFilePathTransition,
   countUnifiedDiffLines,
+  ignoreSupersededTaskError,
   isChangeDirectoryObjectId,
   LatestTaskQueue,
   parseUnifiedDiff,
@@ -325,6 +326,8 @@ export function RevisionChangesWorkspace({
           setBinaryPreviewError(errors.join('；') || t('loreReturnPreviewableFileContent_451e'))
         }
       })
+      // 快速切换主动淘汰尚未开始的预览，这是预期控制流；真实异常仍由处理器重新抛出。
+      .catch(ignoreSupersededTaskError)
       .finally(() => {
         if (requestId === previewRequestCounter.current) {
           setBinaryPreviewLoading(false)

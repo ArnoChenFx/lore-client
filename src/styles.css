@@ -6824,23 +6824,37 @@ body.is-resizing-panes {
 }
 
 .binary-diff-preview__metadata-grid > div {
+  /*
+   * 元数据属于快速扫读信息，不需要为键和值各占一行。值固定在单元格右侧，
+   * 既把常见资产的面板高度压缩近一半，也让相邻列的数值更容易纵向比较。
+   */
+  display: grid;
   min-width: 0;
-  padding: 7px 9px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 8px;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line-soft);
 }
 
 .binary-diff-preview__metadata-grid dt {
+  min-width: 0;
+  overflow: hidden;
   color: var(--faint);
   font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .binary-diff-preview__metadata-grid dd {
-  margin: 3px 0 0;
+  min-width: 0;
+  margin: 0;
   color: var(--text-soft);
   font-family: var(--mono);
   font-size: 11px;
   overflow-wrap: anywhere;
+  text-align: right;
 }
 
 .binary-diff-preview__archive-scroll {

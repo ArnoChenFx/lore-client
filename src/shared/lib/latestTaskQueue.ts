@@ -11,6 +11,17 @@ export class SupersededTaskError extends Error {
   }
 }
 
+/**
+ * 在 Promise `catch` 边界消费队列淘汰产生的预期控制流。
+ *
+ * 调用方不能使用空 `catch`，否则真实读取错误也会被隐藏；非队列淘汰错误必须保持原始
+ * 拒绝状态，继续交给页面错误处理或全局日志边界。
+ */
+export function ignoreSupersededTaskError(reason: unknown): void {
+  if (reason instanceof SupersededTaskError) return
+  throw reason
+}
+
 interface PendingTask {
   execute: () => Promise<unknown>
   resolve: (value: unknown) => void

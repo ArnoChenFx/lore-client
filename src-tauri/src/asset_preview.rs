@@ -19,7 +19,7 @@ const MAX_BLENDER_DECOMPRESSED_BYTES: usize = 64 * 1024 * 1024;
 const MAX_EMBEDDED_THUMBNAIL_BYTES: usize = 16 * 1024 * 1024;
 const MAX_EMBEDDED_THUMBNAIL_DIMENSION: u32 = 1_024;
 /// SVG 是可声明任意画布尺寸的文本格式；栅格化单边上限把最终 RGBA 缓冲限制在 16 MiB。
-const MAX_SVG_PREVIEW_DIMENSION: u32 = 1_024;
+const MAX_SVG_PREVIEW_DIMENSION: u32 = 512;
 /// Unreal 版本化包摘要中的 CustomVersion 数组最长约 80 KiB；128 KiB 足以覆盖它、
 /// FolderName 以及后续 512 字节候选窗口，同时不会随源资产体积增长。
 const MAX_UNREAL_SUMMARY_PREFIX_BYTES: usize = 128 * 1024;

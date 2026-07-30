@@ -71,4 +71,20 @@ describe('binary diff preview layout', () => {
     expect(assetMetadata).toMatch(/overflow:\s*visible/)
     expect(assetThumbnail).toMatch(/border-top:\s*1px\s+solid\s+var\(--line\)/)
   })
+
+  it('keeps structured asset metadata in compact inline pairs', () => {
+    const css = readFileSync(new URL('../../styles.css', import.meta.url), 'utf8')
+    const metadataItem = readRule(css, '.binary-diff-preview__metadata-grid > div')
+    const metadataLabel = readRule(css, '.binary-diff-preview__metadata-grid dt')
+    const metadataValue = readRule(css, '.binary-diff-preview__metadata-grid dd')
+
+    // 键和值共享同一行，右对齐的值不会再为每个属性额外占用一行高度。
+    expect(metadataItem).toMatch(/display:\s*grid/)
+    expect(metadataItem).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/)
+    expect(metadataItem).toMatch(/padding:\s*4px\s+8px/)
+    expect(metadataLabel).toMatch(/text-overflow:\s*ellipsis/)
+    expect(metadataLabel).toMatch(/white-space:\s*nowrap/)
+    expect(metadataValue).toMatch(/margin:\s*0/)
+    expect(metadataValue).toMatch(/text-align:\s*right/)
+  })
 })

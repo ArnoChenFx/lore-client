@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { LatestTaskQueue, settleTasksSequentially, SupersededTaskError } from './latestTaskQueue'
+import {
+  ignoreSupersededTaskError,
+  LatestTaskQueue,
+  settleTasksSequentially,
+  SupersededTaskError
+} from './latestTaskQueue'
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void
@@ -56,6 +61,22 @@ describe('latest task queue', () => {
 
     await expect(first).resolves.toBe(1)
     await expect(queuedResult).resolves.toBeInstanceOf(SupersededTaskError)
+  })
+
+  it('consumes superseded control flow while preserving unexpected failures', async () => {
+    const queue = new LatestTaskQueue()
+    const active = createDeferred<number>()
+    const first = queue.run(() => active.promise)
+    const queued = queue.run(async () => 2).catch(ignoreSupersededTaskError)
+
+    queue.cancelPending()
+    active.resolve(1)
+
+    await expect(first).resolves.toBe(1)
+    await expect(queued).resolves.toBeUndefined()
+
+    const unexpected = new Error('unexpected failure')
+    await expect(Promise.reject(unexpected).catch(ignoreSupersededTaskError)).rejects.toBe(unexpected)
   })
 
   it('settles paired binary previews without overlapping their large payloads', async () => {
