@@ -5,9 +5,20 @@ import type { LoreOperationStreamEvent, LoreOperationStreamRecord, OperationDeta
 import { normalizeOperationDetail } from './operationDetail'
 import { selectRecentOperationHistory } from './operationHistory'
 import { mergeLoreOperationStream } from './operationStream'
+import { createSharedAsyncSubscription } from './sharedAsyncSubscription'
 
 /** 可以继续占用全局操作计数的 Lore 生命周期阶段。 */
 const ACTIVE_STREAM_PHASES = new Set<LoreOperationStreamRecord['phase']>(['queued', 'running', 'streaming'])
+
+/**
+ * 全页面只保留一份 Tauri operation-stream listener。
+ *
+ * 模块级生命周期会跨过 React StrictMode 的 Effect 重放，但完整页面 reload 后自然重建；
+ * Rust 端同时会避免为无进度短读广播事件，因而旧页面不会再被启动恢复事件持续投递。
+ */
+const loreOperationStreamSubscription = createSharedAsyncSubscription(subscribeLoreOperationStream, (error) =>
+  console.error('Failed to subscribe to the Lore operation stream', error)
+)
 
 /** beginOperation 返回的短生命周期句柄；墙钟时间用于展示，单调时钟用于计算耗时。 */
 export interface ActiveOperation {
@@ -130,19 +141,9 @@ export function useOperationHistory(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return
 
-    let disposed = false
-    let unlisten: (() => void) | undefined
-    void subscribeLoreOperationStream((event) => {
-      if (!disposed) dispatch({ type: 'stream', event })
-    }).then((cleanup) => {
-      if (disposed) cleanup()
-      else unlisten = cleanup
+    return loreOperationStreamSubscription.subscribe((event) => {
+      dispatch({ type: 'stream', event })
     })
-
-    return () => {
-      disposed = true
-      unlisten?.()
-    }
   }, [enabled])
 
   const activeCount = useMemo(

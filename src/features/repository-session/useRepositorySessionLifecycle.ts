@@ -19,6 +19,20 @@ interface UseRepositorySessionLifecycleOptions {
   notify: AppNotify
 }
 
+type StoredRepositorySessionPreferences = Pick<ClientPreferences, 'repositoryPaths' | 'activeRepositoryPath'>
+
+interface RestoreRepositorySessionOptions {
+  loadPreferences: () => Promise<StoredRepositorySessionPreferences>
+  loadSnapshot: (repositoryPath: string) => Promise<RepositorySnapshot>
+  isCurrent: () => boolean
+}
+
+export interface RestoredRepositorySession {
+  storedPreferences: StoredRepositorySessionPreferences
+  restoredSnapshots: RepositorySnapshot[]
+  failedPaths: string[]
+}
+
 /** 按保存路径恢复首选仓库；路径失效时稳定回退到第一个成功快照。 */
 export function restoredActiveSnapshot(
   snapshots: RepositorySnapshot[],
@@ -46,6 +60,37 @@ export function repositoryPathsForPersistence(
 }
 
 /**
+ * 串行读取一次可被代际淘汰的仓库会话。
+ *
+ * 已进入 Rust 的 IPC 不能由普通 Promise cleanup 取消，因此本函数不伪造“取消成功”；
+ * 它在每个 await 后检查当前代际，一旦调用方已经卸载或开始了新代际，就停止下一条 IPC
+ * 并返回 null，保证旧结果不会再进入 React 会话。
+ */
+export async function restoreRepositorySession({
+  loadPreferences,
+  loadSnapshot,
+  isCurrent
+}: RestoreRepositorySessionOptions): Promise<RestoredRepositorySession | null> {
+  const storedPreferences = await loadPreferences()
+  if (!isCurrent()) return null
+
+  const restoredSnapshots: RepositorySnapshot[] = []
+  const failedPaths: string[] = []
+  for (const repositoryPath of storedPreferences.repositoryPaths) {
+    try {
+      const restoredSnapshot = await loadSnapshot(repositoryPath)
+      if (!isCurrent()) return null
+      restoredSnapshots.push(restoredSnapshot)
+    } catch {
+      if (!isCurrent()) return null
+      failedPaths.push(repositoryPath)
+    }
+  }
+
+  return isCurrent() ? { storedPreferences, restoredSnapshots, failedPaths } : null
+}
+
+/**
  * 恢复并持久化多仓库会话。
  *
  * “恢复是否开始/完成”只服务于这一条启动生命周期，因此由 Hook 私有持有；App 无需
@@ -63,49 +108,69 @@ export function useRepositorySessionLifecycle({
   notify
 }: UseRepositorySessionLifecycleOptions) {
   const [sessionReady, setSessionReady] = useState(applicationMode === 'browser-demo')
-  const restoreStarted = useRef(false)
+  const restoreGeneration = useRef(0)
+  const lifecycleOptions = useRef({
+    replaceRepositorySession,
+    activateSnapshot,
+    setBusyAction,
+    notify
+  })
+  lifecycleOptions.current = {
+    replaceRepositorySession,
+    activateSnapshot,
+    setBusyAction,
+    notify
+  }
 
   useEffect(() => {
-    if (applicationMode !== 'tauri' || restoreStarted.current) return
-    restoreStarted.current = true
+    if (applicationMode !== 'tauri') return
 
-    setBusyAction('restoringRepositories')
-    void initializeClientPreferences()
-      .then(async (storedPreferences) => {
-        const restoredSnapshots: RepositorySnapshot[] = []
-        const failedPaths: string[] = []
+    const generation = ++restoreGeneration.current
+    let disposed = false
+    const isCurrent = () => !disposed && restoreGeneration.current === generation
 
-        /*
-         * Lore Store 首次打开可能包含同步 I/O。按保存顺序串行恢复既保留项目标签顺序，
-         * 又避免应用启动瞬间并发扫描多个大型工作区。
-         */
-        for (const repositoryPath of storedPreferences.repositoryPaths) {
-          try {
-            restoredSnapshots.push(await loadRepositorySnapshot(repositoryPath, false))
-          } catch {
-            failedPaths.push(repositoryPath)
+    /*
+     * 延迟到微任务再开始，令 StrictMode 第一次 setup 的同步 cleanup 能先使本代际失效；
+     * 第二次 setup 才会真正发出偏好与仓库 IPC，避免为了开发期检查重复恢复整批仓库。
+     */
+    queueMicrotask(() => {
+      if (!isCurrent()) return
+      lifecycleOptions.current.setBusyAction('restoringRepositories')
+      void restoreRepositorySession({
+        loadPreferences: initializeClientPreferences,
+        loadSnapshot: (repositoryPath) => loadRepositorySnapshot(repositoryPath, false),
+        isCurrent
+      })
+        .then((result) => {
+          if (!result || !isCurrent()) return
+          const { restoredSnapshots, failedPaths, storedPreferences } = result
+          lifecycleOptions.current.replaceRepositorySession(restoredSnapshots, failedPaths)
+          const preferredSnapshot = restoredActiveSnapshot(restoredSnapshots, storedPreferences.activeRepositoryPath)
+          if (preferredSnapshot) lifecycleOptions.current.activateSnapshot(preferredSnapshot)
+          if (failedPaths.length > 0) {
+            lifecycleOptions.current.notify(
+              t('someRepositoriesCouldNotBeRestored'),
+              t('status.savedDirectoriesUnavailable', { count: failedPaths.length }),
+              'warning'
+            )
           }
-        }
+        })
+        .catch((error) => {
+          if (isCurrent()) {
+            lifecycleOptions.current.notify(t('failedToLoadClientPreferences'), readErrorMessage(error), 'warning')
+          }
+        })
+        .finally(() => {
+          if (!isCurrent()) return
+          setSessionReady(true)
+          lifecycleOptions.current.setBusyAction(null)
+        })
+    })
 
-        replaceRepositorySession(restoredSnapshots, failedPaths)
-        const preferredSnapshot = restoredActiveSnapshot(restoredSnapshots, storedPreferences.activeRepositoryPath)
-        if (preferredSnapshot) activateSnapshot(preferredSnapshot)
-        if (failedPaths.length > 0) {
-          notify(
-            t('someRepositoriesCouldNotBeRestored'),
-            t('status.savedDirectoriesUnavailable', { count: failedPaths.length }),
-            'warning'
-          )
-        }
-      })
-      .catch((error) => {
-        notify(t('failedToLoadClientPreferences'), readErrorMessage(error), 'warning')
-      })
-      .finally(() => {
-        setSessionReady(true)
-        setBusyAction(null)
-      })
-  }, [activateSnapshot, applicationMode, notify, replaceRepositorySession, setBusyAction])
+    return () => {
+      disposed = true
+    }
+  }, [applicationMode])
 
   useEffect(() => {
     if (applicationMode !== 'tauri' || !sessionReady) return

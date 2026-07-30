@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { RepositorySnapshot } from '../../types'
-import { repositoryPathsForPersistence, restoredActiveSnapshot } from './useRepositorySessionLifecycle'
+import {
+  repositoryPathsForPersistence,
+  restoreRepositorySession,
+  restoredActiveSnapshot
+} from './useRepositorySessionLifecycle'
 
 function snapshot(id: string, path: string): RepositorySnapshot {
   return {
@@ -29,6 +33,50 @@ function snapshot(id: string, path: string): RepositorySnapshot {
 }
 
 describe('repository session lifecycle', () => {
+  it('stops an obsolete restore generation before loading the next repository', async () => {
+    let current = true
+    let resolveFirstSnapshot: ((value: RepositorySnapshot) => void) | undefined
+    const loadSnapshot = vi.fn(
+      (path: string) =>
+        new Promise<RepositorySnapshot>((resolve) => {
+          if (path === 'C:/first') resolveFirstSnapshot = resolve
+        })
+    )
+    const restore = restoreRepositorySession({
+      loadPreferences: async () => ({
+        repositoryPaths: ['C:/first', 'C:/second'],
+        activeRepositoryPath: 'C:/first'
+      }),
+      loadSnapshot,
+      isCurrent: () => current
+    })
+
+    await Promise.resolve()
+    current = false
+    resolveFirstSnapshot?.(snapshot('first', 'C:/first'))
+
+    await expect(restore).resolves.toBeNull()
+    expect(loadSnapshot).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps failed paths while restoring successful snapshots in saved order', async () => {
+    const result = await restoreRepositorySession({
+      loadPreferences: async () => ({
+        repositoryPaths: ['C:/first', 'C:/offline', 'C:/second'],
+        activeRepositoryPath: 'C:/second'
+      }),
+      loadSnapshot: async (path) => {
+        if (path === 'C:/offline') throw new Error('offline')
+        return snapshot(path === 'C:/first' ? 'first' : 'second', path)
+      },
+      isCurrent: () => true
+    })
+
+    expect(result?.restoredSnapshots.map((item) => item.repository.id)).toEqual(['first', 'second'])
+    expect(result?.failedPaths).toEqual(['C:/offline'])
+    expect(result?.storedPreferences.activeRepositoryPath).toBe('C:/second')
+  })
+
   it('restores the preferred repository by its saved path', () => {
     const first = snapshot('first', 'C:/first')
     const preferred = snapshot('preferred', 'C:/preferred')

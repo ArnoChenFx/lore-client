@@ -4,6 +4,71 @@
 //! 父模块统一管理，避免模块化重构改变现有 IPC 契约或 Lore 调用行为。
 
 use super::*;
+
+/**
+ * 延迟开启的全局操作流生命周期。
+ *
+ * 普通短读的完整结果已经由 IPC 返回，若仍为每次调用广播 queued/running/terminal，
+ * 启动恢复会把大量无进度事件投递给页面 listener，并在 reload 后放大陈旧 callback。
+ * 只有 Lore 实际给出受限数值进度时才开启全局流；首次进度按顺序补齐 queued 与
+ * running，后续保留 streaming，最终只为已开启的流发送 terminal。
+ */
+struct OperationStreamLifecycle {
+    operation_id: String,
+    operation: &'static str,
+    opened: bool,
+}
+
+impl OperationStreamLifecycle {
+    fn new(operation_id: String, operation: &'static str) -> Self {
+        Self {
+            operation_id,
+            operation,
+            opened: false,
+        }
+    }
+
+    fn event(
+        &self,
+        phase: &'static str,
+        event: Option<Value>,
+        status: Option<i32>,
+        duration_ms: Option<u128>,
+    ) -> LoreOperationStreamEvent {
+        LoreOperationStreamEvent {
+            operation_id: self.operation_id.clone(),
+            operation: self.operation,
+            phase,
+            event,
+            status,
+            duration_ms,
+            cancellable: false,
+        }
+    }
+
+    fn progress_events(&mut self, summary: Value) -> Vec<LoreOperationStreamEvent> {
+        let mut events = Vec::with_capacity(if self.opened { 1 } else { 3 });
+        if !self.opened {
+            self.opened = true;
+            events.push(self.event("queued", None, None, None));
+            events.push(self.event("running", None, None, None));
+        }
+        events.push(self.event("streaming", Some(summary), None, None));
+        events
+    }
+
+    fn completion_event(&self, status: i32, duration_ms: u128) -> Option<LoreOperationStreamEvent> {
+        self.opened.then(|| {
+            self.event(
+                if status == 0 { "succeeded" } else { "failed" },
+                None,
+                Some(status),
+                Some(duration_ms),
+            )
+        })
+    }
+}
+
 /// 运行操作并捕获完整 LoreEvent 序列。
 pub(super) fn run_operation(
     operation: &'static str,
@@ -13,40 +78,22 @@ pub(super) fn run_operation(
         "lore-operation-{}",
         OPERATION_STREAM_COUNTER.fetch_add(1, Ordering::Relaxed)
     );
-    emit_operation_stream(LoreOperationStreamEvent {
-        operation_id: operation_id.clone(),
-        operation,
-        phase: "queued",
-        event: None,
-        status: None,
-        duration_ms: None,
-        cancellable: false,
-    });
     let started_at = Instant::now();
-    emit_operation_stream(LoreOperationStreamEvent {
-        operation_id: operation_id.clone(),
-        operation,
-        phase: "running",
-        event: None,
-        status: None,
-        duration_ms: None,
-        cancellable: false,
-    });
     let events = Arc::new(Mutex::new(Vec::<Value>::new()));
     let event_target = Arc::clone(&events);
-    let callback_operation_id = operation_id.clone();
+    let stream_lifecycle = Arc::new(Mutex::new(OperationStreamLifecycle::new(
+        operation_id,
+        operation,
+    )));
+    let callback_stream_lifecycle = Arc::clone(&stream_lifecycle);
     let callback: LoreEventCallback = Some(Box::new(move |event: &LoreEvent| {
         let serialized = serialize_lore_event(event);
         if let Some(summary) = operation_stream_summary(&serialized) {
-            emit_operation_stream(LoreOperationStreamEvent {
-                operation_id: callback_operation_id.clone(),
-                operation,
-                phase: "streaming",
-                event: Some(summary),
-                status: None,
-                duration_ms: None,
-                cancellable: false,
-            });
+            if let Ok(mut lifecycle) = callback_stream_lifecycle.lock() {
+                for stream_event in lifecycle.progress_events(summary) {
+                    emit_operation_stream(stream_event);
+                }
+            }
         }
         if let Ok(mut target) = event_target.lock() {
             target.push(serialized);
@@ -71,15 +118,18 @@ pub(super) fn run_operation(
     };
 
     let duration_ms = started_at.elapsed().as_millis();
-    emit_operation_stream(LoreOperationStreamEvent {
-        operation_id,
-        operation,
-        phase: if status == 0 { "succeeded" } else { "failed" },
-        event: None,
-        status: Some(status),
-        duration_ms: Some(duration_ms),
-        cancellable: false,
-    });
+    let terminal_event = stream_lifecycle
+        .lock()
+        .map_err(|_| {
+            LoreCommandError::new(
+                "operation_stream_state_poisoned",
+                "The Lore operation stream state is poisoned",
+            )
+        })?
+        .completion_event(status, duration_ms);
+    if let Some(terminal_event) = terminal_event {
+        emit_operation_stream(terminal_event);
+    }
 
     Ok(LoreOperationResult {
         operation,
@@ -109,6 +159,14 @@ pub(super) fn operation_stream_summary(event: &Value) -> Option<Value> {
     const PROGRESS_SIGNALS: [&str; 5] = ["current", "processed", "total", "count", "bytes"];
 
     let tag_name = event["tagName"].as_str()?;
+    /*
+     * Lore 的进度变体稳定序列化为 `progress` 或 `*Progress`。Branch/List/Status 等业务
+     * 结束事件也可能带 count、size，不能仅凭字段名把它们误判为实时进度，否则启动
+     * 短读仍会重新开启全局流并向 reload 前的陈旧 callback 广播。
+     */
+    if tag_name != "progress" && !tag_name.ends_with("Progress") {
+        return None;
+    }
     let data = event["data"].as_object()?;
     if !PROGRESS_SIGNALS
         .iter()
@@ -182,4 +240,46 @@ pub(super) fn classify_conflict_operation(
 
 pub(super) fn is_zero_hash(value: &str) -> bool {
     !value.is_empty() && value.bytes().all(|byte| byte == b'0')
+}
+
+#[cfg(test)]
+mod operation_stream_lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn operation_stream_stays_silent_without_progress() {
+        let lifecycle =
+            OperationStreamLifecycle::new("operation-1".to_owned(), "repository.status");
+
+        assert!(lifecycle.completion_event(0, 8).is_none());
+    }
+
+    #[test]
+    fn operation_stream_opens_in_order_on_the_first_progress_event() {
+        let mut lifecycle =
+            OperationStreamLifecycle::new("operation-2".to_owned(), "repository.clone");
+        let first = lifecycle.progress_events(serde_json::json!({
+            "tagName": "progress",
+            "data": { "current": 1, "total": 3 }
+        }));
+        let second = lifecycle.progress_events(serde_json::json!({
+            "tagName": "progress",
+            "data": { "current": 2, "total": 3 }
+        }));
+        let completed = lifecycle
+            .completion_event(0, 42)
+            .expect("An opened stream should emit its terminal phase");
+
+        assert_eq!(
+            first.iter().map(|event| event.phase).collect::<Vec<_>>(),
+            ["queued", "running", "streaming"]
+        );
+        assert_eq!(
+            second.iter().map(|event| event.phase).collect::<Vec<_>>(),
+            ["streaming"]
+        );
+        assert_eq!(completed.phase, "succeeded");
+        assert_eq!(completed.status, Some(0));
+        assert_eq!(completed.duration_ms, Some(42));
+    }
 }

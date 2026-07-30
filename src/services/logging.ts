@@ -96,16 +96,17 @@ export function logError(scope: string, value: unknown): void {
 }
 
 /**
- * 统一记录 IPC 生命周期。只记录稳定命令名与耗时，绝不序列化 args，避免认证信息、
- * 仓库配置或大块文件内容进入日志。
+ * 统一执行 IPC，并只在失败或预期控制流回退时记录稳定命令名与耗时。
+ *
+ * 成功路径不能再额外调用日志插件：日志插件本身也是一个异步 Tauri IPC。若开发期页面
+ * 恰好在仓库恢复期间重载，这个“记录成功”的二次 IPC 会晚于旧页面返回，既制造陈旧
+ * callback 告警，也放大 WebView2 页面切换期间的投递压力。失败路径仍保留日志，且绝不
+ * 序列化 args，避免认证信息、仓库配置或大块文件内容进入日志。
  */
 export async function invokeLogged<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const startedAt = performance.now()
-  logDebug('ipc', `started command=${command}`)
   try {
-    const result = await invoke<T>(command, args)
-    logDebug('ipc', `succeeded command=${command} durationMs=${Math.round(performance.now() - startedAt)}`)
-    return result
+    return await invoke<T>(command, args)
   } catch (cause) {
     const durationMs = Math.round(performance.now() - startedAt)
     if (isExpectedIpcControlFlowError(cause)) {

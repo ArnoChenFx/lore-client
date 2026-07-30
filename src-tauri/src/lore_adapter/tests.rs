@@ -2046,6 +2046,19 @@ fn operation_stream_keeps_only_bounded_progress_metrics() {
 }
 
 #[test]
+fn operation_stream_rejects_business_counts_from_non_progress_events() {
+    let event = serde_json::json!({
+        "tagName": "branchListEnd",
+        "data": {
+            "count": 24,
+            "size": 8192
+        }
+    });
+
+    assert!(operation_stream_summary(&event).is_none());
+}
+
+#[test]
 fn revision_diff_adds_empty_new_files_without_text_hunks() {
     let source = vec![RevisionTreeFile {
         path: "existing.txt".to_owned(),
