@@ -6,6 +6,7 @@ import {
   AppShell,
   AppWorkspace,
   Sidebar,
+  type AppUpdateState,
   createPlaceholderRepository,
   useAppFeedback,
   useAppUpdater,
@@ -16,6 +17,7 @@ import {
 } from './app/index'
 import {
   browserDependencyGraphFixture,
+  browserUpdateDialogFixture,
   branches as demoBranches,
   getDemoInspectorFiles,
   initialChanges as demoChanges,
@@ -24,6 +26,7 @@ import {
   revisions as demoRevisions,
   shouldUseBrowserDependencyGraphFixture,
   shouldUseBrowserRemoteAuthenticationFixture,
+  shouldUseBrowserUpdateDialogFixture,
   tags as demoTags
 } from './demo'
 import { BranchOverview } from './features/branches'
@@ -75,6 +78,7 @@ import type { BinaryFilePreview, NavigationView, OperationDetail, Repository, Re
 const applicationMode = getApplicationMode()
 const dependencyGraphFixtureEnabled = shouldUseBrowserDependencyGraphFixture(applicationMode)
 const remoteAuthenticationFixtureEnabled = shouldUseBrowserRemoteAuthenticationFixture(applicationMode)
+const updateDialogFixtureEnabled = shouldUseBrowserUpdateDialogFixture(applicationMode)
 
 const browserDemoSnapshots: RepositorySnapshot[] = demoRepositories.map((repository, index) => ({
   repository:
@@ -120,6 +124,7 @@ function App() {
     applicationMode === 'tauri' && import.meta.env.PROD,
     preferencesReady && preferences.automaticallyCheckForUpdates
   )
+  const updateState: AppUpdateState = updateDialogFixtureEnabled ? browserUpdateDialogFixture : appUpdater.state
   const {
     snapshots: sessionSnapshots,
     activeRepositoryId,
@@ -175,7 +180,7 @@ function App() {
     onBranchSelect: setSelectedBranchId
   })
   const { toast, runtimeInfo, notify, closeToast } = useAppFeedback({
-    updateState: appUpdater.state,
+    updateState,
     preferencesError,
     showUpdate
   })
@@ -610,7 +615,7 @@ function App() {
                 onChooseSharedStoreParent: sharedStores.chooseParent,
                 onCreateSharedStore: (remoteUrl, parentPath) => void sharedStores.create(remoteUrl, parentPath),
                 onSharedStoreAutomaticChange: (enabled) => void sharedStores.setAutomatic(enabled),
-                updateState: appUpdater.state,
+                updateState,
                 onCheckForUpdates: () => void appUpdater.checkForUpdates(),
                 onShowUpdate: showUpdate,
                 onResetLayout: () => {
@@ -644,10 +649,13 @@ function App() {
         }
         about={aboutOpen ? { runtimeInfo, onClose: () => setAboutOpen(false) } : null}
         update={
-          updateDialogOpen && appUpdater.state.availableVersion
+          updateDialogOpen && updateState.availableVersion
             ? {
-                state: appUpdater.state,
-                onInstall: () => void appUpdater.installUpdate(),
+                state: updateState,
+                // 浏览器夹具只验证界面；主操作关闭预览，不伪造下载或安装成功。
+                onInstall: updateDialogFixtureEnabled
+                  ? () => setUpdateDialogOpen(false)
+                  : () => void appUpdater.installUpdate(),
                 onClose: () => setUpdateDialogOpen(false)
               }
             : null

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { AppIcon } from '../../shared/ui'
 import type { LoreRuntimeInfo } from '../../types'
 import { loadApplicationVersion } from '../appVersion'
+import { ProjectRepositoryLink } from './ProjectRepositoryLink'
 
 /** 应用与嵌入式 Lore Core 的可诊断版本信息。 */
 export function AboutDialog({ runtimeInfo, onClose }: { runtimeInfo: LoreRuntimeInfo | null; onClose: () => void }) {
@@ -48,6 +49,7 @@ export function AboutDialog({ runtimeInfo, onClose }: { runtimeInfo: LoreRuntime
         <div className="about-content">
           <AppIcon className="about-content__app-icon" label="Lore Client" />
           <p>{t('nativeDesktopClientLoreVersion_58a8')}</p>
+          <ProjectRepositoryLink className="about-content__repository-link" />
           <dl>
             <div>
               <dt>{t('applicationVersion')}</dt>

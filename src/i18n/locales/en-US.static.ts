@@ -611,6 +611,8 @@ const enUSStatic = {
   msg12842Items: '12,842 items',
   nativeDesktopClientLoreVersion_58a8:
     'A native desktop client for the Lore version control system, built with Tauri, React, and embedded Lore Core.',
+  openProjectRepository: 'Open the Lore Client project repository on GitHub',
+  openProjectReleases: 'Open the Lore Client releases on GitHub',
   nativeIntegration: ' · Native integration',
   nativeIntegration_2: 'Native integration',
   navigation: 'Navigation',

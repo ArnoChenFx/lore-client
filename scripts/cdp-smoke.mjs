@@ -4103,14 +4103,24 @@ try {
   await delay(40)
   results.automaticUpdateCheck = await cdp.evaluate(`(() => {
     const panel = document.querySelector("#settings-panel-maintenance");
+    const preference = panel?.querySelector(".settings-update-preference");
+    const preferenceCopy = preference?.querySelector(":scope > span");
     const checkbox = panel?.querySelector(
       '.settings-update-preference input[type="checkbox"]'
     );
+    const updateRow = panel?.querySelector(".settings-update");
     const manualButton = Array.from(panel?.querySelectorAll(".settings-update button") ?? [])
       .find((button) => button.textContent?.includes("检查更新"));
-    if (!(checkbox instanceof HTMLInputElement)) {
+    if (
+      !(preference instanceof HTMLElement) ||
+      !(preferenceCopy instanceof HTMLElement) ||
+      !(checkbox instanceof HTMLInputElement)
+    ) {
       return { visible: false };
     }
+    const checkboxRect = checkbox.getBoundingClientRect();
+    const preferenceCopyRect = preferenceCopy.getBoundingClientRect();
+    const preferenceRect = preference.getBoundingClientRect();
     const initiallyChecked = checkbox.checked;
     checkbox.click();
     const checkedAfterDisable = checkbox.checked;
@@ -4120,7 +4130,14 @@ try {
       initiallyChecked,
       checkedAfterDisable,
       checkedAfterRestore: checkbox.checked,
-      manualActionPresent: Boolean(manualButton)
+      manualActionPresent: Boolean(manualButton),
+      checkboxAfterCopy: Boolean(
+        preferenceCopy.compareDocumentPosition(checkbox) & Node.DOCUMENT_POSITION_FOLLOWING
+      ),
+      checkboxAtRowEnd:
+        checkboxRect.left > preferenceCopyRect.right &&
+        Math.abs(preferenceRect.right - checkboxRect.right) <= 1,
+      decorativeUpdateIconRemoved: !updateRow?.querySelector(".settings-update__icon")
     };
   })()`)
   assert(
@@ -4128,7 +4145,10 @@ try {
       results.automaticUpdateCheck.initiallyChecked &&
       !results.automaticUpdateCheck.checkedAfterDisable &&
       results.automaticUpdateCheck.checkedAfterRestore &&
-      results.automaticUpdateCheck.manualActionPresent,
+      results.automaticUpdateCheck.manualActionPresent &&
+      results.automaticUpdateCheck.checkboxAfterCopy &&
+      results.automaticUpdateCheck.checkboxAtRowEnd &&
+      results.automaticUpdateCheck.decorativeUpdateIconRemoved,
     `Automatic update preference is not wired to the settings UI: ${JSON.stringify(results.automaticUpdateCheck)}`
   )
   await cdp.evaluate(`(() => {

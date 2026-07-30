@@ -865,20 +865,19 @@ export function SettingsDialog({
               <fieldset className="settings-group settings-group--updates">
                 <legend>{t('applicationUpdates')}</legend>
                 <label className="settings-update-preference">
-                  <CheckboxInput
-                    checked={automaticallyCheckForUpdates}
-                    onChange={(event) => onAutomaticallyCheckForUpdatesChange(event.target.checked)}
-                  />
                   <span>
                     <strong>{t('automaticallyCheckForUpdates')}</strong>
                     <small>{t('automaticUpdateCheckDescription')}</small>
                   </span>
+                  {/* 把复选框放在说明文案之后，使维护页的布尔偏好统一从行尾操作。 */}
+                  <CheckboxInput
+                    checked={automaticallyCheckForUpdates}
+                    onChange={(event) => onAutomaticallyCheckForUpdatesChange(event.target.checked)}
+                  />
                 </label>
                 <div className="settings-update">
-                  <span className="settings-update__icon">
-                    <RefreshCw size={16} />
-                  </span>
-                  <span>
+                  {/* 当前版本是信息摘要，右侧按钮已经清楚表达检查更新动作，无需重复图标。 */}
+                  <span className="settings-update__details">
                     <strong>{t('currentVersion')}</strong>
                     <small>{updateState?.currentVersion || updateStatus}</small>
                     {updateState?.currentVersion && <small>{updateStatus}</small>}

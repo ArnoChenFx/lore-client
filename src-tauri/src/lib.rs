@@ -1,4 +1,5 @@
 mod app_logging;
+mod application_links;
 mod asset_preview;
 mod client_preferences;
 mod lore_adapter;
@@ -24,6 +25,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_logging::application_log_info,
             app_logging::application_log_open_directory,
+            application_links::application_open_project_repository,
+            application_links::application_open_project_releases,
             client_preferences::lore_client_preferences_load,
             client_preferences::lore_client_preferences_save,
             revision_author_cache::lore_revision_author_cache_get,

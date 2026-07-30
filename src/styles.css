@@ -8183,7 +8183,7 @@ body.is-resizing-panes {
 
 .settings-update {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
 }
@@ -8239,7 +8239,8 @@ body.is-resizing-panes {
 }
 
 .settings-update-preference {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-width: 0;
   align-items: flex-start;
   gap: 8px;
@@ -8270,18 +8271,7 @@ body.is-resizing-panes {
   line-height: 1.4;
 }
 
-.settings-update__icon {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--bg-raised);
-  color: var(--text-soft);
-}
-
-.settings-update > span:nth-child(2) {
+.settings-update__details {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -8942,6 +8932,24 @@ body.is-resizing-panes {
   background: var(--bg-raised);
 }
 
+.update-dialog__versions > .update-dialog__version--available {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  gap: 4px 8px;
+}
+
+.update-dialog__version--available > dt,
+.update-dialog__version--available > dd {
+  grid-column: 1;
+}
+
+.update-dialog__releases-link {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  align-self: center;
+}
+
 .update-dialog__versions dt {
   color: var(--muted);
   font-size: 10px;
@@ -8975,7 +8983,7 @@ body.is-resizing-panes {
   display: flex;
   max-height: 190px;
   flex-direction: column;
-  gap: 7px;
+  gap: 9px;
   overflow: auto;
   padding: 11px 12px;
   border: 1px solid var(--line);
@@ -8983,17 +8991,201 @@ body.is-resizing-panes {
   background: var(--bg-raised);
 }
 
-.update-dialog__notes strong {
+.update-dialog__notes > strong {
   color: var(--text);
   font-size: 11px;
 }
 
-.update-dialog__notes p {
-  margin: 0;
+.update-dialog__notes-markdown {
+  min-width: 0;
   color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.update-dialog__notes-markdown > :first-child {
+  margin-top: 0;
+}
+
+.update-dialog__notes-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.update-dialog__notes-markdown p,
+.update-dialog__notes-markdown ul,
+.update-dialog__notes-markdown ol,
+.update-dialog__notes-markdown blockquote,
+.update-dialog__notes-markdown pre,
+.update-dialog__notes-markdown table {
+  margin: 7px 0;
+}
+
+.update-dialog__notes-markdown h1,
+.update-dialog__notes-markdown h2,
+.update-dialog__notes-markdown h3,
+.update-dialog__notes-markdown h4,
+.update-dialog__notes-markdown h5,
+.update-dialog__notes-markdown h6 {
+  margin: 11px 0 5px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 620;
+  line-height: 1.35;
+}
+
+.update-dialog__notes-markdown h1 {
+  font-size: 14px;
+}
+
+.update-dialog__notes-markdown h2 {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+}
+
+.update-dialog__notes-markdown p {
+  margin: 7px 0;
+}
+
+.update-dialog__notes-markdown ul,
+.update-dialog__notes-markdown ol {
+  padding-left: 20px;
+}
+
+.update-dialog__notes-markdown li + li {
+  margin-top: 3px;
+}
+
+.update-dialog__notes-markdown li > p {
+  margin: 2px 0;
+}
+
+.update-dialog__notes-markdown a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.update-dialog__notes-markdown a:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.update-dialog__notes-markdown a:focus-visible {
+  outline: 1px solid var(--accent-solid);
+  outline-offset: 2px;
+}
+
+.update-dialog__notes-markdown code {
+  padding: 1px 3px;
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+  background: var(--bg-control);
+  color: var(--text-soft);
+  font-family: var(--mono);
   font-size: 11px;
-  line-height: 1.55;
-  white-space: pre-wrap;
+}
+
+.update-dialog__notes-markdown pre {
+  overflow: auto;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-control);
+}
+
+.update-dialog__notes-markdown pre code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.update-dialog__notes-markdown blockquote {
+  padding-left: 9px;
+  border-left: 2px solid var(--line-strong);
+  color: var(--faint);
+}
+
+.update-dialog__notes-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.update-dialog__notes-markdown th,
+.update-dialog__notes-markdown td {
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+
+.update-dialog__notes-markdown th {
+  background: var(--bg-control);
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
+.update-dialog__notes-markdown hr {
+  height: 1px;
+  margin: 9px 0;
+  border: 0;
+  background: var(--line);
+}
+
+.update-dialog__notes-markdown input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  margin: 0 5px 0 0;
+  padding: 0;
+  vertical-align: -2px;
+}
+
+.update-dialog__notes-image-alt {
+  color: var(--faint);
+  font-style: italic;
+}
+
+/*
+ * 项目仓库入口是可复制的真实链接，不使用按钮组件；视觉上仍与紧凑桌面控件保持一致。
+ * 更新页把入口推到页脚左侧，使它与右侧安装主操作维持清晰的层级分离。
+ */
+.project-repository-link {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--bg-control);
+  color: var(--text-soft);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.project-repository-link:hover {
+  border-color: var(--accent-solid);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.project-repository-link:focus-visible {
+  border-color: var(--accent-solid);
+  outline: 1px solid var(--accent-solid);
+  outline-offset: 1px;
+}
+
+.project-repository-link__mark {
+  flex: none;
+}
+
+.project-repository-link--icon-only {
+  width: 30px;
+  min-width: 30px;
+  padding: 0;
+  justify-content: center;
 }
 
 .tools-dialog {
@@ -11943,6 +12135,10 @@ body.is-resizing-panes {
   max-width: 390px;
   font-size: 12px;
   line-height: 1.65;
+}
+
+.about-content__repository-link {
+  margin-top: 2px;
 }
 
 .about-content dl {

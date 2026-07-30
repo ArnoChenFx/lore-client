@@ -561,6 +561,8 @@ const zhCNStatic = {
   msg12842Items: '12,842 项',
   nativeDesktopClientLoreVersion_58a8:
     '面向 Lore 版本控制系统的原生桌面客户端，使用 Tauri、React 与嵌入式 Lore Core 构建。',
+  openProjectRepository: '打开 Lore Client 的 GitHub 项目仓库',
+  openProjectReleases: '打开 Lore Client 的 GitHub 发布页面',
   nativeIntegration: ' · 原生接入',
   nativeIntegration_2: '原生接入',
   navigation: '导航',
