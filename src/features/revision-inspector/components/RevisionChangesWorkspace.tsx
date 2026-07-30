@@ -4,7 +4,7 @@ import {
   ChevronRight,
   ChevronsDown,
   ChevronsUp,
-  FileCode2,
+  File,
   FileQuestion,
   Folder,
   FolderOpen,
@@ -478,7 +478,7 @@ export function RevisionChangesWorkspace({
         <span className={`file-status is-${file.status}`} title={transitionDescription ?? t(file.status)}>
           {statusLabels[file.status]}
         </span>
-        {repositoryFileContentKind(file) === 'binary' ? <Binary size={14} /> : <FileCode2 size={14} />}
+        {repositoryFileContentKind(file) === 'binary' ? <Binary size={14} /> : <File size={14} />}
         <span>
           <strong>{file.name}</strong>
           {(viewMode === 'flat' || transitionText) && (
@@ -689,7 +689,7 @@ export function RevisionChangesWorkspace({
                 ) : primaryContentKind === 'binary' ? (
                   <Binary size={15} />
                 ) : (
-                  <FileCode2 size={15} />
+                  <File size={15} />
                 )}
               </span>
               <div>
@@ -763,7 +763,7 @@ export function RevisionChangesWorkspace({
               />
             ) : !primaryDiff?.patch ? (
               <div className="revision-diff-pane__empty">
-                <FileCode2 size={30} />
+                <File size={30} />
                 <strong>{t('noTextDiffToDisplay')}</strong>
                 <span>{changeFilePath(primaryFile)}</span>
               </div>

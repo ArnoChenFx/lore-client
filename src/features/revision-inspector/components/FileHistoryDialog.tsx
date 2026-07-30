@@ -1,4 +1,4 @@
-import { ArrowRight, Clock3, FileClock, FileCode2, LoaderCircle, TriangleAlert, X } from 'lucide-react'
+import { ArrowRight, Clock3, FileClock, File, LoaderCircle, TriangleAlert, X } from 'lucide-react'
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -69,7 +69,7 @@ export function FileHistoryDialog({
         </header>
         <div className="task-dialog__body">
           <div className="file-history-dialog__path">
-            <FileCode2 size={15} />
+            <File size={15} />
             <span>
               <strong>{file.name}</strong>
               <small>{changeFilePath(file)}</small>

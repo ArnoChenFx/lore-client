@@ -105,7 +105,7 @@ describe('revision change default selection', () => {
     const emptyState = html.slice(html.indexOf('revision-diff-pane__empty'))
 
     expect(emptyState).toContain('没有可显示的文本差异')
-    expect(emptyState).toContain('lucide-file-code-corner')
+    expect(emptyState).toContain('class="lucide lucide-file"')
     expect(emptyState).not.toContain('lucide-binary')
   })
 

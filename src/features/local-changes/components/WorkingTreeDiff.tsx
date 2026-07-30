@@ -1,4 +1,4 @@
-import { Binary, FileCode2, FileQuestion, Folder, LockKeyhole, TriangleAlert } from 'lucide-react'
+import { Binary, File, FileQuestion, Folder, LockKeyhole, TriangleAlert } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -73,7 +73,7 @@ export function WorkingTreeDiff({
             ) : binary && !previewableKind ? (
               <Binary size={15} />
             ) : (
-              <FileCode2 size={15} />
+              <File size={15} />
             )}
           </span>
           <span>

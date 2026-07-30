@@ -4,7 +4,7 @@ import {
   ChevronRight,
   ChevronsDown,
   ChevronsUp,
-  FileCode2,
+  File,
   FilePlus2,
   FileX2,
   Folder,
@@ -135,7 +135,7 @@ const MINIMUM_STAGE_PANEL_HEIGHT = 96
 
 const statusInfo = {
   // 这里只保存语义键，实际文案在渲染期取值，避免语言切换后被冻结为模块加载时语言。
-  modified: { labelKey: 'modified', short: 'M', icon: FileCode2 },
+  modified: { labelKey: 'modified', short: 'M', icon: File },
   added: { labelKey: 'added', short: 'A', icon: FilePlus2 },
   deleted: { labelKey: 'deleted', short: 'D', icon: FileX2 },
   renamed: { labelKey: 'renamed', short: 'R', icon: MoveRight }

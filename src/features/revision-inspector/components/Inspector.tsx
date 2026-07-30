@@ -8,7 +8,7 @@ import {
   CircleDot,
   Clock3,
   Copy,
-  FileCode2,
+  File,
   FileJson2,
   FileSliders,
   Files,
@@ -108,7 +108,7 @@ function fileIcon(file: ChangeFile | RevisionFile) {
   if (file.name.endsWith('.ini')) {
     return <FileSliders size={14} />
   }
-  return <FileCode2 size={14} />
+  return <File size={14} />
 }
 
 /** Revision 文件 DTO 的目录字段与文件名合成为唯一仓库相对路径。 */

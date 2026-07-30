@@ -1,7 +1,7 @@
 import {
   ChevronRight,
   Database,
-  FileCode2,
+  File,
   FolderOpen,
   GitFork,
   Layers3,
@@ -317,11 +317,7 @@ export function CloneDialog({
                     disabled={activePicker !== null || bare}
                     onClick={() => void choosePath('view', onChooseView, setViewPath)}
                   >
-                    {activePicker === 'view' ? (
-                      <LoaderCircle className="is-spinning" size={14} />
-                    ) : (
-                      <FileCode2 size={14} />
-                    )}
+                    {activePicker === 'view' ? <LoaderCircle className="is-spinning" size={14} /> : <File size={14} />}
                     {t('chooseFile')}
                   </TextButton>
                 </div>
