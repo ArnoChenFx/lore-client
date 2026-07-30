@@ -2,11 +2,13 @@ import { AudioLines } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { readBinaryPreviewData, type BinaryPreviewData } from './binaryPreviewData'
+
 interface AudioPreviewProps {
   fileName: string
   label: string
   mimeType: string
-  data: Uint8Array
+  data: BinaryPreviewData
 }
 
 /**
@@ -22,10 +24,11 @@ export function AudioPreview({ fileName, label, mimeType, data }: AudioPreviewPr
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
+    const bytes = readBinaryPreviewData(data)
 
     let objectUrl = ''
     if (typeof URL.createObjectURL === 'function') {
-      objectUrl = URL.createObjectURL(new Blob([data.slice().buffer], { type: mimeType }))
+      objectUrl = URL.createObjectURL(new Blob([bytes.slice().buffer], { type: mimeType }))
       audio.src = objectUrl
     } else {
       audio.removeAttribute('src')

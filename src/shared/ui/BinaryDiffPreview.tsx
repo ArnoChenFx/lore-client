@@ -2,9 +2,14 @@ import { ArrowRight, Binary, FileWarning, LoaderCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import type { BinaryDiffPreview, BinaryFilePreview } from '../../types'
 import { formatPreviewBytes } from '../lib'
 import { AudioPreview } from './AudioPreview'
+import {
+  readBinaryPreviewData,
+  type BinaryDiffPreviewView,
+  type BinaryFilePreviewView,
+  type BinaryPreviewData
+} from './binaryPreviewData'
 import { CsvTablePreview } from './CsvTablePreview'
 import { FontPreview } from './FontPreview'
 import { ModelCanvasPreview } from './ModelCanvasPreview'
@@ -14,7 +19,7 @@ import { TextureCanvasPreview } from './TextureCanvasPreview'
 
 interface BinaryDiffPreviewProps {
   fileName: string
-  preview: BinaryDiffPreview | null
+  preview: BinaryDiffPreviewView | null
   loading: boolean
   error: string | null
   /** 原始文件字节数；预览不可用时用于显示基础文件信息。 */
@@ -24,7 +29,7 @@ interface BinaryDiffPreviewProps {
 interface PreviewCardProps {
   label: string
   fileName: string
-  preview: BinaryFilePreview
+  preview: BinaryFilePreviewView
 }
 
 /**
@@ -34,11 +39,12 @@ interface PreviewCardProps {
  * 浏览器可以直接访问内存中的 Blob，释放时再显式调用 URL.revokeObjectURL。
  * SSR 不生成内嵌 data URL，避免测试或预渲染重新引入大字符串路径。
  */
-function useObjectUrl(data: Uint8Array, mimeType: string): string {
+function useObjectUrl(data: BinaryPreviewData, mimeType: string): string {
   const [url, setUrl] = useState('')
 
   useEffect(() => {
-    if (data.byteLength === 0) {
+    const bytes = readBinaryPreviewData(data)
+    if (bytes.byteLength === 0) {
       setUrl('')
       return
     }
@@ -46,7 +52,7 @@ function useObjectUrl(data: Uint8Array, mimeType: string): string {
     // 浏览器环境中使用 Object URL。
     if (typeof URL.createObjectURL !== 'undefined') {
       try {
-        const blob = new Blob([data.slice().buffer], { type: mimeType })
+        const blob = new Blob([bytes.slice().buffer], { type: mimeType })
         const objectUrl = URL.createObjectURL(blob)
         setUrl(objectUrl)
 
@@ -76,7 +82,7 @@ function ImagePreview({
 }: {
   fileName: string
   label: string
-  data: Uint8Array
+  data: BinaryPreviewData
   mimeType: string
 }) {
   const url = useObjectUrl(data, mimeType)
@@ -95,7 +101,8 @@ function ImagePreview({
  * 不依赖 WebView2 原生插件，也不创建可执行链接、表单或脚本层。
  */
 function PreviewCard({ label, fileName, preview }: PreviewCardProps) {
-  const hasAssetThumbnail = preview.kind === 'asset' && preview.mimeType === 'image/png' && preview.data.byteLength > 0
+  const hasAssetThumbnail =
+    preview.kind === 'asset' && preview.mimeType === 'image/png' && readBinaryPreviewData(preview.data).byteLength > 0
   return (
     <article className={`binary-diff-preview__card is-${preview.kind}`}>
       <header>
@@ -165,7 +172,7 @@ function SizeOnlyPreview({
   preview,
   reason
 }: {
-  preview: BinaryDiffPreview
+  preview: BinaryDiffPreviewView
   reason: 'tooLarge' | 'unsupported' | 'metadataOnly'
 }) {
   const { t } = useTranslation()

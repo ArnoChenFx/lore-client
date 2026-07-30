@@ -4,12 +4,13 @@ import { useTranslation } from 'react-i18next'
 import type { Mesh, OrthographicCamera, Scene, Texture, WebGLRenderer } from 'three'
 
 import type { StructuredAssetPreview } from '../../types'
+import { readBinaryPreviewData, type BinaryPreviewData } from './binaryPreviewData'
 import { disposeWebGLRenderer } from './ModelCanvasPreview'
 
 interface TextureCanvasPreviewProps {
   fileName: string
   label: string
-  data: Uint8Array
+  data: BinaryPreviewData
   metadata?: StructuredAssetPreview | null
 }
 
@@ -62,7 +63,7 @@ export function TextureCanvasPreview({ fileName, label, data, metadata }: Textur
         loader = ktxLoader
         ktxLoader.setWorkerLimit(1).detectSupport(renderer)
         // KTX2Loader 会接管解析缓冲；toArrayBuffer 已执行唯一一次必要复制。
-        const buffer = toArrayBuffer(data)
+        const buffer = toArrayBuffer(readBinaryPreviewData(data))
         texture = await new Promise<Texture>((resolve, reject) => ktxLoader.parse(buffer, resolve, reject))
         if (cancelled) {
           texture.dispose()

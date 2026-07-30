@@ -4,12 +4,13 @@ import { useTranslation } from 'react-i18next'
 import type { Object3D, PerspectiveCamera, Scene, WebGLRenderer } from 'three'
 
 import { t } from '../../i18n'
+import { readBinaryPreviewData, type BinaryPreviewData } from './binaryPreviewData'
 import { createModelPreviewObject, startModelPreviewWorker } from './modelPreviewWorkerClient'
 import type { ModelPreviewFormat } from './modelPreviewWorkerProtocol'
 interface ModelCanvasPreviewProps {
   fileName: string
   label: string
-  data: Uint8Array
+  data: BinaryPreviewData
 }
 
 type OrbitControlsLike = {
@@ -179,7 +180,7 @@ export function ModelCanvasPreview({ fileName, label, data }: ModelCanvasPreview
         }
 
         const format = extension as ModelPreviewFormat
-        modelWorkerTask = startModelPreviewWorker(format, data)
+        modelWorkerTask = startModelPreviewWorker(format, readBinaryPreviewData(data))
         // Worker 解析与主线程加载渲染器代码并行进行，任何一次选择变化都会终止前者。
         const [THREE, { OrbitControls }, parsed] = await Promise.all([
           import('three'),

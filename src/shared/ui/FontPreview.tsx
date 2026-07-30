@@ -2,10 +2,12 @@ import { FileWarning, LoaderCircle, Type } from 'lucide-react'
 import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { readBinaryPreviewData, type BinaryPreviewData } from './binaryPreviewData'
+
 interface FontPreviewProps {
   fileName: string
   label: string
-  data: Uint8Array
+  data: BinaryPreviewData
 }
 
 /**
@@ -28,7 +30,7 @@ export function FontPreview({ fileName, label, data }: FontPreviewProps) {
     void (async () => {
       try {
         // FontFace 可能接管传入缓冲；只复制一次，不能转移 React state 持有的 Raw IPC 数据。
-        const copy = data.slice()
+        const copy = readBinaryPreviewData(data).slice()
         const face = new FontFace(family, copy.buffer)
         loadedFace = await face.load()
         if (cancelled) return

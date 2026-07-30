@@ -13,13 +13,8 @@ import {
   resolvedDiffContentKind,
   shouldUseRepositoryPreview
 } from '../../../shared/lib'
-import { BinaryDiffPreview, DiffOptionsControl } from '../../../shared/ui'
-import type {
-  BinaryDiffPreview as BinaryDiffPreviewData,
-  ChangeFile,
-  LoreFileLock,
-  WorkingTreeDiff
-} from '../../../types'
+import { BinaryDiffPreview, DiffOptionsControl, type BinaryDiffPreviewView } from '../../../shared/ui'
+import type { ChangeFile, LoreFileLock, WorkingTreeDiff } from '../../../types'
 
 interface WorkingTreeDiffProps {
   file: ChangeFile | null
@@ -29,7 +24,7 @@ interface WorkingTreeDiffProps {
   diff: WorkingTreeDiff | null
   loading: boolean
   error: string | null
-  binaryPreview: BinaryDiffPreviewData | null
+  binaryPreview: BinaryDiffPreviewView | null
   binaryPreviewLoading: boolean
   binaryPreviewError: string | null
 }

@@ -13,6 +13,7 @@ import {
   shouldUseRepositoryPreview,
   settleTasksSequentially
 } from '../../../shared/lib'
+import { createBinaryDiffPreviewView, type BinaryDiffPreviewView } from '../../../shared/ui'
 import type {
   ApplicationMode,
   BinaryDiffPreview,
@@ -52,7 +53,7 @@ export function WorkingTreeDiffContainer({
   const [diff, setDiff] = useState<WorkingTreeDiff | null>(null)
   const [diffLoading, setDiffLoading] = useState(false)
   const [diffError, setDiffError] = useState<string | null>(null)
-  const [binaryPreview, setBinaryPreview] = useState<BinaryDiffPreview | null>(null)
+  const [binaryPreview, setBinaryPreview] = useState<BinaryDiffPreviewView | null>(null)
   const [binaryPreviewLoading, setBinaryPreviewLoading] = useState(false)
   const [binaryPreviewError, setBinaryPreviewError] = useState<string | null>(null)
   const diffRequestCounter = useRef(0)
@@ -193,7 +194,7 @@ export function WorkingTreeDiffContainer({
           }
         })
         if (next.before || next.after) {
-          setBinaryPreview(next)
+          setBinaryPreview(createBinaryDiffPreviewView(next))
         } else {
           setBinaryPreviewError(errors.join('；') || t('loreReturnPreviewableFileContent_451e'))
         }

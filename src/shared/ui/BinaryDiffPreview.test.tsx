@@ -2,8 +2,24 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import i18n from '../../i18n'
-import { BinaryDiffPreview } from './BinaryDiffPreview'
+import type { BinaryDiffPreview as BinaryDiffPreviewData } from '../../types'
+import { BinaryDiffPreview as BinaryDiffPreviewView } from './BinaryDiffPreview'
+import { createBinaryDiffPreviewView } from './binaryPreviewData'
 import { copyPdfData } from './PdfCanvasPreview'
+
+/** 测试继续使用稳定 IPC DTO，统一在真实组件边界转换成非枚举视图。 */
+function BinaryDiffPreview({
+  preview,
+  ...props
+}: {
+  fileName: string
+  preview: BinaryDiffPreviewData | null
+  loading: boolean
+  error: string | null
+  size?: number
+}) {
+  return <BinaryDiffPreviewView {...props} preview={preview ? createBinaryDiffPreviewView(preview) : null} />
+}
 
 describe('binary diff preview', () => {
   beforeEach(async () => {

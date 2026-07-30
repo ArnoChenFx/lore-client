@@ -1,6 +1,7 @@
 /** 被多个领域复用的基础 UI 与稳定交互原语入口。 */
 export * from './AppIcon'
 export * from './BinaryDiffPreview'
+export * from './binaryPreviewData'
 export * from './AudioPreview'
 export * from './FontPreview'
 export * from './StructuredAssetPreview'

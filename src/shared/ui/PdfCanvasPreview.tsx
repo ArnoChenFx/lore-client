@@ -5,12 +5,13 @@ import { useTranslation } from 'react-i18next'
 
 import { t } from '../../i18n'
 import { copyBinaryPreviewData } from '../lib'
+import { readBinaryPreviewData, type BinaryPreviewData } from './binaryPreviewData'
 import { IconButton } from './IconButton'
 
 interface PdfCanvasPreviewProps {
   fileName: string
   label: string
-  data: Uint8Array
+  data: BinaryPreviewData
 }
 
 /**
@@ -94,7 +95,7 @@ export function PdfCanvasPreview({ fileName, label, data }: PdfCanvasPreviewProp
         // Vite 会把 worker 作为独立静态资源打包，避免依赖 WebView2 原生 PDF 插件。
         pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
         loadingTask = pdfjs.getDocument({
-          data: copyPdfData(data),
+          data: copyPdfData(readBinaryPreviewData(data)),
           stopAtErrors: true,
           useWorkerFetch: false
         })

@@ -1,10 +1,28 @@
+import type { ComponentProps } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import i18n from '../../../i18n'
 import { updateClientPreferences } from '../../../services/preferences'
-import type { ChangeFile, WorkingTreeDiff as WorkingTreeDiffData } from '../../../types'
-import { WorkingTreeDiff } from './WorkingTreeDiff'
+import { createBinaryDiffPreviewView } from '../../../shared/ui'
+import type {
+  BinaryDiffPreview as BinaryDiffPreviewData,
+  ChangeFile,
+  WorkingTreeDiff as WorkingTreeDiffData
+} from '../../../types'
+import { WorkingTreeDiff as WorkingTreeDiffView } from './WorkingTreeDiff'
+
+/** 测试夹具保持稳定 IPC DTO 形状，进入组件前走与数据容器相同的视图转换。 */
+function WorkingTreeDiff({
+  binaryPreview,
+  ...props
+}: Omit<ComponentProps<typeof WorkingTreeDiffView>, 'binaryPreview'> & {
+  binaryPreview: BinaryDiffPreviewData | null
+}) {
+  return (
+    <WorkingTreeDiffView {...props} binaryPreview={binaryPreview ? createBinaryDiffPreviewView(binaryPreview) : null} />
+  )
+}
 
 const csvFile: ChangeFile = {
   id: 'data/market.csv',

@@ -4,11 +4,12 @@ import { useTranslation } from 'react-i18next'
 
 import { t } from '../../i18n'
 import { CSV_PREVIEW_MAX_COLS, CSV_PREVIEW_MAX_ROWS, decodeCsvPreviewText, parseCsvPreview } from '../lib'
+import { readBinaryPreviewData, type BinaryPreviewData } from './binaryPreviewData'
 
 interface CsvTablePreviewProps {
   fileName: string
   label: string
-  data: Uint8Array
+  data: BinaryPreviewData
 }
 
 /**
@@ -20,7 +21,7 @@ export function CsvTablePreview({ fileName, label, data }: CsvTablePreviewProps)
   const { t } = useTranslation()
   const parsed = useMemo(() => {
     try {
-      const text = decodeCsvPreviewText(data)
+      const text = decodeCsvPreviewText(readBinaryPreviewData(data))
       return { table: parseCsvPreview(text), error: null as string | null }
     } catch {
       return { table: null, error: t('csvContentValidUtf8_7481') }

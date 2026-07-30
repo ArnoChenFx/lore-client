@@ -38,7 +38,14 @@ import {
   settleTasksSequentially,
   type ChangeViewMode
 } from '../../../shared/lib'
-import { BinaryDiffPreview, DiffOptionsControl, PaneResizer, SelectInput } from '../../../shared/ui'
+import {
+  BinaryDiffPreview,
+  createBinaryDiffPreviewView,
+  DiffOptionsControl,
+  PaneResizer,
+  SelectInput,
+  type BinaryDiffPreviewView
+} from '../../../shared/ui'
 import type {
   BinaryDiffPreview as BinaryDiffPreviewData,
   BinaryFilePreview,
@@ -162,7 +169,7 @@ export function RevisionChangesWorkspace({
     Boolean(initialSelection.primaryObjectId)
   )
   const [browserWidth, setBrowserWidth] = useState(preferences.revisionChangesBrowserWidth)
-  const [binaryPreview, setBinaryPreview] = useState<BinaryDiffPreviewData | null>(null)
+  const [binaryPreview, setBinaryPreview] = useState<BinaryDiffPreviewView | null>(null)
   const [binaryPreviewLoading, setBinaryPreviewLoading] = useState(false)
   const [binaryPreviewError, setBinaryPreviewError] = useState<string | null>(null)
   const [workspaceElement, setWorkspaceElement] = useState<HTMLDivElement | null>(null)
@@ -313,7 +320,7 @@ export function RevisionChangesWorkspace({
           }
         })
         if (next.before || next.after) {
-          setBinaryPreview(next)
+          setBinaryPreview(createBinaryDiffPreviewView(next))
         } else {
           setBinaryPreviewError(errors.join('；') || t('loreReturnPreviewableFileContent_451e'))
         }
