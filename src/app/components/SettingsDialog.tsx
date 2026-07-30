@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next'
 
 import { t } from '../../i18n'
 import { loadApplicationLogInfo, openApplicationLogDirectory } from '../../services/logging'
+import { DEFAULT_BINARY_PREVIEW_LIMIT_MIB, MIN_BINARY_PREVIEW_LIMIT_MIB } from '../../services/preferences'
 import {
   createCustomExternalTool,
   DEFAULT_EXTERNAL_DIFF_TOOLS,
@@ -29,7 +30,7 @@ import {
   isExternalToolConfigured
 } from '../../shared/lib'
 import { formatCommitIdentity, parseCommitIdentity } from '../../shared/lib'
-import { CheckboxInput, RevisionAuthorAvatar, SelectInput, TextButton, TextInput } from '../../shared/ui'
+import { CheckboxInput, NumberInput, RevisionAuthorAvatar, SelectInput, TextButton, TextInput } from '../../shared/ui'
 import type {
   ApplicationLogInfo,
   ExternalDiffToolKind,
@@ -44,6 +45,7 @@ interface SettingsDialogProps {
   preference: ThemePreference
   language: LanguagePreference
   automaticallyCheckForUpdates?: boolean
+  binaryPreviewLimitMib?: number
   defaultIdentity: string
   externalDiffTools?: ExternalDiffToolPreference[]
   externalMergeTools?: ExternalDiffToolPreference[]
@@ -52,6 +54,7 @@ interface SettingsDialogProps {
   onPreferenceChange: (preference: ThemePreference) => void
   onLanguageChange: (language: LanguagePreference) => void
   onAutomaticallyCheckForUpdatesChange?: (enabled: boolean) => void
+  onBinaryPreviewLimitMibChange?: (limitMiB: number) => void
   onDefaultIdentityChange: (identity: string) => void
   onExternalDiffToolsChange?: (tools: ExternalDiffToolPreference[]) => void
   onExternalMergeToolsChange?: (tools: ExternalDiffToolPreference[]) => void
@@ -80,6 +83,7 @@ export function SettingsDialog({
   preference,
   language,
   automaticallyCheckForUpdates = true,
+  binaryPreviewLimitMib = DEFAULT_BINARY_PREVIEW_LIMIT_MIB,
   defaultIdentity,
   externalDiffTools = DEFAULT_EXTERNAL_DIFF_TOOLS,
   externalMergeTools = DEFAULT_EXTERNAL_MERGE_TOOLS,
@@ -88,6 +92,7 @@ export function SettingsDialog({
   onPreferenceChange,
   onLanguageChange,
   onAutomaticallyCheckForUpdatesChange = () => undefined,
+  onBinaryPreviewLimitMibChange = () => undefined,
   onDefaultIdentityChange,
   onExternalDiffToolsChange = () => undefined,
   onExternalMergeToolsChange = () => undefined,
@@ -118,6 +123,7 @@ export function SettingsDialog({
   const [applicationLogLoading, setApplicationLogLoading] = useState(false)
   const [applicationLogLoaded, setApplicationLogLoaded] = useState(false)
   const [applicationLogError, setApplicationLogError] = useState(false)
+  const [binaryPreviewLimitDraft, setBinaryPreviewLimitDraft] = useState(String(binaryPreviewLimitMib))
   const lastEmittedIdentityRef = useRef<string | null>(null)
 
   const themeOptions = [
@@ -178,6 +184,11 @@ export function SettingsDialog({
   }, [defaultIdentity])
 
   useEffect(() => {
+    // 磁盘水合或其他设置入口改变偏好时，同步未聚焦输入框显示的已生效整数值。
+    setBinaryPreviewLimitDraft(String(binaryPreviewLimitMib))
+  }, [binaryPreviewLimitMib])
+
+  useEffect(() => {
     /*
      * loading 是本次请求的展示状态，不能作为 Effect 依赖或再次进入的拦截条件。
      * 否则 setApplicationLogLoading(true) 会触发清理函数，把尚未返回的原生命令标记为
@@ -220,6 +231,15 @@ export function SettingsDialog({
     setIdentity(next)
     lastEmittedIdentityRef.current = next.raw
     onDefaultIdentityChange(next.raw)
+  }
+
+  const commitBinaryPreviewLimit = () => {
+    const parsed = Number(binaryPreviewLimitDraft)
+    const normalized = Number.isFinite(parsed)
+      ? Math.max(MIN_BINARY_PREVIEW_LIMIT_MIB, Math.round(parsed))
+      : binaryPreviewLimitMib
+    setBinaryPreviewLimitDraft(String(normalized))
+    onBinaryPreviewLimitMibChange(normalized)
   }
 
   const updateExternalTools = (
@@ -523,6 +543,31 @@ export function SettingsDialog({
                     </button>
                   ))}
                 </div>
+              </fieldset>
+              <fieldset className="settings-group settings-group--binary-preview">
+                <legend>{t('binaryPreview')}</legend>
+                <label className="settings-binary-preview-limit">
+                  <span>
+                    <strong>{t('binaryPreviewLimit')}</strong>
+                    <small id="binary-preview-limit-hint">{t('binaryPreviewLimitDescription')}</small>
+                  </span>
+                  <span className="settings-binary-preview-limit__control">
+                    <NumberInput
+                      value={binaryPreviewLimitDraft}
+                      min={MIN_BINARY_PREVIEW_LIMIT_MIB}
+                      step={1}
+                      inputMode="numeric"
+                      aria-label={t('binaryPreviewLimit')}
+                      aria-describedby="binary-preview-limit-hint"
+                      onChange={(event) => setBinaryPreviewLimitDraft(event.target.value)}
+                      onBlur={commitBinaryPreviewLimit}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') event.currentTarget.blur()
+                      }}
+                    />
+                    <span aria-hidden="true">MiB</span>
+                  </span>
+                </label>
               </fieldset>
             </section>
 

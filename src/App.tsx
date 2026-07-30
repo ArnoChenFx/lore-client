@@ -243,8 +243,8 @@ function App() {
   const workspaceInspectorVisible = activeView !== 'changes' || preferences.localChangesDiffVisible
   const loadActiveRepositoryBinaryPreview = useCallback(
     (path: string, revision?: string, metadataOnly = false): Promise<BinaryFilePreview> =>
-      loadBinaryFilePreview(activeRepository.path, path, revision, metadataOnly),
-    [activeRepository.path]
+      loadBinaryFilePreview(activeRepository.path, path, revision, metadataOnly, preferences.binaryPreviewLimitMib),
+    [activeRepository.path, preferences.binaryPreviewLimitMib]
   )
   const demoRevisionFiles = useMemo(() => {
     if (!selectedRevision || !activeSnapshot) {
@@ -586,6 +586,7 @@ function App() {
                 preference,
                 language: preferences.language,
                 automaticallyCheckForUpdates: preferences.automaticallyCheckForUpdates,
+                binaryPreviewLimitMib: preferences.binaryPreviewLimitMib,
                 defaultIdentity: preferences.defaultIdentity,
                 externalDiffTools: preferences.externalDiffTools,
                 externalMergeTools: preferences.externalMergeTools,
@@ -600,6 +601,7 @@ function App() {
                 onLanguageChange: (language) => updatePreferences({ language }),
                 onAutomaticallyCheckForUpdatesChange: (automaticallyCheckForUpdates) =>
                   updatePreferences({ automaticallyCheckForUpdates }),
+                onBinaryPreviewLimitMibChange: (binaryPreviewLimitMib) => updatePreferences({ binaryPreviewLimitMib }),
                 onDefaultIdentityChange: (defaultIdentity) => updatePreferences({ defaultIdentity }),
                 onExternalDiffToolsChange: (externalDiffTools) => updatePreferences({ externalDiffTools }),
                 onExternalMergeToolsChange: (externalMergeTools) => updatePreferences({ externalMergeTools }),

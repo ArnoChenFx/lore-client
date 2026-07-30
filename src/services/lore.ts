@@ -1359,7 +1359,8 @@ export async function loadBinaryFilePreview(
   repositoryPath: string,
   path: string,
   revision?: string,
-  metadataOnly = false
+  metadataOnly = false,
+  previewLimitMiB = 20
 ): Promise<BinaryFilePreview> {
   const assembler = createBinaryPreviewStreamAssembler()
   const onChunk = new Channel<BinaryPreviewStreamMessage>((message) => assembler.accept(message))
@@ -1369,6 +1370,7 @@ export async function loadBinaryFilePreview(
       path,
       revision,
       metadataOnly,
+      previewLimitMib: previewLimitMiB,
       onChunk
     })
     assembler.complete()
@@ -1394,11 +1396,31 @@ interface BinaryPreviewStreamAssembler {
   fail: (error: unknown) => void
 }
 
+const BINARY_PREVIEW_BASE_COMPLETION_TIMEOUT_MS = 30_000
+const BINARY_PREVIEW_TIMEOUT_BYTES_PER_SECOND = 8 * 1024 * 1024
+const MAX_JAVASCRIPT_TIMEOUT_MS = 2_147_000_000
+
+/**
+ * Rust 命令完成后，Channel 的 Raw 块仍可能在 WebView 传输队列中。
+ *
+ * 设置不设产品最大值，因此等待窗口按信封大小和保守的 8 MiB/s 吞吐量增长；只在
+ * JavaScript 计时器自身的技术边界截断，避免合法的大文件仍被旧 30 秒窗口误杀。
+ */
+export function binaryPreviewCompletionTimeoutMs(byteLength: number): number {
+  if (!Number.isSafeInteger(byteLength) || byteLength <= 0) {
+    return BINARY_PREVIEW_BASE_COMPLETION_TIMEOUT_MS
+  }
+  return Math.min(
+    MAX_JAVASCRIPT_TIMEOUT_MS,
+    BINARY_PREVIEW_BASE_COMPLETION_TIMEOUT_MS + Math.ceil(byteLength / BINARY_PREVIEW_TIMEOUT_BYTES_PER_SECOND) * 1000
+  )
+}
+
 /**
  * 汇集 Tauri Channel 的有序二进制预览小块。
  *
  * 第一条 JSON 消息声明最终长度，后续每个 Raw ArrayBuffer 都只做一次有界 `set`。
- * 这避免 WebView2 在一个 IPC 回调里接收、复制完整 20 MiB 载荷；最终仍保持现有稳定
+ * 这避免 WebView2 在一个 IPC 回调里接收、复制完整预览载荷；最终仍保持现有稳定
  * DTO 所需的单一连续 ArrayBuffer，组件和取消队列无需感知传输细节。
  */
 export function createBinaryPreviewStreamAssembler(): BinaryPreviewStreamAssembler {
@@ -1421,6 +1443,23 @@ export function createBinaryPreviewStreamAssembler(): BinaryPreviewStreamAssembl
     rejectResult(error instanceof Error ? error : new Error(String(error)))
   }
 
+  const scheduleCompletionTimeout = () => {
+    if (settled || !commandCompleted) return
+    if (completionTimeout) clearTimeout(completionTimeout)
+    completionTimeout = setTimeout(
+      () => {
+        fail(
+          new Error(
+            target
+              ? 'Binary preview IPC stream completed before all bytes arrived'
+              : 'Binary preview IPC stream completed without a header'
+          )
+        )
+      },
+      binaryPreviewCompletionTimeoutMs(target?.byteLength ?? 0)
+    )
+  }
+
   const finishIfReady = () => {
     if (settled || !commandCompleted || !target || receivedBytes !== target.byteLength) return
     settled = true
@@ -1436,6 +1475,8 @@ export function createBinaryPreviewStreamAssembler(): BinaryPreviewStreamAssembl
         return
       }
       target = new Uint8Array(message.byteLength)
+      // invoke 可能先于排队的 Channel 头返回；拿到真实长度后必须扩展先前的基础窗口。
+      scheduleCompletionTimeout()
       finishIfReady()
       return
     }
@@ -1461,17 +1502,9 @@ export function createBinaryPreviewStreamAssembler(): BinaryPreviewStreamAssembl
     /*
      * Rust 命令返回只说明所有 Channel 消息已经排入 WebView；较大的 Raw 消息仍可能在
      * 独立 fetch 中传输，不能在 invoke resolve 时误判为缺块。超时只防御底层通道异常，
-     * 正常 20 MiB 上限远低于该窗口。
+     * 正常的用户可配置上限远低于该窗口。
      */
-    completionTimeout = setTimeout(() => {
-      fail(
-        new Error(
-          target
-            ? 'Binary preview IPC stream completed before all bytes arrived'
-            : 'Binary preview IPC stream completed without a header'
-        )
-      )
-    }, 30_000)
+    scheduleCompletionTimeout()
   }
 
   return { result, accept, complete, fail }
@@ -2162,6 +2195,9 @@ function localizeCommandError(error: Partial<LoreCommandError>, command: string)
   }
   if (error.code === 'binary_preview_too_large') {
     return t('binaryPreviewTooLarge')
+  }
+  if (error.code === 'binary_preview_limit_invalid') {
+    return t('binaryPreviewLimitInvalid')
   }
   if (error.code === 'binary_preview_unsupported') {
     return t('binaryPreviewUnsupportedFormat')

@@ -70,8 +70,8 @@ export function WorkingTreeDiffContainer({
 
   const loadRepositoryBinaryPreview = useCallback(
     (path: string, revision?: string, metadataOnly = false): Promise<BinaryFilePreview> =>
-      loadBinaryFilePreview(repositoryPath, path, revision, metadataOnly),
-    [repositoryPath]
+      loadBinaryFilePreview(repositoryPath, path, revision, metadataOnly, preferences.binaryPreviewLimitMib),
+    [preferences.binaryPreviewLimitMib, repositoryPath]
   )
 
   /** 主要文件变化时按需读取真实文本 Diff，并丢弃来自旧选择的响应。 */

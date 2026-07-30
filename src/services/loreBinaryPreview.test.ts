@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { createBinaryPreviewStreamAssembler, decodeBinaryFilePreviewEnvelope } from './lore'
+import {
+  binaryPreviewCompletionTimeoutMs,
+  createBinaryPreviewStreamAssembler,
+  decodeBinaryFilePreviewEnvelope
+} from './lore'
 
 function createEnvelope(metadata: object, payload: Uint8Array): ArrayBuffer {
   const metadataBytes = new TextEncoder().encode(JSON.stringify(metadata))
@@ -12,6 +16,11 @@ function createEnvelope(metadata: object, payload: Uint8Array): ArrayBuffer {
 }
 
 describe('binary preview Raw IPC envelope', () => {
+  it('scales the completion timeout for large configured previews', () => {
+    expect(binaryPreviewCompletionTimeoutMs(20 * 1024 * 1024)).toBe(33_000)
+    expect(binaryPreviewCompletionTimeoutMs(1024 * 1024 * 1024)).toBe(158_000)
+  })
+
   it('assembles ordered stream chunks into one envelope', async () => {
     const envelope = createEnvelope(
       {

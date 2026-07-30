@@ -1,6 +1,6 @@
 //! 不可信游戏资产的只读结构化预览。
 //!
-//! 普通预览只处理已经通过仓库相对路径、符号链接和 20 MiB 原始文件限制的内存字节；
+//! 普通预览只处理已经通过仓库相对路径、符号链接和用户配置原始文件限制的内存字节；
 //! 大型 Blender/Unreal 主包另走 `Read + Seek` 有界区间读取。所有解析器仍需自行限制
 //! 目录项、路径长度、声明尺寸和递归深度，避免容器元数据触发过量分配。这里只读取目录、
 //! 稳定头部和编辑器明确引用的缩略图；不会提取文件、执行脚本或追随外部资源。
@@ -130,14 +130,26 @@ impl AssetPreviewError {
         }
     }
 
-    /// 文件超过 20 MiB 内嵌预览限制。
-    pub(crate) fn too_large(size: u64) -> Self {
+    /// 文件超过当前用户配置的内嵌预览限制。
+    pub(crate) fn too_large(size: u64, limit_bytes: u64) -> Self {
         Self {
             code: "binary_preview_too_large",
             message: format!(
-                "The file is {:.1} MB, exceeding the 20 MB embedded preview limit; \
+                "The file is {:.1} MiB, exceeding the {:.0} MiB embedded preview limit; \
                  open it with an external application",
-                size as f64 / (1024.0 * 1024.0)
+                size as f64 / (1024.0 * 1024.0),
+                limit_bytes as f64 / (1024.0 * 1024.0)
+            ),
+        }
+    }
+
+    /// 前端或偏好文件提交了零值，或无法换算到字节计数器的技术溢出值。
+    pub(crate) fn invalid_limit(limit_mib: u64) -> Self {
+        Self {
+            code: "binary_preview_limit_invalid",
+            message: format!(
+                "The binary preview limit must be at least {MIN_BINARY_PREVIEW_LIMIT_MIB} MiB \
+                 and fit the byte counter; received {limit_mib} MiB"
             ),
         }
     }
@@ -1904,24 +1916,37 @@ pub fn binary_preview_format(path: &Path) -> Option<(&'static str, &'static str)
     }
 }
 
-/// 判断原始资产是否超过完整正文内嵌预览上限。
+/// 预览偏好的产品默认值与最小值；产品不设置最大值。
+pub const DEFAULT_BINARY_PREVIEW_LIMIT_MIB: u64 = 20;
+pub const MIN_BINARY_PREVIEW_LIMIT_MIB: u64 = 1;
+
+/// 把正整数 MiB 转成字节；产品不设最大值，只拒绝零值和 u64 技术溢出。
+pub fn binary_preview_limit_bytes(limit_mib: u64) -> Result<u64, AssetPreviewError> {
+    if limit_mib < MIN_BINARY_PREVIEW_LIMIT_MIB {
+        return Err(AssetPreviewError::invalid_limit(limit_mib));
+    }
+    limit_mib
+        .checked_mul(1024 * 1024)
+        .ok_or_else(|| AssetPreviewError::invalid_limit(limit_mib))
+}
+
+/// 判断原始资产是否超过当前完整正文内嵌预览上限。
 ///
 /// 调用方可在真正读取内容前用它返回轻量大小元数据，或转入受支持资产的有界缩略图
 /// 读取，避免为了显示预览而把整份资产载入内存。完整读取后仍须二次检查并发增长。
-pub fn binary_preview_size_exceeded(size: u64) -> bool {
-    const MAX_BINARY_PREVIEW_BYTES: u64 = 20 * 1024 * 1024;
-    size > MAX_BINARY_PREVIEW_BYTES
+pub fn binary_preview_size_exceeded(size: u64, limit_bytes: u64) -> bool {
+    size > limit_bytes
 }
 
 /// 同时在读取前后检查体积，避免损坏元数据或并发文件增长绕过 IPC 上限。
-pub fn ensure_binary_preview_size(size: u64) -> Result<(), AssetPreviewError> {
-    if binary_preview_size_exceeded(size) {
-        return Err(AssetPreviewError::too_large(size));
+pub fn ensure_binary_preview_size(size: u64, limit_bytes: u64) -> Result<(), AssetPreviewError> {
+    if binary_preview_size_exceeded(size, limit_bytes) {
+        return Err(AssetPreviewError::too_large(size, limit_bytes));
     }
     Ok(())
 }
 
-/// 只有能够从稳定内部索引定位缩略图的主资产格式才允许绕过 20 MiB 正文上限。
+/// 只有能够从稳定内部索引定位缩略图的主资产格式才允许绕过完整正文上限。
 pub fn supports_large_embedded_thumbnail(path: &Path) -> bool {
     matches!(
         path.extension()
@@ -2134,7 +2159,7 @@ pub fn prepare_preview_payload(
     encode_texture_preview_png(image)
 }
 
-/// 图片解码限制同时约束维度和分配；原文件 20 MiB 并不能阻止压缩纹理解出巨幅像素。
+/// 图片解码限制同时约束维度和分配；原文件读取上限并不能阻止压缩纹理解出巨幅像素。
 fn image_preview_limits() -> image::Limits {
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(16_384);
@@ -2977,13 +3002,31 @@ mod tests {
     }
 
     #[test]
-    fn binary_preview_rejects_content_larger_than_twenty_mb() {
-        assert!(ensure_binary_preview_size(20 * 1024 * 1024).is_ok());
+    fn binary_preview_rejects_content_larger_than_configured_limit() {
+        let limit = binary_preview_limit_bytes(20).unwrap();
+        assert!(ensure_binary_preview_size(20 * 1024 * 1024, limit).is_ok());
         assert_eq!(
-            ensure_binary_preview_size(20 * 1024 * 1024 + 1)
+            ensure_binary_preview_size(20 * 1024 * 1024 + 1, limit)
                 .expect_err("Content above the limit must fail before reading")
                 .code,
             "binary_preview_too_large"
+        );
+    }
+
+    #[test]
+    fn binary_preview_limit_accepts_large_values_and_rejects_numeric_overflow() {
+        assert_eq!(binary_preview_limit_bytes(1).unwrap(), 1024 * 1024);
+        assert_eq!(
+            binary_preview_limit_bytes(2048).unwrap(),
+            2048 * 1024 * 1024
+        );
+        assert_eq!(
+            binary_preview_limit_bytes(0).unwrap_err().code,
+            "binary_preview_limit_invalid"
+        );
+        assert_eq!(
+            binary_preview_limit_bytes(u64::MAX).unwrap_err().code,
+            "binary_preview_limit_invalid"
         );
     }
 

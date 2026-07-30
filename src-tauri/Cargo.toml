@@ -1,6 +1,6 @@
 [package]
 name = "lore-client"
-version = "0.2.0"
+version = "0.2.1"
 description = "Lore desktop version control client"
 authors = ["Lore Client Contributors"]
 edition = "2021"

@@ -31,6 +31,7 @@ describe('client preferences stored on disk', () => {
       revisionChangesView: 'tree',
       revisionChangesDiffVisible: true,
       binaryDiffVisible: true,
+      binaryPreviewLimitMib: 20,
       revisionHistoryLaneMode: 'flat',
       diff: {
         contextLines: 3,
@@ -214,6 +215,21 @@ describe('client preferences stored on disk', () => {
 
     updateClientPreferences({ binaryDiffVisible: true })
     expect(getClientPreferences().binaryDiffVisible).toBe(true)
+  })
+
+  it('persists and bounds the binary preview size limit in MiB', () => {
+    expect(DEFAULT_CLIENT_PREFERENCES.binaryPreviewLimitMib).toBe(20)
+
+    updateClientPreferences({ binaryPreviewLimitMib: 64.4 })
+    expect(getClientPreferences().binaryPreviewLimitMib).toBe(64)
+
+    updateClientPreferences({ binaryPreviewLimitMib: 0 })
+    expect(getClientPreferences().binaryPreviewLimitMib).toBe(1)
+
+    updateClientPreferences({ binaryPreviewLimitMib: 2048 })
+    expect(getClientPreferences().binaryPreviewLimitMib).toBe(2048)
+
+    updateClientPreferences({ binaryPreviewLimitMib: 20 })
   })
 
   it('uses flat mode by default, persists topology mode, and rejects unknown modes', () => {

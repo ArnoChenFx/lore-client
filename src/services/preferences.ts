@@ -4,8 +4,18 @@ import { DEFAULT_EXTERNAL_DIFF_TOOLS, DEFAULT_EXTERNAL_MERGE_TOOLS } from '../sh
 import type { ClientPreferences, WorkspaceLayout } from '../types'
 import { invokeLogged, logError } from './logging'
 
+/** 默认值保持升级前行为；最小值同时用于设置输入和磁盘偏好规范化。 */
+export const DEFAULT_BINARY_PREVIEW_LIMIT_MIB = 20
+export const MIN_BINARY_PREVIEW_LIMIT_MIB = 1
+
+/*
+ * 产品不设置最大值；这里只把超过 u64 字节计数能力的 MiB 值裁剪到可精确换算的
+ * 技术边界。该值约 16 EiB，不构成正常使用中的产品限制，也不会暴露到输入控件。
+ */
+const MAX_BINARY_PREVIEW_LIMIT_MIB_BY_BYTE_COUNTER = 17_592_186_044_415
+
 export const DEFAULT_CLIENT_PREFERENCES: ClientPreferences = {
-  version: 3,
+  version: 4,
   theme: 'system',
   // 静态默认仍为简体中文；首次无偏好文件时由 resolveSystemLanguagePreference 覆盖。
   language: 'zh-CN',
@@ -23,6 +33,7 @@ export const DEFAULT_CLIENT_PREFERENCES: ClientPreferences = {
   revisionChangesBrowserWidth: 220,
   revisionChangesDiffVisible: true,
   binaryDiffVisible: true,
+  binaryPreviewLimitMib: DEFAULT_BINARY_PREVIEW_LIMIT_MIB,
   revisionHistoryLaneMode: 'flat',
   diff: {
     contextLines: 3,
@@ -189,6 +200,17 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
       typeof value?.binaryDiffVisible === 'boolean'
         ? value.binaryDiffVisible
         : DEFAULT_CLIENT_PREFERENCES.binaryDiffVisible,
+    /*
+     * 偏好以整数 MiB 保存，避免 JSON 中出现超过 JavaScript 安全整数的字节数。
+     * 手工编辑产生的非有限值或非数字回退默认值，合法数字则裁剪到安全预算。
+     */
+    binaryPreviewLimitMib:
+      typeof value?.binaryPreviewLimitMib === 'number' && Number.isFinite(value.binaryPreviewLimitMib)
+        ? Math.max(
+            MIN_BINARY_PREVIEW_LIMIT_MIB,
+            Math.min(MAX_BINARY_PREVIEW_LIMIT_MIB_BY_BYTE_COUNTER, Math.round(value.binaryPreviewLimitMib))
+          )
+        : DEFAULT_CLIENT_PREFERENCES.binaryPreviewLimitMib,
     /*
      * 平铺模式是软件默认视图。只有磁盘偏好明确保存 `topology` 时才进入
      * 多道图谱；旧配置缺少字段或外部调用传入未知值时统一回退默认单道模式。

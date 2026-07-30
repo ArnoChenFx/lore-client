@@ -273,7 +273,7 @@ pub async fn lore_revision_files(
 /// 按需读取一个工作区文件或指定 Revision 中的二进制预览或大小元数据。
 ///
 /// `revision` 为空时读取工作区真实文件；非空时只读取该不可变 Revision Tree 中
-/// 精确匹配的内容。完整正文执行 20 MiB 大小限制；大型 Blender/Unreal 主包只读取
+/// 精确匹配的内容。完整正文执行用户配置的大小限制；大型 Blender/Unreal 主包只读取
 /// 有界缩略图区间，未知格式或 metadata-only 请求只返回大小且不读取正文。
 #[tauri::command]
 pub async fn lore_file_preview(
@@ -281,16 +281,22 @@ pub async fn lore_file_preview(
     path: String,
     revision: Option<String>,
     metadata_only: Option<bool>,
+    preview_limit_mib: Option<u64>,
 ) -> Result<tauri::ipc::Response, LoreCommandError> {
     let revision = revision
         .map(|value| validate_revision(&value))
         .transpose()?;
+    // IPC 参数不能未经检查直接参与内存预算；Rust 仍拒绝零值和字节换算溢出。
+    let preview_limit_bytes =
+        binary_preview_limit_bytes(preview_limit_mib.unwrap_or(DEFAULT_BINARY_PREVIEW_LIMIT_MIB))
+            .map_err(|error| LoreCommandError::new(error.code, error.message))?;
     run_heavy_lore_task(&FILE_PREVIEW_READ_LANE, move || {
         build_file_preview(
             &repository_path,
             &path,
             revision.as_deref(),
             metadata_only.unwrap_or(false),
+            preview_limit_bytes,
         )
         .and_then(encode_file_preview_response)
     })
@@ -302,24 +308,29 @@ pub async fn lore_file_preview(
 /// 后端读取、格式校验和资产预处理仍完整位于 blocking 任务；变化只发生在 IPC 交付
 /// 边界。第一条消息是 JSON 总长度，后续消息均为 Raw ArrayBuffer。Tauri Channel 会
 /// 保证消息顺序，前端可一次预分配最终信封并逐块写入，而不必接收一个会独占主线程的
-/// 20 MiB 响应。
+/// 较大响应。
 #[tauri::command]
 pub async fn lore_file_preview_stream(
     repository_path: String,
     path: String,
     revision: Option<String>,
     metadata_only: Option<bool>,
+    preview_limit_mib: Option<u64>,
     on_chunk: tauri::ipc::Channel<tauri::ipc::Response>,
 ) -> Result<(), LoreCommandError> {
     let revision = revision
         .map(|value| validate_revision(&value))
         .transpose()?;
+    let preview_limit_bytes =
+        binary_preview_limit_bytes(preview_limit_mib.unwrap_or(DEFAULT_BINARY_PREVIEW_LIMIT_MIB))
+            .map_err(|error| LoreCommandError::new(error.code, error.message))?;
     run_heavy_lore_task(&FILE_PREVIEW_READ_LANE, move || {
         let envelope = build_file_preview(
             &repository_path,
             &path,
             revision.as_deref(),
             metadata_only.unwrap_or(false),
+            preview_limit_bytes,
         )
         .and_then(encode_file_preview_envelope)?;
         let header = serde_json::to_string(&LoreFilePreviewStreamHeader {

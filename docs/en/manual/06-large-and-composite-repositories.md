@@ -86,14 +86,18 @@ missing directory is reported even if its configuration still exists.
 Content is read on demand for the primary selection. Disabling Binary Diff stops those
 reads in both workspace and Revision changes.
 
-Container directories are entry-limited, texture decoding has dimension and memory budgets, and
-full source payloads remain subject to the 20 MiB embedded-preview limit. Large workspace `.blend`,
-`.uasset`, and `.umap` files are the narrow exception: Lore Client reads only bounded headers,
-thumbnail tables, and the referenced image instead of loading or transferring the complete asset.
-The fixed Lore Store API has no range-read operation, so immutable Revision files above 20 MiB stay
-in metadata-only mode and are never fully downloaded just to extract a thumbnail. Other oversized
-content uses the same file-size fallback. Previewing never extracts archives, executes scripts,
-follows symlinks, or reads resources outside the container.
+Container directories are entry-limited, and texture decoding has separate dimension and memory
+budgets. Full source payloads use a 20 MiB embedded-preview limit by default. Change the per-file
+limit from **Client Settings → General → Binary Preview** to any whole number of at least 1 MiB; the
+setting has no product-level maximum and applies immediately to current and future previews. Higher
+limits increase memory use and IPC traffic.
+
+Large workspace `.blend`, `.uasset`, and `.umap` files are the narrow exception: Lore Client reads
+only bounded headers, thumbnail tables, and the referenced image instead of loading or transferring
+the complete asset. The fixed Lore Store API has no range-read operation, so immutable Revision files
+above the configured limit stay in metadata-only mode and are never fully downloaded just to extract
+a thumbnail. Other oversized content uses the same file-size fallback. Previewing never extracts
+archives, executes scripts, follows symlinks, or reads resources outside the container.
 
 ## Choosing the mechanism
 

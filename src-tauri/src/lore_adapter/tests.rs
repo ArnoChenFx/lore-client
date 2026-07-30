@@ -1242,6 +1242,7 @@ fn workspace_binary_preview_returns_validated_real_file_content() {
         "Content/Images/Preview.PNG",
         None,
         false,
+        20 * 1024 * 1024,
     )
     .expect("An allowlisted workspace image should return a preview DTO");
 
@@ -1292,6 +1293,7 @@ fn workspace_blender_preview_returns_only_embedded_thumbnail_payload() {
         "Art/Hero.blend",
         None,
         false,
+        20 * 1024 * 1024,
     )
     .expect("A Blend TEST block should return an embedded thumbnail preview");
 
@@ -1341,6 +1343,7 @@ fn workspace_large_blender_preview_bypasses_full_content_limit() {
         "Art/LargeHero.blend",
         None,
         false,
+        20 * 1024 * 1024,
     )
     .expect("A large Blend TEST block should bypass the full-content limit");
 
@@ -1403,6 +1406,7 @@ fn disabled_workspace_binary_diff_returns_metadata_without_reading_content() {
         "Content/Images/Preview.PNG",
         None,
         true,
+        20 * 1024 * 1024,
     )
     .expect("A disabled binary Diff should return size-only metadata");
 
@@ -1437,6 +1441,7 @@ fn oversized_workspace_asset_returns_size_metadata_without_reading_content() {
         "Content/World.umap",
         None,
         false,
+        20 * 1024 * 1024,
     )
     .expect("An oversized allowlisted asset should return size-only metadata");
 
@@ -1444,6 +1449,49 @@ fn oversized_workspace_asset_returns_size_metadata_without_reading_content() {
     assert_eq!(preview.content_state, LoreFilePreviewContentState::TooLarge);
     assert!(preview.data.is_empty());
     assert!(preview.structured_preview.is_none());
+}
+
+#[test]
+fn workspace_binary_preview_honors_the_configured_size_limit() {
+    let (repository_path, _cleanup) =
+        create_configuration_test_repository("workspace-configured-preview-limit", "");
+    let image_path = repository_path.join("Content").join("Configured.png");
+    std::fs::create_dir_all(
+        image_path
+            .parent()
+            .expect("Image should have a parent directory"),
+    )
+    .expect("Image directory should be created");
+    let image = std::fs::File::create(&image_path).expect("Preview image should be created");
+    image
+        .set_len(2 * 1024 * 1024)
+        .expect("Sparse preview image length should be set");
+    drop(image);
+
+    let limited = build_file_preview(
+        repository_path.to_string_lossy().as_ref(),
+        "Content/Configured.png",
+        None,
+        false,
+        1024 * 1024,
+    )
+    .expect("A file above the configured limit should return metadata");
+    assert_eq!(limited.content_state, LoreFilePreviewContentState::TooLarge);
+    assert!(limited.data.is_empty());
+
+    let expanded = build_file_preview(
+        repository_path.to_string_lossy().as_ref(),
+        "Content/Configured.png",
+        None,
+        false,
+        3 * 1024 * 1024,
+    )
+    .expect("Raising the configured limit should allow the same file to load");
+    assert_eq!(
+        expanded.content_state,
+        LoreFilePreviewContentState::Available
+    );
+    assert_eq!(expanded.data.len(), 2 * 1024 * 1024);
 }
 
 #[test]
@@ -1466,6 +1514,7 @@ fn unsupported_workspace_binary_returns_size_metadata_without_reading_content() 
         "Content/OnlineFramework.archive",
         None,
         false,
+        20 * 1024 * 1024,
     )
     .expect("An unsupported binary should return size-only metadata");
 
@@ -2807,6 +2856,7 @@ fn real_lore_repository_can_be_created_and_events_read() {
         "root-preview.png",
         Some(&source_revision),
         false,
+        20 * 1024 * 1024,
     )
     .expect("The root revision PNG should return real preview content from the immutable store");
     assert_eq!(root_png_preview.kind, "image");

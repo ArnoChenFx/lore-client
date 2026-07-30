@@ -4,10 +4,11 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+use crate::asset_preview::{binary_preview_limit_bytes, DEFAULT_BINARY_PREVIEW_LIMIT_MIB};
 use crate::lore_adapter::{sync_auth_account_bindings, LoreCommandError};
 
 /// 当前偏好文件格式版本；后续调整字段语义时在 Rust 边界执行显式迁移。
-const CLIENT_PREFERENCES_VERSION: u32 = 3;
+const CLIENT_PREFERENCES_VERSION: u32 = 4;
 const PREFERENCES_FILE_NAME: &str = "client-preferences.json";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -167,6 +168,8 @@ pub struct ClientPreferences {
     pub revision_changes_diff_visible: bool,
     /// 工作区与 Revision 是否读取并显示可预览的二进制 Diff。
     pub binary_diff_visible: bool,
+    /// 单个二进制文件允许进入完整内嵌预览链路的最大原始体积，单位为 MiB。
+    pub binary_preview_limit_mib: u64,
     /// Revision History 左侧轨道使用完整多道拓扑或当前 Branch 单道投影。
     pub revision_history_lane_mode: String,
     pub diff: DiffPreference,
@@ -195,6 +198,7 @@ impl Default for ClientPreferences {
             revision_changes_browser_width: 220.0,
             revision_changes_diff_visible: true,
             binary_diff_visible: true,
+            binary_preview_limit_mib: DEFAULT_BINARY_PREVIEW_LIMIT_MIB,
             revision_history_lane_mode: "flat".to_owned(),
             diff: DiffPreference::default(),
             external_diff_tools: default_external_diff_tools(),
@@ -328,6 +332,8 @@ fn validate_preferences(preferences: &ClientPreferences) -> Result<(), LoreComma
         && (0.15..=0.85).contains(&preferences.local_changes_stage_split)
         && preferences.revision_changes_browser_width >= 100.0;
     let valid_diff = preferences.diff.context_lines <= 100;
+    let valid_binary_preview_limit =
+        binary_preview_limit_bytes(preferences.binary_preview_limit_mib).is_ok();
     let valid_external_tool = |tool: &ExternalDiffPreference| {
         matches!(
             tool.kind.as_str(),
@@ -387,6 +393,7 @@ fn validate_preferences(preferences: &ClientPreferences) -> Result<(), LoreComma
         || !finite_layout
         || !valid_layout
         || !valid_diff
+        || !valid_binary_preview_limit
         || !valid_external_diff
         || !valid_identity
         || !valid_auth_bindings
@@ -419,6 +426,7 @@ mod tests {
         let preferences = ClientPreferences {
             repository_paths: vec!["E:\\A".to_owned(), "E:\\B".to_owned()],
             active_repository_path: Some("E:\\A".to_owned()),
+            binary_preview_limit_mib: 64,
             external_diff_tools: vec![ExternalDiffPreference {
                 id: "diff-custom".to_owned(),
                 kind: "custom".to_owned(),
@@ -431,6 +439,12 @@ mod tests {
         };
 
         write_preferences_file(&path, &preferences).unwrap();
+        let serialized = std::fs::read_to_string(&path)
+            .expect("The serialized preferences should remain readable");
+        // MiB 的缩写必须与 TypeScript DTO 完全同名；普通 camelCase 会产生 Mib，
+        // 这条断言防止前端再次写入一个被 serde 静默忽略的 MiB 变体。
+        assert!(serialized.contains("\"binaryPreviewLimitMib\": 64"));
+        assert!(!serialized.contains("binaryPreviewLimitMiB"));
         let restored = read_preferences_file(&path).unwrap().unwrap();
         assert_eq!(restored.repository_paths, preferences.repository_paths);
         assert_eq!(
@@ -440,6 +454,7 @@ mod tests {
         assert_eq!(restored.language, "zh-CN");
         assert_eq!(restored.external_diff_tools[0].kind, "custom");
         assert_eq!(restored.external_diff_tools[0].name, "Studio Diff");
+        assert_eq!(restored.binary_preview_limit_mib, 64);
         assert_eq!(
             restored.external_diff_tools[0].executable,
             "E:\\Tools\\Studio Diff.exe"
@@ -492,6 +507,7 @@ mod tests {
         assert!(preferences.local_changes_diff_visible);
         assert!(preferences.revision_changes_diff_visible);
         assert!(preferences.binary_diff_visible);
+        assert_eq!(preferences.binary_preview_limit_mib, 20);
         assert_eq!(preferences.revision_history_lane_mode, "flat");
         assert_eq!(preferences.external_diff_tools.len(), 4);
         assert_eq!(preferences.external_merge_tools.len(), 4);
@@ -501,6 +517,17 @@ mod tests {
     fn preferences_reject_unknown_revision_history_lane_mode() {
         let preferences = ClientPreferences {
             revision_history_lane_mode: "diagonal".to_owned(),
+            ..Default::default()
+        };
+
+        let error = validate_preferences(&preferences).unwrap_err();
+        assert_eq!(error.code, "preferences_value_invalid");
+    }
+
+    #[test]
+    fn preferences_reject_zero_binary_preview_limit() {
+        let preferences = ClientPreferences {
+            binary_preview_limit_mib: 0,
             ..Default::default()
         };
 

@@ -8662,6 +8662,44 @@ body.is-resizing-panes {
   font-weight: 500;
 }
 
+.settings-binary-preview-limit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.settings-binary-preview-limit > span:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-binary-preview-limit strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.settings-binary-preview-limit small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.settings-binary-preview-limit__control {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.settings-binary-preview-limit__control .control-input--numeric {
+  width: 76px;
+}
+
 .settings-group--external-diff {
   display: flex;
   flex-direction: column;

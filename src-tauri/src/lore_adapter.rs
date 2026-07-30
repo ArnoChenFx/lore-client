@@ -76,9 +76,9 @@ use serde_json::Value;
 use tauri::Emitter;
 
 use crate::asset_preview::{
-    binary_preview_format, binary_preview_size_exceeded, ensure_binary_preview_size,
-    prepare_file_preview_payload, prepare_large_asset_preview_payload,
-    supports_large_embedded_thumbnail, StructuredAssetPreview,
+    binary_preview_format, binary_preview_limit_bytes, binary_preview_size_exceeded,
+    ensure_binary_preview_size, prepare_file_preview_payload, prepare_large_asset_preview_payload,
+    supports_large_embedded_thumbnail, StructuredAssetPreview, DEFAULT_BINARY_PREVIEW_LIMIT_MIB,
 };
 use crate::client_preferences::RepositoryAuthAccountBinding;
 

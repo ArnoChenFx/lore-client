@@ -929,6 +929,7 @@ pub(super) fn build_file_preview(
     path: &str,
     revision: Option<&str>,
     metadata_only: bool,
+    preview_limit_bytes: u64,
 ) -> Result<LoreFilePreview, LoreCommandError> {
     let relative_path = validate_repository_relative_path(path)?;
     let normalized_path = relative_path
@@ -977,7 +978,7 @@ pub(super) fn build_file_preview(
                 LoreFilePreviewContentState::Unsupported,
             ));
         }
-        if binary_preview_size_exceeded(file.size) {
+        if binary_preview_size_exceeded(file.size, preview_limit_bytes) {
             // 固定 Lore Store 没有区间读取接口。大型 Revision 资产必须保持元数据降级，
             // 不能为了一个缩略图把完整远端对象下载到临时文件。
             return Ok(metadata_only_preview(
@@ -1011,7 +1012,7 @@ pub(super) fn build_file_preview(
                 LoreFilePreviewContentState::Unsupported,
             ));
         }
-        if binary_preview_size_exceeded(size) {
+        if binary_preview_size_exceeded(size, preview_limit_bytes) {
             if supports_large_embedded_thumbnail(&relative_path) {
                 let source = std::fs::File::open(&workspace_path).map_err(|error| {
                     LoreCommandError::new(
@@ -1065,7 +1066,7 @@ pub(super) fn build_file_preview(
             )
         })?
     };
-    ensure_binary_preview_size(bytes.len() as u64)?;
+    ensure_binary_preview_size(bytes.len() as u64, preview_limit_bytes)?;
     // size 报告原始资产字节；纹理转码后的 PNG 只进入 Raw IPC data。
     let original_size = bytes.len() as u64;
     let prepared = prepare_file_preview_payload(&relative_path, kind, source_mime_type, bytes)

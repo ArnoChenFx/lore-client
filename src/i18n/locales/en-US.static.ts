@@ -71,12 +71,19 @@ const enUSStatic = {
   active: 'Active',
   added: 'Added',
   added207MbReused892Mb: 'Added 207 MB, reused 892 MB',
+  binaryPreview: 'Binary Preview',
   binaryPreviewDecodeFailed:
     'The asset preview could not be decoded; it may be damaged or use an unsupported encoding.',
   binaryPreviewInvalidAsset: 'The asset structure is invalid or exceeds safe parsing limits.',
+  binaryPreviewLimit: 'Per-file preview limit',
+  binaryPreviewLimitDescription:
+    'Controls the size of one source file read into memory and sent to the embedded previewer; enter a whole number of at least 1 MiB.',
+  binaryPreviewLimitInvalid:
+    'The binary preview limit is invalid; enter a whole number of at least 1 MiB in Client Settings.',
   binaryPreviewSizeOnly: 'Asset exceeds the embedded preview limit',
   binaryPreviewSizeOnlyHint: 'The asset content was not read; only its file size change is shown to limit memory use.',
-  binaryPreviewTooLarge: 'The file exceeds the 20 MiB embedded preview limit; open it in an external application.',
+  binaryPreviewTooLarge:
+    'The file exceeds the current embedded preview limit; adjust Client Settings or open it externally.',
   binaryPreviewUnsupportedAssetVariant: 'This asset variant cannot yet be safely previewed in the application.',
   binaryPreviewUnsupportedFormat: 'This file format does not support an embedded preview.',
   binaryPreviewUnsupportedSizeOnly: 'This binary type does not support embedded preview',
@@ -173,7 +180,7 @@ const enUSStatic = {
   clientSettings: 'Client Settings',
   clientSettingsCategories: 'Client settings categories',
   clientSettingsGeneral: 'General',
-  clientSettingsGeneralDescription: 'Appearance and interface language',
+  clientSettingsGeneralDescription: 'Appearance, interface language, and preview limits',
   clientSettingsIdentityDescription: 'Default author details for new revisions',
   clientSettingsIntegrations: 'Integrations',
   clientSettingsIntegrationsDescription: 'Configure desktop tools that compare files outside Lore.',

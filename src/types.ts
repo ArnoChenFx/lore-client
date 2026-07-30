@@ -924,6 +924,8 @@ export interface ClientPreferences {
   revisionChangesDiffVisible: boolean
   /** 工作区与 Revision 是否读取并显示可预览的二进制 Diff 内容。 */
   binaryDiffVisible: boolean
+  /** 单个二进制文件允许读取并传入内嵌预览的最大原始体积，单位为 MiB。 */
+  binaryPreviewLimitMib: number
   /** Revision History 使用完整多道父子拓扑，或仅含当前 Branch 的单道投影。 */
   revisionHistoryLaneMode: RevisionHistoryLaneMode
   diff: DiffPreferences

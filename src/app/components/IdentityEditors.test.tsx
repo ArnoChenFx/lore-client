@@ -39,4 +39,25 @@ describe('commit author and email editors', () => {
       'https://www.gravatar.com/avatar/b4c9a289323b21a01c3e940f150eb9b8c542587f1abfd8f0e1cc1ffc5e475514?s=64&d=404&r=g'
     )
   })
+
+  it('renders the persisted binary preview limit with bounded numeric input semantics', () => {
+    const html = renderToStaticMarkup(
+      <SettingsDialog
+        preference="system"
+        language="en-US"
+        binaryPreviewLimitMib={64}
+        defaultIdentity=""
+        onPreferenceChange={() => undefined}
+        onLanguageChange={() => undefined}
+        onDefaultIdentityChange={() => undefined}
+        onResetLayout={() => undefined}
+        onClose={() => undefined}
+      />
+    )
+
+    expect(html).toContain('aria-label="Per-file preview limit"')
+    expect(html).toContain('min="1"')
+    expect(html).not.toContain(' max=')
+    expect(html).toContain('value="64"')
+  })
 })
