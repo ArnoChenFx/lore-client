@@ -849,7 +849,7 @@ describe('repository snapshot branch loading', () => {
       sharedStorePath: 'D:\\LoreStore',
       revision: 'release/1.0',
       bare: false,
-      directFileIo: true,
+      directFileWrite: true,
       layer: {
         repository: 'world-lighting',
         metadataKey: 'build-id'
@@ -870,7 +870,7 @@ describe('repository snapshot branch loading', () => {
       viewPath: 'C:\\views\\world.view',
       targetRevision: 'release/1.0',
       bare: false,
-      directFileIo: true,
+      directFileWrite: true,
       layerRepository: 'world-lighting',
       layerMetadataKey: 'build-id',
       useSharedStore: true,

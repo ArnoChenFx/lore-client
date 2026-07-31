@@ -51,7 +51,7 @@ interface CloneSubmissionInput {
   viewPath: string
   targetRevision: string
   bare: boolean
-  directFileIo: boolean
+  directFileWrite: boolean
   layerRepository: string
   layerMetadataKey: string
   useSharedStore: boolean
@@ -65,7 +65,7 @@ interface CloneSubmissionInput {
 /**
  * 将 Clone 表单压缩成稳定 DTO，并主动移除不会生效的参数组合。
  *
- * Bare 不物化文件，因此 View、Direct File I/O、Layer 和依赖闭包都必须从请求中
+ * Bare 不物化文件，因此 View、直接文件写入、Layer 和依赖闭包都必须从请求中
  * 消失；没有根文件时标签、递归和深度同样没有语义，不能把它们传给 Lore 后再
  * 让用户误以为筛选已经生效。
  */
@@ -87,7 +87,7 @@ export function buildCloneSubmission(input: CloneSubmissionInput): {
       sharedStorePath: input.sharedStorePath,
       revision: targetRevision || undefined,
       bare: input.bare,
-      directFileIo: materializeFiles && input.directFileIo,
+      directFileWrite: materializeFiles && input.directFileWrite,
       layer:
         materializeFiles && layerRepository
           ? {
@@ -124,7 +124,7 @@ export function CloneDialog({
   const [viewPath, setViewPath] = useState('')
   const [targetRevision, setTargetRevision] = useState('')
   const [bare, setBare] = useState(false)
-  const [directFileIo, setDirectFileIo] = useState(false)
+  const [directFileWrite, setDirectFileWrite] = useState(false)
   const [layerRepository, setLayerRepository] = useState('')
   const [layerMetadataKey, setLayerMetadataKey] = useState('')
   const [dependencyRootFiles, setDependencyRootFiles] = useState('')
@@ -186,7 +186,7 @@ export function CloneDialog({
               viewPath,
               targetRevision,
               bare,
-              directFileIo,
+              directFileWrite,
               layerRepository,
               layerMetadataKey,
               useSharedStore,
@@ -367,13 +367,15 @@ export function CloneDialog({
                   </label>
                   <label className={`clone-advanced__option${bare ? ' is-disabled' : ''}`} aria-disabled={bare}>
                     <CheckboxInput
-                      checked={directFileIo}
+                      checked={directFileWrite}
                       disabled={bare}
-                      onChange={(event) => setDirectFileIo(event.target.checked)}
+                      onChange={(event) => setDirectFileWrite(event.target.checked)}
                     />
                     <span>
-                      <strong>{t('cloneDirectFileIo')}</strong>
-                      <small>{bare ? t('cloneBareDisablesMaterialization') : t('cloneDirectFileIoDescription')}</small>
+                      <strong>{t('cloneDirectFileWrite')}</strong>
+                      <small>
+                        {bare ? t('cloneBareDisablesMaterialization') : t('cloneDirectFileWriteDescription')}
+                      </small>
                     </span>
                   </label>
                 </div>

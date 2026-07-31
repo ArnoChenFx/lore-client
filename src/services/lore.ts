@@ -712,7 +712,7 @@ export async function cloneRepository(
     viewPath: viewPath || null,
     targetRevision: options.revision?.trim() || null,
     bare: options.bare ?? false,
-    directFileIo: options.directFileIo ?? false,
+    directFileWrite: options.directFileWrite ?? false,
     layerRepository: options.layer?.repository.trim() || null,
     layerMetadataKey: options.layer?.metadataKey?.trim() || null,
     useSharedStore: options.useSharedStore,

@@ -412,7 +412,7 @@ pub(super) fn validate_clone_layer(
 pub(super) fn validate_bare_clone_options(
     bare: bool,
     view_path: Option<&str>,
-    direct_file_io: bool,
+    direct_file_write: bool,
     layer_repository: &str,
     dependency_root_files: &[String],
     dependency_tags: &[String],
@@ -421,7 +421,7 @@ pub(super) fn validate_bare_clone_options(
 ) -> Result<(), LoreCommandError> {
     if bare
         && (view_path.is_some()
-            || direct_file_io
+            || direct_file_write
             || !layer_repository.is_empty()
             || !dependency_root_files.is_empty()
             || !dependency_tags.is_empty()

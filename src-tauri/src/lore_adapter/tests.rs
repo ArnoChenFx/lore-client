@@ -2613,6 +2613,13 @@ fn bare_clone_rejects_options_that_lore_would_ignore() {
     validate_bare_clone_options(true, None, false, "", &[], &[], false, 0)
         .expect("A plain Bare Clone should remain valid");
 
+    let direct_write_error = validate_bare_clone_options(true, None, true, "", &[], &[], false, 0)
+        .expect_err("A Bare Clone must reject direct file writing");
+    assert_eq!(
+        direct_write_error.code,
+        "clone_bare_materialization_options"
+    );
+
     let error = validate_bare_clone_options(
         true,
         Some("C:\\views\\world.view"),

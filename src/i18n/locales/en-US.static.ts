@@ -563,9 +563,9 @@ const enUSStatic = {
   cloneBare: 'Bare Clone',
   cloneBareDescription: 'Clone repository state and the Revision tree without materializing workspace files.',
   cloneBareDisablesMaterialization: 'Bare Clone does not materialize files, so this option has no effect.',
-  cloneDirectFileIo: 'Direct File I/O',
-  cloneDirectFileIoDescription:
-    'Bypass memory mapping for file reads and writes. Intended for compatibility diagnostics and may reduce performance.',
+  cloneDirectFileWrite: 'Direct File Write',
+  cloneDirectFileWriteDescription:
+    'Write directly to the destination file instead of writing to a temporary file and moving it into place.',
   cloneInitialLayer: 'Initial Layer',
   cloneInitialLayerDescription:
     'Resolve a Layer repository from the same remote and optionally match main and Layer Revisions by metadata key.',

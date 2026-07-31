@@ -651,8 +651,11 @@ export interface LoreCloneOptions {
   revision?: string
   /** 只创建本地仓库状态与 Revision Tree，不物化工作区文件。 */
   bare?: boolean
-  /** 绕过内存映射执行文件 I/O，仅用于兼容性排查或受控性能对比。 */
-  directFileIo?: boolean
+  /**
+   * 让 Lore 直接写入目标文件，而不是先写入临时文件再移动到目标位置。
+   * 该选项会改变 Clone 物化阶段的落盘原子替换策略。
+   */
+  directFileWrite?: boolean
   /** Clone 时组合的远端 Layer；匹配键只在明确提供 Layer 时生效。 */
   layer?: LoreCloneLayerOptions
   dependency?: LoreDependencySelection
