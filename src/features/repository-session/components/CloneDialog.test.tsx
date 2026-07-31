@@ -2,12 +2,22 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import i18n from '../../../i18n'
-import { buildCloneSubmission, CloneDialog, resolveCloneDependencyAvailability } from './CloneDialog'
+import {
+  buildCloneSubmission,
+  CloneDialog,
+  defaultCloneDirectoryName,
+  resolveCloneDependencyAvailability
+} from './CloneDialog'
 
 describe('Clone option availability', () => {
   beforeEach(async () => {
     // 固定语言后断言禁用原因，避免共享 i18n 实例使结果依赖其他测试的执行顺序。
     await i18n.changeLanguage('zh-CN')
+  })
+
+  it('uses the final remote namespace segment as the default local directory name', () => {
+    expect(defaultCloneDirectoryName('Epic/test-lore-repo')).toBe('test-lore-repo')
+    expect(defaultCloneDirectoryName('test-lore-repo')).toBe('test-lore-repo')
   })
 
   it('keeps low-frequency Clone controls inside a collapsed advanced section', () => {

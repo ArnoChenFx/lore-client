@@ -2462,7 +2462,13 @@ fn remote_repository_url_rejects_path_injection() {
         build_repository_url("lore://127.0.0.1:41337/", "world").unwrap(),
         "lore://127.0.0.1:41337/world",
     );
+    assert_eq!(
+        build_repository_url("lore://127.0.0.1:41337", "Epic/test-lore-repo").unwrap(),
+        "lore://127.0.0.1:41337/Epic/test-lore-repo",
+    );
     assert!(build_repository_url("lore://127.0.0.1:41337", "../world").is_err());
+    assert!(build_repository_url("lore://127.0.0.1:41337", "Epic/../world").is_err());
+    assert!(build_repository_url("lore://127.0.0.1:41337", "Epic//world").is_err());
 }
 
 #[test]

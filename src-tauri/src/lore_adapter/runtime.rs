@@ -307,8 +307,31 @@ pub(super) fn build_repository_url(
     repository_name: &str,
 ) -> Result<String, LoreCommandError> {
     let server_url = validate_server_url(server_url)?;
-    let repository_name = validate_repository_name(repository_name)?;
+    let repository_name = validate_remote_repository_name(repository_name)?;
     Ok(format!("{server_url}/{repository_name}"))
+}
+
+/// 校验服务器目录返回的远端仓库路径。
+///
+/// 本地 Create 与 Clone 目标目录仍然只能使用单级名称，但部分 Lore 服务会把远端仓库
+/// 组织在命名空间下，例如 `Epic/test-lore-repo`。这里逐段复用单级名称白名单，既支持
+/// 该服务端语义，又拒绝空段、`.`、`..` 和任何可能改变 URL 路径层级的输入。
+pub(super) fn validate_remote_repository_name(
+    repository_name: &str,
+) -> Result<String, LoreCommandError> {
+    let repository_name = repository_name.trim();
+    let valid = !repository_name.is_empty()
+        && repository_name.len() <= 1_000
+        && repository_name
+            .split('/')
+            .all(|segment| validate_repository_name(segment).is_ok());
+    if !valid {
+        return Err(LoreCommandError::new(
+            "invalid_repository_name",
+            "The repository name may contain only ASCII letters, digits, hyphens, underscores, dots, and safe slash-separated namespaces, and must not exceed 1000 bytes",
+        ));
+    }
+    Ok(repository_name.to_owned())
 }
 
 /// 与固定 Lore `is_valid_name` 保持一致，并额外要求是单一 URL 路径段。

@@ -110,6 +110,17 @@ export function buildCloneSubmission(input: CloneSubmissionInput): {
   }
 }
 
+/**
+ * 远端仓库可使用 `/` 组织命名空间，但本地 Clone 目录必须是单一文件夹名。
+ *
+ * 仅把最后一个非空路径段作为默认值，保留用户之后的手动编辑；Rust 端仍会在提交
+ * 时执行跨平台目录名校验，因此这里不承担安全边界职责。
+ */
+export function defaultCloneDirectoryName(repositoryName: string): string {
+  const segments = repositoryName.trim().split('/').filter(Boolean)
+  return segments.at(-1) || repositoryName
+}
+
 /** 收集克隆的本地落点和可选同步规则，实际路径校验由 Rust 端完成。 */
 export function CloneDialog({
   repository,
@@ -123,7 +134,7 @@ export function CloneDialog({
 }: CloneDialogProps) {
   const { t } = useTranslation()
   const [parent, setParent] = useState('')
-  const [directoryName, setDirectoryName] = useState(repository.name)
+  const [directoryName, setDirectoryName] = useState(() => defaultCloneDirectoryName(repository.name))
   const [viewPath, setViewPath] = useState('')
   const [targetRevision, setTargetRevision] = useState('')
   const [bare, setBare] = useState(false)
@@ -146,7 +157,7 @@ export function CloneDialog({
   const [useSharedStore, setUseSharedStore] = useState(() => automaticSharedStore || Boolean(matchingStore))
   const [sharedStorePath, setSharedStorePath] = useState(() => matchingStore?.containerPath ?? '')
 
-  useEffect(() => setDirectoryName(repository.name), [repository.name])
+  useEffect(() => setDirectoryName(defaultCloneDirectoryName(repository.name)), [repository.name])
   useEffect(() => {
     setUseSharedStore(automaticSharedStore || Boolean(matchingStore))
     // 异步载入 Store 列表后，仅在用户尚未填写路径时使用匹配 Store 的容器路径。
