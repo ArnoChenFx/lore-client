@@ -6,6 +6,7 @@ import { initializeClientPreferences } from '../../services/preferences'
 import { readErrorMessage } from '../../shared/lib'
 import type { ApplicationMode, ClientPreferences, RepositorySnapshot } from '../../types'
 import type { AppNotify } from './controllerTypes'
+import { repositorySessionKey } from './useRepositorySession'
 
 interface UseRepositorySessionLifecycleOptions {
   applicationMode: ApplicationMode
@@ -175,7 +176,7 @@ export function useRepositorySessionLifecycle({
   useEffect(() => {
     if (applicationMode !== 'tauri' || !sessionReady) return
     const activePath =
-      snapshots.find((snapshot) => snapshot.repository.id === activeRepositoryId)?.repository.path ?? null
+      snapshots.find((snapshot) => repositorySessionKey(snapshot) === activeRepositoryId)?.repository.path ?? null
     updatePreferences({
       repositoryPaths: repositoryPathsForPersistence(snapshots, unavailableRepositoryPaths),
       activeRepositoryPath: activePath

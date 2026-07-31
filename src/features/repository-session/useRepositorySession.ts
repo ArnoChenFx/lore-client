@@ -25,18 +25,26 @@ export function repositorySelection(snapshot: RepositorySnapshot): RepositorySel
 }
 
 /**
+ * 会话 Tab 的身份必须对应本地工作区，而不是 Lore 仓库 ID。
+ *
+ * 用户可以把同一个远端仓库克隆到多个目录；这些副本共享 Lore ID，却拥有独立的文件、
+ * 工作区状态和窗口 Tab。路径按当前项目既有的 Windows 大小写不敏感规则规范化。
+ */
+export function repositorySessionKey(snapshot: RepositorySnapshot): string {
+  return snapshot.repository.path.trim().toLocaleLowerCase('en-US')
+}
+
+/**
  * 使用 Lore 返回的新快照替换同一仓库。
  *
- * Repository ID 是主键，路径用于覆盖首次读取失败后重新打开同一目录的场景。
+ * 本地工作区路径是主键；同一 Lore ID 的不同目录必须保持为独立 Tab。
  */
 export function upsertRepositorySnapshot(
   snapshots: RepositorySnapshot[],
   nextSnapshot: RepositorySnapshot
 ): RepositorySnapshot[] {
-  const index = snapshots.findIndex(
-    (snapshot) =>
-      snapshot.repository.id === nextSnapshot.repository.id || snapshot.repository.path === nextSnapshot.repository.path
-  )
+  const nextSessionKey = repositorySessionKey(nextSnapshot)
+  const index = snapshots.findIndex((snapshot) => repositorySessionKey(snapshot) === nextSessionKey)
   if (index < 0) return [...snapshots, nextSnapshot]
   return snapshots.map((snapshot, snapshotIndex) => (snapshotIndex === index ? nextSnapshot : snapshot))
 }
@@ -54,7 +62,9 @@ export function useRepositorySession(
   const initialSnapshot = initialSnapshots[0]
   const snapshotSelection = initialSnapshot ? repositorySelection(initialSnapshot) : null
   const [snapshots, setSnapshots] = useState<RepositorySnapshot[]>(initialSnapshots)
-  const [activeRepositoryId, setActiveRepositoryId] = useState(initialSnapshot?.repository.id ?? '')
+  const [activeRepositoryId, setActiveRepositoryId] = useState(
+    initialSnapshot ? repositorySessionKey(initialSnapshot) : ''
+  )
   const [selectedRevisionId, setSelectedRevisionId] = useState(
     snapshotSelection?.revisionId ?? initialSelection.revisionId ?? ''
   )
@@ -66,7 +76,7 @@ export function useRepositorySession(
 
   const activateRepositorySnapshot = useCallback((snapshot: RepositorySnapshot) => {
     const selection = repositorySelection(snapshot)
-    setActiveRepositoryId(snapshot.repository.id)
+    setActiveRepositoryId(repositorySessionKey(snapshot))
     setSelectedRevisionId(selection.revisionId)
     setSelectedBranchId(selection.branchId)
     setSelectedTagId(selection.tagId)
@@ -80,9 +90,7 @@ export function useRepositorySession(
   }, [])
 
   const reorderRepositoryTabs = useCallback((sourceRepositoryId: string, targetRepositoryId: string) => {
-    setSnapshots((current) =>
-      reorderItemsById(current, sourceRepositoryId, targetRepositoryId, (snapshot) => snapshot.repository.id)
-    )
+    setSnapshots((current) => reorderItemsById(current, sourceRepositoryId, targetRepositoryId, repositorySessionKey))
   }, [])
 
   /** 原生偏好恢复完成后一次性替换整个会话，避免逐仓库追加产生中间选中态。 */
@@ -99,7 +107,7 @@ export function useRepositorySession(
    */
   const removeRepositorySnapshot = useCallback(
     (repositoryId: string): RepositorySnapshot | null => {
-      const remaining = snapshots.filter((snapshot) => snapshot.repository.id !== repositoryId)
+      const remaining = snapshots.filter((snapshot) => repositorySessionKey(snapshot) !== repositoryId)
       setSnapshots(remaining)
       if (repositoryId !== activeRepositoryId) return null
 

@@ -5,8 +5,14 @@ import { useTranslation } from 'react-i18next'
 import { t } from '../../../i18n'
 import type { Repository } from '../../../types'
 
+/** 一个本地工作区 Tab；`sessionKey` 与可相同的 Lore Repository ID 明确分离。 */
+export interface RepositoryTab {
+  sessionKey: string
+  repository: Repository
+}
+
 interface RepositoryTabsProps {
-  repositories: Repository[]
+  tabs: RepositoryTab[]
   activeId: string
   onSelect: (repositoryId: string) => void
   onClose: (repositoryId: string) => void
@@ -16,11 +22,11 @@ interface RepositoryTabsProps {
 
 const REPOSITORY_TAB_DRAG_TYPE = 'application/x-lore-repository-tab'
 
-export function RepositoryTabs({ repositories, activeId, onSelect, onClose, onReorder, onAdd }: RepositoryTabsProps) {
+export function RepositoryTabs({ tabs, activeId, onSelect, onClose, onReorder, onAdd }: RepositoryTabsProps) {
   const { t } = useTranslation()
   const [draggingRepositoryId, setDraggingRepositoryId] = useState<string | null>(null)
   const [dropTargetRepositoryId, setDropTargetRepositoryId] = useState<string | null>(null)
-  const draggingIndex = repositories.findIndex((repository) => repository.id === draggingRepositoryId)
+  const draggingIndex = tabs.findIndex((tab) => tab.sessionKey === draggingRepositoryId)
 
   /**
    * 拖放结束、取消或离开浏览器拖放会话时统一清理视觉状态。这里不修改仓库
@@ -62,29 +68,29 @@ export function RepositoryTabs({ repositories, activeId, onSelect, onClose, onRe
     if (offset === 0) {
       return
     }
-    const targetRepository = repositories[index + offset]
-    if (!targetRepository) {
+    const targetTab = tabs[index + offset]
+    if (!targetTab) {
       return
     }
 
     event.preventDefault()
     event.stopPropagation()
-    onReorder(repositoryId, targetRepository.id)
+    onReorder(repositoryId, targetTab.sessionKey)
   }
 
   return (
     <nav className="repository-tabs" aria-label={t('openRepositories')}>
-      {repositories.map((repository, index) => {
-        const isDragging = repository.id === draggingRepositoryId
-        const isDropTarget = repository.id === dropTargetRepositoryId && !isDragging
+      {tabs.map(({ sessionKey, repository }, index) => {
+        const isDragging = sessionKey === draggingRepositoryId
+        const isDropTarget = sessionKey === dropTargetRepositoryId && !isDragging
         const dropTargetSide = isDropTarget && draggingIndex < index ? 'after' : 'before'
 
         return (
           <div
-            key={repository.id}
+            key={sessionKey}
             className={[
               'repository-tab',
-              repository.id === activeId ? 'is-active' : '',
+              sessionKey === activeId ? 'is-active' : '',
               isDragging ? 'is-dragging' : '',
               isDropTarget ? `is-drop-target-${dropTargetSide}` : ''
             ]
@@ -93,26 +99,26 @@ export function RepositoryTabs({ repositories, activeId, onSelect, onClose, onRe
             onDragEnter={(event) => {
               if (!draggingRepositoryId || isDragging) return
               event.preventDefault()
-              setDropTargetRepositoryId(repository.id)
+              setDropTargetRepositoryId(sessionKey)
             }}
             onDragOver={(event) => {
               if (!draggingRepositoryId || isDragging) return
               event.preventDefault()
               event.dataTransfer.dropEffect = 'move'
             }}
-            onDrop={(event) => handleDrop(event, repository.id)}
+            onDrop={(event) => handleDrop(event, sessionKey)}
           >
             <button
               type="button"
               className="repository-tab__select"
-              draggable={repositories.length > 1}
-              aria-current={repository.id === activeId ? 'page' : undefined}
+              draggable={tabs.length > 1}
+              aria-current={sessionKey === activeId ? 'page' : undefined}
               aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
               aria-label={t('status.openRepositoryReorder', { name: repository.name })}
               title={t('status.tabReorderHint', { name: repository.path })}
-              onClick={() => onSelect(repository.id)}
-              onKeyDown={(event) => handleReorderKeyDown(event, repository.id, index)}
-              onDragStart={(event) => handleDragStart(event, repository.id)}
+              onClick={() => onSelect(sessionKey)}
+              onKeyDown={(event) => handleReorderKeyDown(event, sessionKey, index)}
+              onDragStart={(event) => handleDragStart(event, sessionKey)}
               onDragEnd={clearDragState}
             >
               <i style={{ '--repo-color': repository.color } as CSSProperties} />
@@ -124,13 +130,13 @@ export function RepositoryTabs({ repositories, activeId, onSelect, onClose, onRe
                 </small>
               )}
             </button>
-            {repository.id === activeId && (
+            {sessionKey === activeId && (
               <button
                 type="button"
                 className="repository-tab__close"
                 aria-label={t('status.closeRepository', { name: repository.name })}
                 title={t('status.closeRepository', { name: repository.name })}
-                onClick={() => onClose(repository.id)}
+                onClick={() => onClose(sessionKey)}
               >
                 <X size={12} />
               </button>
@@ -148,7 +154,7 @@ export function RepositoryTabs({ repositories, activeId, onSelect, onClose, onRe
         <Plus size={15} />
       </button>
       <span className="repository-tabs__spacer" />
-      <span className="repository-tabs__cache">{t('status.repositoriesOpen', { count: repositories.length })}</span>
+      <span className="repository-tabs__cache">{t('status.repositoriesOpen', { count: tabs.length })}</span>
     </nav>
   )
 }

@@ -50,11 +50,18 @@ describe('repository session controller', () => {
     })
   })
 
-  it('replaces a refreshed repository by stable ID', () => {
+  it('keeps a repository copy at another local path as a separate session', () => {
     const original = snapshot('repository', 'C:/old')
     const refreshed = snapshot('repository', 'C:/new', 'revision-2')
 
-    expect(upsertRepositorySnapshot([original], refreshed)).toEqual([refreshed])
+    expect(upsertRepositorySnapshot([original], refreshed)).toEqual([original, refreshed])
+  })
+
+  it('keeps separate local workspaces when cloned repositories share one Lore ID', () => {
+    const original = snapshot('shared-repository', 'E:/Game/godot/projects/test-lore-repo')
+    const secondCopy = snapshot('shared-repository', 'E:/Game/godot/projects/test-lore-repo-remove')
+
+    expect(upsertRepositorySnapshot([original], secondCopy)).toEqual([original, secondCopy])
   })
 
   it('replaces a reopened repository by path and preserves tab order', () => {

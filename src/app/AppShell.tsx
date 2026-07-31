@@ -2,7 +2,7 @@ import { CheckCircle2, Info, X } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { RepositoryTabs } from '../features/repository-session'
+import { RepositoryTabs, type RepositoryTab } from '../features/repository-session'
 import type { LoreRuntimeInfo, Repository, ResolvedTheme, ToastMessage } from '../types'
 import { StatusBar } from './components/StatusBar'
 import { TitleBar } from './components/TitleBar'
@@ -12,7 +12,7 @@ interface AppShellProps {
   repository: Repository
   theme: ResolvedTheme
   operationCount: number
-  repositories: Repository[]
+  repositoryTabs: RepositoryTab[]
   activeRepositoryId: string
   runtimeInfo: LoreRuntimeInfo | null
   busyLabel: string | null
@@ -40,7 +40,7 @@ export function AppShell({
   repository,
   theme,
   operationCount,
-  repositories,
+  repositoryTabs,
   activeRepositoryId,
   runtimeInfo,
   busyLabel,
@@ -76,7 +76,7 @@ export function AppShell({
       />
       <Toolbar repository={repository} onAction={onToolbarAction} onOpenCommands={onOpenCommands} />
       <RepositoryTabs
-        repositories={repositories}
+        tabs={repositoryTabs}
         activeId={activeRepositoryId}
         onSelect={onSelectRepository}
         onClose={onCloseRepository}

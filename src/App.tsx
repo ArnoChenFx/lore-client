@@ -48,6 +48,7 @@ import {
   useRemoteAuthenticationRecovery,
   useRepositorySession,
   useRepositorySessionLifecycle,
+  repositorySessionKey,
   useSharedStoreController
 } from './features/repository-session'
 import { useRepositoryToolsController } from './features/repository-tools'
@@ -207,7 +208,8 @@ function App() {
   const { availableExternalToolIds, availableExternalDiffTools, availableExternalMergeTools } =
     useAvailableExternalTools(preferences)
   const workspaceRef = useRef<HTMLElement>(null)
-  const activeSnapshot = snapshots.find((snapshot) => snapshot.repository.id === activeRepositoryId) ?? snapshots[0]
+  const activeSnapshot =
+    snapshots.find((snapshot) => repositorySessionKey(snapshot) === activeRepositoryId) ?? snapshots[0]
   const activeRepositoryPath = activeSnapshot?.repository.path ?? ''
   const notifyRepositoryRefreshError = useCallback(
     (error: unknown) => notify(t('unableToRefreshLocalChanges'), readErrorMessage(error), 'warning'),
@@ -780,7 +782,10 @@ function App() {
       repository={activeRepository}
       theme={resolvedTheme}
       operationCount={activeOperationCount}
-      repositories={snapshots.map((snapshot) => snapshot.repository)}
+      repositoryTabs={snapshots.map((snapshot) => ({
+        sessionKey: repositorySessionKey(snapshot),
+        repository: snapshot.repository
+      }))}
       activeRepositoryId={activeRepositoryId}
       runtimeInfo={runtimeInfo}
       busyLabel={busyAction ? t(busyAction as never) : null}
@@ -790,7 +795,7 @@ function App() {
       onToggleTheme={toggleTheme}
       onOpenCommands={() => setCommandPaletteOpen(true)}
       onSelectRepository={(repositoryId) => {
-        const snapshot = snapshots.find((item) => item.repository.id === repositoryId)
+        const snapshot = snapshots.find((item) => repositorySessionKey(item) === repositoryId)
         if (snapshot) activateSnapshot(snapshot)
       }}
       onCloseRepository={(repositoryId) => {
