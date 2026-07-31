@@ -412,6 +412,7 @@ pub(super) fn validate_clone_layer(
 pub(super) fn validate_bare_clone_options(
     bare: bool,
     view_path: Option<&str>,
+    virtually: bool,
     direct_file_write: bool,
     layer_repository: &str,
     dependency_root_files: &[String],
@@ -421,6 +422,7 @@ pub(super) fn validate_bare_clone_options(
 ) -> Result<(), LoreCommandError> {
     if bare
         && (view_path.is_some()
+            || virtually
             || direct_file_write
             || !layer_repository.is_empty()
             || !dependency_root_files.is_empty()
@@ -581,9 +583,9 @@ pub(super) fn validate_optional_file(
     ))
 }
 
-/// Clone 的 Shared Store 显式路径是 Store 容器目录，而不是其中的
+/// Shared Store 显式路径是 Store 容器目录，而不是其中的
 /// `shared_store/` 实际数据目录。空路径表示让 Lore 按远端查找默认 Store。
-pub(super) fn validate_clone_shared_store_path(
+pub(super) fn validate_shared_store_path(
     use_shared_store: bool,
     shared_store_path: Option<String>,
 ) -> Result<Option<String>, LoreCommandError> {

@@ -7690,12 +7690,14 @@ body.is-resizing-panes {
 }
 
 .settings-shared-store__toolbar > label > .control-checkbox,
-.clone-shared-store > .control-checkbox {
+.clone-shared-store > .control-checkbox,
+.initialize-repository-dialog__shared-store > .control-checkbox {
   margin: 2px 0 0;
 }
 
 .settings-shared-store__toolbar > label > span,
-.clone-shared-store > span {
+.clone-shared-store > span,
+.initialize-repository-dialog__shared-store > span {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -7705,7 +7707,8 @@ body.is-resizing-panes {
 .settings-shared-store__toolbar strong,
 .settings-shared-store__summary strong,
 .settings-shared-store__entry strong,
-.clone-shared-store strong {
+.clone-shared-store strong,
+.initialize-repository-dialog__shared-store strong {
   color: var(--text);
   font-size: 12px;
 }
@@ -7713,7 +7716,8 @@ body.is-resizing-panes {
 .settings-shared-store__toolbar small,
 .settings-shared-store__summary small,
 .settings-shared-store__entry small,
-.clone-shared-store small {
+.clone-shared-store small,
+.initialize-repository-dialog__shared-store small {
   color: var(--muted);
   font-size: 10px;
   line-height: 1.4;
@@ -7974,7 +7978,25 @@ body.is-resizing-panes {
   background: var(--bg-raised);
 }
 
+.initialize-repository-dialog__shared-store {
+  display: grid;
+  grid-template-columns: 14px 18px minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 8px;
+  /* 与紧随其后的路径字段分组，避免标签紧贴卡片底边。 */
+  margin-bottom: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-raised);
+}
+
 .clone-shared-store > svg {
+  margin-top: 1px;
+  color: var(--text-soft);
+}
+
+.initialize-repository-dialog__shared-store > svg {
   margin-top: 1px;
   color: var(--text-soft);
 }

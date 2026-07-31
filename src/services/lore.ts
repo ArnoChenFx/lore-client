@@ -45,6 +45,7 @@ import type {
   LoreOperationStreamEvent,
   LoreRepositoryNotification,
   LoreRepositoryInstance,
+  LoreRepositoryInitializeOptions,
   LoreDiagnosticReport,
   LoreRepositoryInitializeResult,
   LoreRepositoryPublishResult,
@@ -242,14 +243,18 @@ export async function initializeRepository(
   repositoryName: string,
   description: string,
   repositoryIdentity: string,
-  defaultIdentity?: string
+  defaultIdentity?: string,
+  options: LoreRepositoryInitializeOptions = { useSharedStore: false }
 ): Promise<LoreRepositoryInitializeResult> {
   const initialized = await invokeCommand<LoreRepositoryInitializeResult>('lore_repository_initialize', {
     directoryPath,
     repositoryName,
     description,
     repositoryIdentity,
-    defaultIdentity: defaultIdentity?.trim() || null
+    defaultIdentity: defaultIdentity?.trim() || null,
+    useSharedStore: options.useSharedStore,
+    // 未启用时不能把残留草稿带过 IPC，避免后端误解为有效的 Store 选择。
+    sharedStorePath: options.useSharedStore ? options.sharedStorePath?.trim() || null : null
   })
   if (initialized.result.status !== 0) {
     throw new LoreOperationError(initialized.result)
@@ -712,6 +717,7 @@ export async function cloneRepository(
     viewPath: viewPath || null,
     targetRevision: options.revision?.trim() || null,
     bare: options.bare ?? false,
+    virtually: options.virtually ?? false,
     directFileWrite: options.directFileWrite ?? false,
     layerRepository: options.layer?.repository.trim() || null,
     layerMetadataKey: options.layer?.metadataKey?.trim() || null,

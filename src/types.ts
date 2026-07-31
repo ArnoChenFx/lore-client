@@ -643,6 +643,12 @@ export interface LoreCloneResult {
   result: LoreOperationResult
 }
 
+/** 初始化本地仓库时对 Shared Store 的显式选择；空路径由 Lore 解析默认 Store。 */
+export interface LoreRepositoryInitializeOptions {
+  useSharedStore: boolean
+  sharedStorePath?: string
+}
+
 /** Clone 中对 Shared Store 的显式选择；空路径表示使用对应远端的默认 Store。 */
 export interface LoreCloneOptions {
   useSharedStore: boolean
@@ -651,6 +657,8 @@ export interface LoreCloneOptions {
   revision?: string
   /** 只创建本地仓库状态与 Revision Tree，不物化工作区文件。 */
   bare?: boolean
+  /** 使用 Lore 的 split-write 文件系统执行虚拟克隆。 */
+  virtually?: boolean
   /**
    * 让 Lore 直接写入目标文件，而不是先写入临时文件再移动到目标位置。
    * 该选项会改变 Clone 物化阶段的落盘原子替换策略。

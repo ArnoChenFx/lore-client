@@ -25,6 +25,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 
 const {
   cloneRepository,
+  initializeRepository,
   loadFileHistory,
   loadRepositorySnapshot,
   loadRemoteRepositoryInfo,
@@ -849,6 +850,7 @@ describe('repository snapshot branch loading', () => {
       sharedStorePath: 'D:\\LoreStore',
       revision: 'release/1.0',
       bare: false,
+      virtually: true,
       directFileWrite: true,
       layer: {
         repository: 'world-lighting',
@@ -870,6 +872,7 @@ describe('repository snapshot branch loading', () => {
       viewPath: 'C:\\views\\world.view',
       targetRevision: 'release/1.0',
       bare: false,
+      virtually: true,
       directFileWrite: true,
       layerRepository: 'world-lighting',
       layerMetadataKey: 'build-id',
@@ -880,6 +883,28 @@ describe('repository snapshot branch loading', () => {
       dependencyRecursive: true,
       dependencyDepthLimit: 4,
       userId: null
+    })
+  })
+
+  it('passes Shared Store options through the initialization service boundary', async () => {
+    invokeMock.mockResolvedValueOnce({
+      repositoryPath: 'E:\\Worlds\\NewProject',
+      result: { status: 0, durationMs: 0, events: [] }
+    })
+
+    await initializeRepository('E:\\Worlds\\NewProject', 'new-project', 'Initialize with Shared Store', '', undefined, {
+      useSharedStore: true,
+      sharedStorePath: 'D:\\LoreStore'
+    })
+
+    expect(invokeMock).toHaveBeenCalledWith('lore_repository_initialize', {
+      directoryPath: 'E:\\Worlds\\NewProject',
+      repositoryName: 'new-project',
+      description: 'Initialize with Shared Store',
+      repositoryIdentity: '',
+      defaultIdentity: null,
+      useSharedStore: true,
+      sharedStorePath: 'D:\\LoreStore'
     })
   })
 

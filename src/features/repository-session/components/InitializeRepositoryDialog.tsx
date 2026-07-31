@@ -1,16 +1,23 @@
-import { FileText, FolderPlus, LoaderCircle, ShieldCheck, UserRound, X } from 'lucide-react'
+import { Database, FileText, FolderPlus, LoaderCircle, ShieldCheck, UserRound, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { t } from '../../../i18n'
 import { formatCommitIdentity, parseCommitIdentity } from '../../../shared/lib'
+import { CheckboxInput, TextInput } from '../../../shared/ui'
+import type { LoreRepositoryInitializeOptions, LoreSharedStoreInfo } from '../../../types'
 
 interface InitializeRepositoryDialogProps {
   directoryPath: string
   defaultIdentity: string
+  sharedStoreInfo: LoreSharedStoreInfo | null
   busy: boolean
   error: string | null
-  onConfirm: (repositoryName: string, description: string, repositoryIdentity: string) => void
+  onConfirm: (
+    repositoryName: string,
+    description: string,
+    repositoryIdentity: string,
+    options: LoreRepositoryInitializeOptions
+  ) => void
   onClose: () => void
 }
 
@@ -23,6 +30,7 @@ interface InitializeRepositoryDialogProps {
 export function InitializeRepositoryDialog({
   directoryPath,
   defaultIdentity,
+  sharedStoreInfo,
   busy,
   error,
   onConfirm,
@@ -30,19 +38,26 @@ export function InitializeRepositoryDialog({
 }: InitializeRepositoryDialogProps) {
   const { t } = useTranslation()
   const suggestedName = useMemo(() => suggestRepositoryName(directoryPath), [directoryPath])
+  const defaultIdentityParts = useMemo(() => parseCommitIdentity(defaultIdentity), [defaultIdentity])
   const [repositoryName, setRepositoryName] = useState(suggestedName)
   const [description, setDescription] = useState('')
-  const [repositoryIdentityName, setRepositoryIdentityName] = useState('')
-  const [repositoryIdentityEmail, setRepositoryIdentityEmail] = useState('')
+  // 默认身份直接填入表单，用户清空后才会让新仓库保持无 identity 配置。
+  const [repositoryIdentityName, setRepositoryIdentityName] = useState(() => defaultIdentityParts.name)
+  const [repositoryIdentityEmail, setRepositoryIdentityEmail] = useState(() => defaultIdentityParts.email)
+  const automaticSharedStore = sharedStoreInfo?.useAutomatically ?? false
+  const [useSharedStore, setUseSharedStore] = useState(automaticSharedStore)
+  const [sharedStorePath, setSharedStorePath] = useState('')
   const repositoryIdentity = formatCommitIdentity(repositoryIdentityName, repositoryIdentityEmail)
-  const defaultIdentityParts = useMemo(() => parseCommitIdentity(defaultIdentity), [defaultIdentity])
 
   useEffect(() => {
     setRepositoryName(suggestedName)
     setDescription('')
-    setRepositoryIdentityName('')
-    setRepositoryIdentityEmail('')
-  }, [directoryPath, suggestedName])
+    setRepositoryIdentityName(defaultIdentityParts.name)
+    setRepositoryIdentityEmail(defaultIdentityParts.email)
+    // 新一次初始化沿用设备级自动开关，但不复用上一次表单的路径草稿。
+    setUseSharedStore(automaticSharedStore)
+    setSharedStorePath('')
+  }, [automaticSharedStore, defaultIdentityParts.email, defaultIdentityParts.name, directoryPath, suggestedName])
 
   return (
     <div
@@ -60,7 +75,10 @@ export function InitializeRepositoryDialog({
         onSubmit={(event) => {
           event.preventDefault()
           if (repositoryName.trim()) {
-            onConfirm(repositoryName.trim(), description.trim(), repositoryIdentity.trim())
+            onConfirm(repositoryName.trim(), description.trim(), repositoryIdentity.trim(), {
+              useSharedStore,
+              sharedStorePath: useSharedStore ? sharedStorePath.trim() || undefined : undefined
+            })
           }
         }}
       >
@@ -153,6 +171,33 @@ export function InitializeRepositoryDialog({
                   : t('leaveBlankKeepRepositoryIdentity_5b56')}
             </small>
           </div>
+
+          <label className="initialize-repository-dialog__shared-store">
+            <CheckboxInput
+              checked={useSharedStore}
+              disabled={automaticSharedStore}
+              onChange={(event) => setUseSharedStore(event.target.checked)}
+            />
+            <Database size={16} />
+            <span>
+              <strong>{t('useSharedStoreForInitialize')}</strong>
+              <small>
+                {automaticSharedStore ? t('sharedStoreAutomaticInitializeHint') : t('sharedStoreInitializeHint')}
+              </small>
+            </span>
+          </label>
+
+          <label className={`field-stack${!useSharedStore ? ' is-disabled' : ''}`} aria-disabled={!useSharedStore}>
+            <span>{t('initializeSharedStorePathOptional')}</span>
+            <TextInput
+              value={sharedStorePath}
+              disabled={!useSharedStore}
+              onChange={(event) => setSharedStorePath(event.target.value)}
+              placeholder={t('initializeSharedStorePathPlaceholder')}
+              spellCheck={false}
+            />
+            <small>{t('initializeSharedStorePathDescription')}</small>
+          </label>
 
           <div className="initialize-repository-dialog__notice">
             <ShieldCheck size={15} />

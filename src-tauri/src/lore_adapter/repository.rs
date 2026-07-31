@@ -28,6 +28,8 @@ pub async fn lore_repository_initialize(
     description: String,
     repository_identity: String,
     default_identity: Option<String>,
+    use_shared_store: bool,
+    shared_store_path: Option<String>,
 ) -> Result<LoreRepositoryInitializeResult, LoreCommandError> {
     run_lore_task(move || {
         initialize_repository(
@@ -36,6 +38,8 @@ pub async fn lore_repository_initialize(
             &description,
             &repository_identity,
             default_identity.as_deref(),
+            use_shared_store,
+            shared_store_path,
         )
     })
     .await
@@ -506,6 +510,7 @@ pub async fn lore_repository_clone(
     view_path: Option<String>,
     target_revision: Option<String>,
     bare: bool,
+    virtually: bool,
     direct_file_write: bool,
     layer_repository: Option<String>,
     layer_metadata_key: Option<String>,
@@ -523,7 +528,7 @@ pub async fn lore_repository_clone(
     let target_revision = validate_optional_clone_target(target_revision)?;
     let (layer_repository, layer_metadata_key) =
         validate_clone_layer(layer_repository, layer_metadata_key)?;
-    let shared_store_path = validate_clone_shared_store_path(use_shared_store, shared_store_path)?;
+    let shared_store_path = validate_shared_store_path(use_shared_store, shared_store_path)?;
     let dependency_root_files = validate_optional_dependency_paths(dependency_root_files)?;
     let dependency_tags = validate_dependency_tags(dependency_tags)?;
     validate_dependency_depth_limit(dependency_depth_limit)?;
@@ -531,6 +536,7 @@ pub async fn lore_repository_clone(
     validate_bare_clone_options(
         bare,
         view_path.as_deref(),
+        virtually,
         direct_file_write,
         &layer_repository,
         &dependency_root_files,
@@ -559,6 +565,7 @@ pub async fn lore_repository_clone(
                     revision: target_revision.into(),
                     view: view_path.unwrap_or_default().into(),
                     bare: u8::from(bare),
+                    virtually: u8::from(virtually),
                     direct_file_write: u8::from(direct_file_write),
                     layer: layer_repository.into(),
                     layer_metadata: layer_metadata_key.into(),

@@ -29,6 +29,8 @@ pub(super) fn initialize_repository(
     description: &str,
     repository_identity: &str,
     default_identity: Option<&str>,
+    use_shared_store: bool,
+    shared_store_path: Option<String>,
 ) -> Result<LoreRepositoryInitializeResult, LoreCommandError> {
     let repository_path = validate_existing_directory(directory_path, "Initialization directory")?;
     let probe = probe_repository_directory(&repository_path);
@@ -53,6 +55,7 @@ pub(super) fn initialize_repository(
     let description = validate_repository_description(description)?;
     let repository_identity = normalize_identity(repository_identity)?;
     let default_identity = normalize_identity(default_identity.unwrap_or_default())?;
+    let shared_store_path = validate_shared_store_path(use_shared_store, shared_store_path)?;
     let repository_path_string = display_path_without_windows_verbatim_prefix(&repository_path);
     let mut globals = LoreGlobalArgs {
         repository_path: repository_path_string.clone().into(),
@@ -69,8 +72,8 @@ pub(super) fn initialize_repository(
         repository_url: repository_name.into(),
         id: LoreString::default(),
         description: description.into(),
-        use_shared_store: 0,
-        shared_store_path: LoreString::default(),
+        use_shared_store: u8::from(use_shared_store),
+        shared_store_path: shared_store_path.unwrap_or_default().into(),
     };
     let result = if repository_identity.is_none() {
         if let Some(default_identity) = default_identity {

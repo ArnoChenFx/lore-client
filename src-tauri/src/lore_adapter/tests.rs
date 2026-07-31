@@ -48,6 +48,8 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
         "Transient copy status regression",
         "lore-client-test",
         None,
+        false,
+        None,
     )
     .expect("The temporary Lore repository should be initialized");
     std::fs::write(repository_path.join(source_name), "same contents")
@@ -314,6 +316,8 @@ fn commit_includes_only_explicitly_staged_files_after_read_only_scan() {
         "stage-isolation",
         "Explicit stage isolation regression",
         "lore-client-test",
+        None,
+        false,
         None,
     )
     .expect("The temporary Lore repository should be initialized");
@@ -924,9 +928,9 @@ fn shared_store_usage_counts_files_without_following_directories_outside_root() 
 }
 
 #[test]
-fn clone_shared_store_path_is_ignored_when_the_option_is_disabled() {
+fn shared_store_path_is_ignored_when_the_option_is_disabled() {
     assert_eq!(
-        validate_clone_shared_store_path(false, Some("missing".to_owned()))
+        validate_shared_store_path(false, Some("missing".to_owned()))
             .expect("disabled Shared Store should not validate an unused path"),
         None
     );
@@ -2511,6 +2515,8 @@ fn ordinary_nonempty_directory_can_be_initialized_without_persisting_client_iden
         "Ordinary directory initialization test",
         "",
         Some("client-default@example.com"),
+        false,
+        None,
     )
     .expect("An ordinary nonempty directory should initialize in place");
 
@@ -2610,11 +2616,17 @@ fn clone_target_and_layer_options_enforce_stable_boundaries() {
 
 #[test]
 fn bare_clone_rejects_options_that_lore_would_ignore() {
-    validate_bare_clone_options(true, None, false, "", &[], &[], false, 0)
+    validate_bare_clone_options(true, None, false, false, "", &[], &[], false, 0)
         .expect("A plain Bare Clone should remain valid");
 
-    let direct_write_error = validate_bare_clone_options(true, None, true, "", &[], &[], false, 0)
-        .expect_err("A Bare Clone must reject direct file writing");
+    let virtual_error =
+        validate_bare_clone_options(true, None, true, false, "", &[], &[], false, 0)
+            .expect_err("A Bare Clone must reject virtual cloning");
+    assert_eq!(virtual_error.code, "clone_bare_materialization_options");
+
+    let direct_write_error =
+        validate_bare_clone_options(true, None, false, true, "", &[], &[], false, 0)
+            .expect_err("A Bare Clone must reject direct file writing");
     assert_eq!(
         direct_write_error.code,
         "clone_bare_materialization_options"
@@ -2623,6 +2635,7 @@ fn bare_clone_rejects_options_that_lore_would_ignore() {
     let error = validate_bare_clone_options(
         true,
         Some("C:\\views\\world.view"),
+        false,
         false,
         "",
         &[],
@@ -2636,6 +2649,7 @@ fn bare_clone_rejects_options_that_lore_would_ignore() {
     let dependency_error = validate_bare_clone_options(
         true,
         None,
+        false,
         false,
         "",
         &["Content/World.umap".to_owned()],

@@ -21,6 +21,7 @@ import type {
   ApplicationMode,
   LoreCloneOptions,
   LoreAuthIdentity,
+  LoreRepositoryInitializeOptions,
   LoreSharedStoreInfo,
   NavigationView,
   OperationDetail,
@@ -137,7 +138,12 @@ export function useRepositoryEntryController({
 
   /** 普通目录初始化成功后立即扫描已有文件，并把新仓库加入项目标签会话。 */
   const performRepositoryInitialization = useCallback(
-    async (repositoryName: string, description: string, repositoryIdentity: string) => {
+    async (
+      repositoryName: string,
+      description: string,
+      repositoryIdentity: string,
+      options: LoreRepositoryInitializeOptions
+    ) => {
       if (!initializationTarget) return
       if (applicationMode !== 'tauri') {
         notify(t('browserDemoMode'), t('startDesktopAppInitializeReal_76f2'), 'warning')
@@ -158,7 +164,8 @@ export function useRepositoryEntryController({
           repositoryName,
           description,
           repositoryIdentity,
-          defaultIdentity
+          defaultIdentity,
+          options
         )
 
         /*
@@ -436,10 +443,15 @@ export function useRepositoryEntryController({
       ? {
           directoryPath: initializationTarget,
           defaultIdentity,
+          sharedStoreInfo,
           busy: initializationBusy,
           error: initializationError,
-          onConfirm: (repositoryName: string, description: string, repositoryIdentity: string) =>
-            void performRepositoryInitialization(repositoryName, description, repositoryIdentity),
+          onConfirm: (
+            repositoryName: string,
+            description: string,
+            repositoryIdentity: string,
+            options: LoreRepositoryInitializeOptions
+          ) => void performRepositoryInitialization(repositoryName, description, repositoryIdentity, options),
           onClose: () => {
             if (!initializationBusy) {
               setInitializationTarget(null)

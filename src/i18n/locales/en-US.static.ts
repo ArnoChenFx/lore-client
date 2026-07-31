@@ -563,10 +563,16 @@ const enUSStatic = {
   cloneBare: 'Bare Clone',
   cloneBareDescription: 'Clone repository state and the Revision tree without materializing workspace files.',
   cloneBareDisablesMaterialization: 'Bare Clone does not materialize files, so this option has no effect.',
+  cloneVirtually: 'Virtual Clone',
+  cloneVirtuallyDescription: 'Clone the workspace using the split-write filesystem.',
   cloneDirectFileWrite: 'Direct File Write',
   cloneDirectFileWriteDescription:
     'Write directly to the destination file instead of writing to a temporary file and moving it into place.',
   cloneInitialLayer: 'Initial Layer',
+  cloneSharedStorePathOptional: 'Shared Content Store Path (Optional)',
+  cloneSharedStorePathPlaceholder: 'Leave empty to use Lore default shared store',
+  cloneSharedStorePathDescription:
+    'Specify the shared content store container directory. Leave empty for Lore to find the default store.',
   cloneInitialLayerDescription:
     'Resolve a Layer repository from the same remote and optionally match main and Layer Revisions by metadata key.',
   cloneLayerRepository: 'Layer repository name',
@@ -1133,6 +1139,14 @@ const enUSStatic = {
     'Automatic use is enabled in device settings; this Lore version cannot disable it for a single clone.',
   sharedStoreDefaultLookupHint:
     'Lore will look up the default Store for this remote. Clone returns an explicit error when none is configured.',
+  useSharedStoreForInitialize: 'Use Shared Store',
+  sharedStoreAutomaticInitializeHint:
+    'Automatic use is enabled in device settings; this initialization will use Shared Store.',
+  sharedStoreInitializeHint: 'When enabled, Lore writes repository content to Shared Store.',
+  initializeSharedStorePathOptional: 'Shared Store path (optional)',
+  initializeSharedStorePathPlaceholder: 'Leave empty to use the Lore default location',
+  initializeSharedStorePathDescription:
+    'Enter the Shared Store container directory; leave it empty for Lore to use the default location.',
   configureSharedStore: 'Configure Shared Store',
   collaborativeLocks: 'Collaborative File Locks',
   manageCollaborativeLocks: 'Manage Collaborative File Locks',
