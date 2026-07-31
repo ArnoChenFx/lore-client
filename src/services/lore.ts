@@ -699,6 +699,42 @@ export async function loadRemoteRepositoryInfo(
   }
 }
 
+/**
+ * 首屏目录返回后以固定小并发补全每个仓库的详情。
+ *
+ * Lore 0.x 的 List 事件没有 description；这里不能重新使用 Promise.all，否则某个
+ * 无权限或不可达的 Info 请求会让整个服务器目录一直处于加载状态。调用方可在每条
+ * 详情返回时立即更新 UI，并自行用代际标识丢弃已经过期的结果。
+ */
+export async function hydrateRemoteRepositoryDetails(
+  serverUrl: string,
+  repositories: RemoteRepository[],
+  onRepositoryResolved: (repository: RemoteRepository, details: RemoteRepository) => void,
+  userId?: string,
+  shouldContinue: () => boolean = () => true
+): Promise<void> {
+  // 目录条目通常不多，三个并发请求既能快速呈现说明，也不会让认证端点被批量请求淹没。
+  const workerCount = Math.min(3, repositories.length)
+  let nextIndex = 0
+
+  const runWorker = async () => {
+    while (shouldContinue() && nextIndex < repositories.length) {
+      const repository = repositories[nextIndex]
+      nextIndex += 1
+      try {
+        const details = await loadRemoteRepositoryInfo(serverUrl, repository.name, userId)
+        // 当前批次已被刷新替换时，不再触发 UI 回调或派发下一条详情请求。
+        if (!shouldContinue()) return
+        onRepositoryResolved(repository, details)
+      } catch {
+        // 单仓库详情不可用时仍保留 List 返回的名称，其他条目继续正常补全。
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()))
+}
+
 /** 将远端仓库克隆到用户选择的位置，并返回实际创建的目录。 */
 export async function cloneRepository(
   serverUrl: string,

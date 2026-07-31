@@ -6,6 +6,7 @@ import {
   DEFAULT_SERVER_URL,
   initializeRepository,
   isAuthenticationRequiredError,
+  hydrateRemoteRepositoryDetails,
   listAuthIdentities,
   listRemoteRepositories,
   loadRemoteRepositoryInfo,
@@ -93,6 +94,36 @@ export function useRepositoryEntryController({
   // 打开、初始化与其他仓库写操作共享同一语义 Busy 状态，避免窗口外壳维护领域过程状态。
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const observedAuthStateVersion = useRef(authStateVersion)
+  // 每次刷新目录都推进代际，防止较慢的旧服务器详情覆盖当前目录的同名仓库。
+  const remoteRepositoryDetailsGeneration = useRef(0)
+
+  /**
+   * 先同步显示 List 结果，再逐条合并后台读取到的 Repository Info。
+   *
+   * 详情补全不属于操作中心的长操作：它只改善目录信息密度，不能阻塞 Refresh、
+   * Clone 或认证流程。合并时以 List 的稳定 ID 为键，避免 Info 响应中的异常 ID
+   * 误更新到其他条目。
+   */
+  const displayRemoteRepositories = useCallback(
+    (serverUrl: string, repositories: RemoteRepository[], userId: string | undefined, generation: number) => {
+      setRemoteRepositories(repositories)
+      void hydrateRemoteRepositoryDetails(
+        serverUrl,
+        repositories,
+        (repository, details) => {
+          if (remoteRepositoryDetailsGeneration.current !== generation) return
+          setRemoteRepositories((current) =>
+            current.map((candidate) =>
+              candidate.id === repository.id ? { ...candidate, ...details, id: candidate.id } : candidate
+            )
+          )
+        },
+        userId,
+        () => remoteRepositoryDetailsGeneration.current === generation
+      )
+    },
+    []
+  )
 
   /** 激活仓库时只同步服务器浏览的建议起点，不把临时草稿写回仓库配置。 */
   const activateSnapshot = useCallback(
@@ -235,6 +266,7 @@ export function useRepositoryEntryController({
   /** 打开服务器面板，并通过 Lore 协议执行一次只读目录刷新。 */
   const refreshServerRepositories = useCallback(async () => {
     setServerDialogOpen(true)
+    const detailsGeneration = ++remoteRepositoryDetailsGeneration.current
     if (applicationMode !== 'tauri') {
       setServerError(t('browserDemoModeOpenLore_4a2a'))
       return
@@ -250,7 +282,7 @@ export function useRepositoryEntryController({
         listRemoteRepositories(remoteBrowserUrl, serverAuthUserId)
       ])
       setServerAuthIdentities(identities)
-      setRemoteRepositories(repositories)
+      displayRemoteRepositories(remoteBrowserUrl, repositories, serverAuthUserId, detailsGeneration)
       finishOperation(
         operation,
         true,
@@ -277,6 +309,7 @@ export function useRepositoryEntryController({
   }, [
     applicationMode,
     beginOperation,
+    displayRemoteRepositories,
     finishOperation,
     onAuthenticationRequired,
     remoteBrowserUrl,
@@ -287,6 +320,7 @@ export function useRepositoryEntryController({
   /** 用户可显式更新当前服务器凭据；完成后自动刷新目录。 */
   const authenticateServer = useCallback(async () => {
     if (applicationMode !== 'tauri' || serverLoading || !remoteBrowserUrl.trim()) return
+    const detailsGeneration = ++remoteRepositoryDetailsGeneration.current
     try {
       setServerLoading(true)
       setServerError(null)
@@ -297,7 +331,7 @@ export function useRepositoryEntryController({
       ])
       setServerAuthIdentities(identities)
       setServerAuthUserId('')
-      setRemoteRepositories(repositories)
+      displayRemoteRepositories(remoteBrowserUrl, repositories, undefined, detailsGeneration)
       await onAuthStateChange(remoteBrowserUrl)
     } catch (error) {
       setRemoteRepositories([])
@@ -306,7 +340,14 @@ export function useRepositoryEntryController({
     } finally {
       setServerLoading(false)
     }
-  }, [applicationMode, onAuthenticationRequired, onAuthStateChange, remoteBrowserUrl, serverLoading])
+  }, [
+    applicationMode,
+    displayRemoteRepositories,
+    onAuthenticationRequired,
+    onAuthStateChange,
+    remoteBrowserUrl,
+    serverLoading
+  ])
 
   /*
    * 认证可能从全局恢复弹层或账户中心完成。服务器目录保持打开时自动重读账户与目录，
@@ -321,6 +362,7 @@ export function useRepositoryEntryController({
     /* 忙碌时不吞掉版本变化；loading 结束后 effect 会再次执行并完成刷新。 */
     if (serverLoading) return
     observedAuthStateVersion.current = authStateVersion
+    const detailsGeneration = ++remoteRepositoryDetailsGeneration.current
     void (async () => {
       try {
         setServerLoading(true)
@@ -330,7 +372,7 @@ export function useRepositoryEntryController({
         ])
         setServerAuthIdentities(identities)
         setServerAuthUserId('')
-        setRemoteRepositories(repositories)
+        displayRemoteRepositories(remoteBrowserUrl, repositories, undefined, detailsGeneration)
         setServerError(null)
       } catch (error) {
         if (isAuthenticationRequiredError(error)) {
@@ -343,7 +385,15 @@ export function useRepositoryEntryController({
         setServerLoading(false)
       }
     })()
-  }, [applicationMode, authStateVersion, onAuthenticationRequired, remoteBrowserUrl, serverDialogOpen, serverLoading])
+  }, [
+    applicationMode,
+    authStateVersion,
+    displayRemoteRepositories,
+    onAuthenticationRequired,
+    remoteBrowserUrl,
+    serverDialogOpen,
+    serverLoading
+  ])
 
   /** Clone 弹层打开前读取远端详情，并同步刷新可选 Shared Store。 */
   const prepareRemoteClone = useCallback(

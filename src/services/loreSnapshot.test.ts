@@ -12,6 +12,11 @@ let branchListEvents: Array<{ tagName: string; data: Record<string, unknown> }> 
 let conflictSessionResponse: unknown = null
 
 vi.mock('@tauri-apps/api/core', () => ({
+  // lore.ts 同时导出二进制流式预览；即使本文件不触发该路径，Bun 也要求 mock
+  // 提供模块导入时引用的全部具名导出。
+  Channel: class {
+    constructor(_listener?: (message: unknown) => void) {}
+  },
   invoke: invokeMock,
   isTauri: () => true,
   // lore.ts 同时导出通知订阅能力；独立运行本文件时 Event API 需要看到该命名导出。
@@ -25,6 +30,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 
 const {
   cloneRepository,
+  hydrateRemoteRepositoryDetails,
   initializeRepository,
   loadFileHistory,
   loadRepositorySnapshot,
@@ -759,6 +765,104 @@ describe('repository snapshot branch loading', () => {
 
     expect(outcome).toEqual([{ id: 'remote-id', name: 'world' }])
     expect(invokeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('hydrates server directory details with bounded concurrency and isolated failures', async () => {
+    const pending = new Map<string, (value: unknown) => void>()
+    invokeMock.mockImplementation((command: string, args: Record<string, unknown>) => {
+      if (command !== 'lore_repository_info_remote') {
+        throw new Error(`Unexpected command: ${command}`)
+      }
+      const repositoryName = String(args.repositoryName)
+      if (repositoryName === 'broken') {
+        return Promise.reject(new Error('Repository details are unavailable'))
+      }
+      return new Promise((resolve) => pending.set(repositoryName, resolve))
+    })
+    const resolved: string[] = []
+    const hydration = hydrateRemoteRepositoryDetails(
+      'lore://127.0.0.1:41337',
+      [
+        { id: 'one', name: 'one' },
+        { id: 'two', name: 'two' },
+        { id: 'three', name: 'three' },
+        { id: 'four', name: 'four' },
+        { id: 'five', name: 'five' },
+        { id: 'broken', name: 'broken' }
+      ],
+      (repository, details) => resolved.push(`${repository.id}:${details.description}`)
+    )
+
+    await Promise.resolve()
+    expect(pending.size).toBe(3)
+    expect([...pending.keys()].sort()).toEqual(['one', 'three', 'two'])
+
+    for (const name of ['one', 'two', 'three']) {
+      pending.get(name)?.({
+        operation: 'repository.info',
+        status: 0,
+        events: [{ tagName: 'repositoryData', data: { id: name, name, description: `${name} description` } }]
+      })
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(pending.has('four')).toBe(true)
+    expect(pending.has('five')).toBe(true)
+    pending.get('four')?.({
+      operation: 'repository.info',
+      status: 0,
+      events: [{ tagName: 'repositoryData', data: { id: 'four', name: 'four', description: 'four description' } }]
+    })
+    pending.get('five')?.({
+      operation: 'repository.info',
+      status: 0,
+      events: [{ tagName: 'repositoryData', data: { id: 'five', name: 'five', description: 'five description' } }]
+    })
+    await hydration
+
+    expect(resolved.sort()).toEqual([
+      'five:five description',
+      'four:four description',
+      'one:one description',
+      'three:three description',
+      'two:two description'
+    ])
+    expect(invokeMock).toHaveBeenCalledTimes(6)
+  })
+
+  it('stops stale detail batches before dispatching more repository info requests', async () => {
+    const pending: Array<(value: unknown) => void> = []
+    let current = true
+    invokeMock.mockImplementation((command: string) => {
+      if (command !== 'lore_repository_info_remote') {
+        throw new Error(`Unexpected command: ${command}`)
+      }
+      return new Promise((resolve) => pending.push(resolve))
+    })
+    const resolved: string[] = []
+    const hydration = hydrateRemoteRepositoryDetails(
+      'lore://127.0.0.1:41337',
+      [
+        { id: 'one', name: 'one' },
+        { id: 'two', name: 'two' },
+        { id: 'three', name: 'three' },
+        { id: 'four', name: 'four' }
+      ],
+      (repository) => resolved.push(repository.id),
+      undefined,
+      () => current
+    )
+
+    await Promise.resolve()
+    expect(pending).toHaveLength(3)
+    current = false
+    for (const resolve of pending) {
+      resolve({ operation: 'repository.info', status: 0, events: [] })
+    }
+    await hydration
+
+    expect(invokeMock).toHaveBeenCalledTimes(3)
+    expect(resolved).toEqual([])
   })
 
   it('passes the bound authentication account when publishing a local repository', async () => {
