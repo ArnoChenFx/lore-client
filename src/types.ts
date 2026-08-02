@@ -937,6 +937,18 @@ export interface RepositoryAuthAccountBinding {
 export type RevisionHistoryLaneMode = 'topology' | 'flat'
 
 /**
+ * 单个本地仓库 Tab 的展示覆盖。
+ *
+ * 路径是本地会话身份；名称和颜色只影响客户端 Tab，不会改写 Lore 仓库配置、目录名
+ * 或远端名称。两个覆盖字段都可选，便于用户分别恢复默认值。
+ */
+export interface RepositoryTabCustomization {
+  repositoryPath: string
+  name?: string
+  color?: string
+}
+
+/**
  * 桌面客户端写入应用配置目录的单一偏好文件。
  *
  * 这里集中定义所有跨重启状态，组件不得再各自写浏览器 `localStorage`。
@@ -976,6 +988,8 @@ export interface ClientPreferences {
   externalMergeTools: ExternalMergeToolPreference[]
   /** 按规范化本地路径保存的认证账户覆盖；没有条目表示由 Lore 自动选择。 */
   authAccountBindings: RepositoryAuthAccountBinding[]
+  /** 按规范化本地路径保存的项目 Tab 名称和颜色覆盖。 */
+  repositoryTabCustomizations: RepositoryTabCustomization[]
   repositoryPaths: string[]
   activeRepositoryPath: string | null
 }

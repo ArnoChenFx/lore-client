@@ -1,12 +1,32 @@
 import { describe, expect, it } from 'vitest'
 
-import { reorderItemsById } from './repositoryTabsModel'
+import type { Repository } from '../../../types'
+import {
+  reorderItemsById,
+  resolveRepositoryTabPresentation,
+  updateRepositoryTabCustomizations
+} from './repositoryTabsModel'
 
 interface TestItem {
   id: string
 }
 
 const readId = (item: TestItem) => item.id
+
+const repository: Repository = {
+  id: 'repository-id',
+  name: 'lore-world',
+  branch: 'main',
+  revision: 'revision-id',
+  path: 'E:\\Worlds\\Lore',
+  ahead: 0,
+  behind: 0,
+  online: true,
+  remoteState: 'online',
+  color: '#78a4ff',
+  conflictCount: 0,
+  unresolvedConflictCount: 0
+}
 
 describe('repository tab ordering model', () => {
   it('places the source after the target when dragging left to right', () => {
@@ -31,5 +51,40 @@ describe('repository tab ordering model', () => {
     expect(reorderItemsById(items, 'a', 'a', readId)).toBe(items)
     expect(reorderItemsById(items, 'missing', 'a', readId)).toBe(items)
     expect(reorderItemsById(items, 'a', 'missing', readId)).toBe(items)
+  })
+
+  it('applies a custom name and color by case-insensitive repository path', () => {
+    const presentation = resolveRepositoryTabPresentation(repository, [
+      {
+        repositoryPath: 'e:\\worlds\\lore',
+        name: 'Environment',
+        color: '#e47a3f'
+      }
+    ])
+
+    expect(presentation).toEqual({
+      displayName: 'Environment',
+      displayColor: '#e47a3f',
+      hasCustomName: true,
+      hasCustomColor: true
+    })
+  })
+
+  it('removes the customization after both fields return to repository defaults', () => {
+    const customized = updateRepositoryTabCustomizations([], repository, {
+      name: 'Environment',
+      color: '#4aa7ad'
+    })
+    const nameRestored = updateRepositoryTabCustomizations(customized, repository, { name: null })
+    const allRestored = updateRepositoryTabCustomizations(nameRestored, repository, { color: null })
+
+    expect(nameRestored).toEqual([{ repositoryPath: repository.path, color: '#4aa7ad' }])
+    expect(allRestored).toEqual([])
+  })
+
+  it('rejects arbitrary colors and reuses the original list when nothing changes', () => {
+    const customizations = [{ repositoryPath: repository.path, name: 'Environment' }]
+
+    expect(updateRepositoryTabCustomizations(customizations, repository, { color: 'hotpink' })).toBe(customizations)
   })
 })

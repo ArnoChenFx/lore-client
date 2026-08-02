@@ -34,7 +34,16 @@ describe('AppShell toast diagnostics', () => {
         repository={repository}
         theme="dark"
         operationCount={0}
-        repositoryTabs={[{ sessionKey: repository.path.toLocaleLowerCase('en-US'), repository }]}
+        repositoryTabs={[
+          {
+            sessionKey: repository.path.toLocaleLowerCase('en-US'),
+            repository,
+            displayName: repository.name,
+            displayColor: repository.color,
+            hasCustomName: false,
+            hasCustomColor: false
+          }
+        ]}
         activeRepositoryId={repository.path.toLocaleLowerCase('en-US')}
         runtimeInfo={null}
         busyLabel={null}
@@ -45,7 +54,12 @@ describe('AppShell toast diagnostics', () => {
         onOpenCommands={() => undefined}
         onSelectRepository={() => undefined}
         onCloseRepository={() => undefined}
+        onCloseOtherRepositories={() => undefined}
+        onCloseAllRepositories={() => undefined}
         onReorderRepositories={() => undefined}
+        onRenameRepositoryTab={() => undefined}
+        onRestoreRepositoryTabName={() => undefined}
+        onRepositoryTabColorChange={() => undefined}
         onAddRepository={() => undefined}
         onCloseToast={() => undefined}
         overlays={null}

@@ -50,7 +50,8 @@ describe('client preferences stored on disk', () => {
           kind: 'p4merge',
           arguments: expect.arrayContaining(['{merged}'])
         })
-      ])
+      ]),
+      repositoryTabCustomizations: []
     })
   })
 
@@ -140,6 +141,37 @@ describe('client preferences stored on disk', () => {
       repositoryPaths: ['E:\\Worlds\\Lore'],
       activeRepositoryPath: 'E:\\Worlds\\Lore'
     })
+  })
+
+  it('persists safe repository tab names and controlled colors by normalized path', () => {
+    updateClientPreferences({
+      repositoryTabCustomizations: [
+        {
+          repositoryPath: '\\\\?\\E:\\Worlds\\Lore',
+          name: '  Environment\r\n',
+          color: '#e47a3f'
+        },
+        {
+          repositoryPath: 'E:\\Worlds\\Lore',
+          name: 'Duplicate',
+          color: '#d87568'
+        },
+        {
+          repositoryPath: 'E:\\Invalid',
+          color: 'hotpink'
+        }
+      ]
+    })
+
+    expect(getClientPreferences().repositoryTabCustomizations).toEqual([
+      {
+        repositoryPath: 'E:\\Worlds\\Lore',
+        name: 'Environment',
+        color: '#e47a3f'
+      }
+    ])
+
+    updateClientPreferences({ repositoryTabCustomizations: [] })
   })
 
   it('persists and bounds shared Diff preferences', () => {

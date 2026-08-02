@@ -3033,8 +3033,9 @@ function stablePathId(path: string): string {
 function colorFromText(text: string): string {
   const id = stablePathId(text)
   /*
-   * 仓库之间只通过同一蓝色谱系的明度差进行轻量区分，不能把随机红、黄、绿
-   * 误解为仓库状态。状态仍由 Repository.online 和结构化错误单独表达。
+   * 自动仓库颜色只从稳定的五种受控类别色中循环，不消费手动选择的 25 色矩阵，
+   * 因而调整选择器不会改变既有仓库的自动颜色。颜色仅用于项目区分，在线状态
+   * 和错误仍由 Repository.online 与结构化错误单独表达。
    */
   const index = Number.parseInt(id.slice(-2), 16)
   return repositoryAccentFromIndex(index)

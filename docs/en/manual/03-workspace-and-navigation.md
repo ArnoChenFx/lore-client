@@ -21,6 +21,11 @@ Each open repository has a tab. Clicking switches repositories; closing a tab do
 delete its directory. Repository switching is not Branch checkout: checkout materializes
 different content inside the same Instance.
 
+Right-click a project tab, or focus it and press `Shift+F10`, to open its context menu. The
+menu can close that tab, close the other tabs, close all tabs, rename the tab, restore its
+repository-derived name, or choose one of 25 distinct category colors from the 5×5 tab color matrix. Names and colors are
+client display preferences only: they do not rename a directory, Lore repository, or remote.
+
 ## Sidebar
 
 ![Lore Client Branch Overview workspace in English](../../img/lore-client-branch-overview-light.png)
@@ -79,6 +84,7 @@ history only; it does not undo work.
 ## Selection and keyboard rules
 
 - `Ctrl/Cmd+K`: Command Palette.
+- `Shift+F10`: open the focused project tab context menu.
 - `Escape`: close the active menu, popover, or dialog.
 - Arrow keys, Home, End: navigate supported tabs and menus.
 - `Ctrl/Cmd+A`: select all in the current file list/tree.

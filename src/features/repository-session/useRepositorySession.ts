@@ -97,6 +97,11 @@ export function useRepositorySession(
   const replaceRepositorySession = useCallback((nextSnapshots: RepositorySnapshot[], unavailablePaths: string[]) => {
     setSnapshots(nextSnapshots)
     setUnavailableRepositoryPaths(unavailablePaths)
+    // 批量关闭和恢复都可能让旧活动 ID 失效；先清空，调用方若有首选快照会通过
+    // 统一激活入口同步对象选区。保留仍存在的 ID 可避免仅刷新快照时产生闪烁。
+    setActiveRepositoryId((current) =>
+      nextSnapshots.some((snapshot) => repositorySessionKey(snapshot) === current) ? current : ''
+    )
   }, [])
 
   /**

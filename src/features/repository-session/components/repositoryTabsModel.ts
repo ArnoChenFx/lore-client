@@ -1,3 +1,16 @@
+import { isRepositoryAccentColor } from '../../../shared/lib'
+import type { Repository, RepositoryTabCustomization } from '../../../types'
+
+/** 一个本地工作区 Tab；`sessionKey` 与可相同的 Lore Repository ID 明确分离。 */
+export interface RepositoryTab {
+  sessionKey: string
+  repository: Repository
+  displayName: string
+  displayColor: string
+  hasCustomName: boolean
+  hasCustomColor: boolean
+}
+
 /**
  * 按对象标识移动列表项，并保持桌面标签拖放的方向语义。
  *
@@ -26,4 +39,59 @@ export function reorderItemsById<T>(items: T[], sourceId: string, targetId: stri
   }
   reordered.splice(targetIndex, 0, movedItem)
   return reordered
+}
+
+/** Windows 工作区路径按项目既有规则大小写不敏感比较，不改变实际展示路径。 */
+function sameRepositoryPath(left: string, right: string): boolean {
+  return left.trim().toLocaleLowerCase('en-US') === right.trim().toLocaleLowerCase('en-US')
+}
+
+/** 把仓库原始 DTO 与可选客户端覆盖合成为 Tab 专用展示数据。 */
+export function resolveRepositoryTabPresentation(repository: Repository, customizations: RepositoryTabCustomization[]) {
+  const customization = customizations.find((item) => sameRepositoryPath(item.repositoryPath, repository.path))
+  return {
+    displayName: customization?.name || repository.name,
+    displayColor: customization?.color || repository.color,
+    hasCustomName: Boolean(customization?.name),
+    hasCustomColor: Boolean(customization?.color)
+  }
+}
+
+export interface RepositoryTabCustomizationPatch {
+  /** null 表示恢复仓库默认名称；undefined 表示本次不修改名称。 */
+  name?: string | null
+  /** null 表示恢复路径哈希自动配色；undefined 表示本次不修改颜色。 */
+  color?: string | null
+}
+
+/**
+ * 更新单个 Tab 覆盖，并在两个字段都恢复默认后删除整个条目。
+ *
+ * 纯函数保留原列表中其他仓库的顺序；无实际变化时复用原数组，防止无意义偏好写盘。
+ */
+export function updateRepositoryTabCustomizations(
+  customizations: RepositoryTabCustomization[],
+  repository: Repository,
+  patch: RepositoryTabCustomizationPatch
+): RepositoryTabCustomization[] {
+  const existingIndex = customizations.findIndex((item) => sameRepositoryPath(item.repositoryPath, repository.path))
+  const existing = existingIndex >= 0 ? customizations[existingIndex] : undefined
+  const requestedName = patch.name === undefined ? existing?.name : patch.name?.trim() || undefined
+  const name = requestedName && requestedName !== repository.name ? requestedName.slice(0, 80) : undefined
+  const requestedColor = patch.color === undefined ? existing?.color : patch.color || undefined
+  const color =
+    isRepositoryAccentColor(requestedColor) && requestedColor !== repository.color ? requestedColor : undefined
+  const next =
+    name || color ? { repositoryPath: repository.path, ...(name ? { name } : {}), ...(color ? { color } : {}) } : null
+
+  if (!existing && !next) return customizations
+  const updated = [...customizations]
+  if (existingIndex >= 0) {
+    if (next) updated[existingIndex] = next
+    else updated.splice(existingIndex, 1)
+  } else if (next) {
+    updated.push(next)
+  }
+
+  return JSON.stringify(updated) === JSON.stringify(customizations) ? customizations : updated
 }

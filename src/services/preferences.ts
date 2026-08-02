@@ -1,6 +1,6 @@
 import { t } from '../i18n'
 import { resolveSystemLanguagePreference } from '../i18n/systemLanguage'
-import { DEFAULT_EXTERNAL_DIFF_TOOLS, DEFAULT_EXTERNAL_MERGE_TOOLS } from '../shared/lib'
+import { DEFAULT_EXTERNAL_DIFF_TOOLS, DEFAULT_EXTERNAL_MERGE_TOOLS, isRepositoryAccentColor } from '../shared/lib'
 import type { ClientPreferences, WorkspaceLayout } from '../types'
 import { invokeLogged, logError } from './logging'
 
@@ -15,7 +15,7 @@ export const MIN_BINARY_PREVIEW_LIMIT_MIB = 1
 const MAX_BINARY_PREVIEW_LIMIT_MIB_BY_BYTE_COUNTER = 17_592_186_044_415
 
 export const DEFAULT_CLIENT_PREFERENCES: ClientPreferences = {
-  version: 4,
+  version: 5,
   theme: 'system',
   // 静态默认仍为简体中文；首次无偏好文件时由 resolveSystemLanguagePreference 覆盖。
   language: 'zh-CN',
@@ -43,6 +43,7 @@ export const DEFAULT_CLIENT_PREFERENCES: ClientPreferences = {
   externalDiffTools: DEFAULT_EXTERNAL_DIFF_TOOLS,
   externalMergeTools: DEFAULT_EXTERNAL_MERGE_TOOLS,
   authAccountBindings: [],
+  repositoryTabCustomizations: [],
   repositoryPaths: [],
   activeRepositoryPath: null
 }
@@ -121,6 +122,38 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
           (binding, index, bindings) =>
             bindings.findIndex(
               (candidate) => candidate.repositoryPath.toLocaleLowerCase() === binding.repositoryPath.toLocaleLowerCase()
+            ) === index
+        )
+        .slice(0, 256)
+    : []
+  const repositoryTabCustomizations = Array.isArray(value?.repositoryTabCustomizations)
+    ? value.repositoryTabCustomizations
+        .filter((customization) => typeof customization?.repositoryPath === 'string')
+        .map((customization) => {
+          const repositoryPath = normalizePersistedRepositoryPath(customization.repositoryPath.trim()).slice(0, 4_096)
+          const name =
+            typeof customization.name === 'string'
+              ? customization.name.replaceAll('\r', '').replaceAll('\n', '').trim().slice(0, 80)
+              : ''
+          const color = isRepositoryAccentColor(customization.color) ? customization.color : undefined
+          return {
+            repositoryPath,
+            ...(name ? { name } : {}),
+            ...(color ? { color } : {})
+          }
+        })
+        .filter(
+          (customization) =>
+            customization.repositoryPath.length > 0 &&
+            !customization.repositoryPath.includes('\0') &&
+            Boolean(customization.name || customization.color)
+        )
+        .filter(
+          (customization, index, customizations) =>
+            customizations.findIndex(
+              (candidate) =>
+                candidate.repositoryPath.toLocaleLowerCase('en-US') ===
+                customization.repositoryPath.toLocaleLowerCase('en-US')
             ) === index
         )
         .slice(0, 256)
@@ -217,6 +250,7 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
      */
     revisionHistoryLaneMode: value?.revisionHistoryLaneMode === 'topology' ? 'topology' : 'flat',
     authAccountBindings,
+    repositoryTabCustomizations,
     repositoryPaths,
     activeRepositoryPath
   }

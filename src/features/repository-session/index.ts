@@ -2,6 +2,7 @@
 export * from './components/CloneDialog'
 export * from './components/InitializeRepositoryDialog'
 export * from './components/RepositoryTabs'
+export * from './components/repositoryTabsModel'
 export * from './components/RepositoryWelcome'
 export * from './components/RemoteAuthenticationDialog'
 export * from './components/ServerDialog'

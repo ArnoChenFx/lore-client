@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { RepositoryTabs, type RepositoryTab } from '../features/repository-session'
+import type { RepositoryAccentColor } from '../shared/lib'
 import type { LoreRuntimeInfo, Repository, ResolvedTheme, ToastMessage } from '../types'
 import { StatusBar } from './components/StatusBar'
 import { TitleBar } from './components/TitleBar'
@@ -23,7 +24,12 @@ interface AppShellProps {
   onOpenCommands: () => void
   onSelectRepository: (repositoryId: string) => void
   onCloseRepository: (repositoryId: string) => void
+  onCloseOtherRepositories: (repositoryId: string) => void
+  onCloseAllRepositories: () => void
   onReorderRepositories: (sourceRepositoryId: string, targetRepositoryId: string) => void
+  onRenameRepositoryTab: (repositoryPath: string, name: string) => void
+  onRestoreRepositoryTabName: (repositoryPath: string) => void
+  onRepositoryTabColorChange: (repositoryPath: string, color: RepositoryAccentColor | null) => void
   onAddRepository: () => void
   onCloseToast: () => void
   children: ReactNode
@@ -51,7 +57,12 @@ export function AppShell({
   onOpenCommands,
   onSelectRepository,
   onCloseRepository,
+  onCloseOtherRepositories,
+  onCloseAllRepositories,
   onReorderRepositories,
+  onRenameRepositoryTab,
+  onRestoreRepositoryTabName,
+  onRepositoryTabColorChange,
   onAddRepository,
   onCloseToast,
   children,
@@ -80,7 +91,12 @@ export function AppShell({
         activeId={activeRepositoryId}
         onSelect={onSelectRepository}
         onClose={onCloseRepository}
+        onCloseOthers={onCloseOtherRepositories}
+        onCloseAll={onCloseAllRepositories}
         onReorder={onReorderRepositories}
+        onRename={onRenameRepositoryTab}
+        onRestoreName={onRestoreRepositoryTabName}
+        onColorChange={onRepositoryTabColorChange}
         onAdd={onAddRepository}
       />
 

@@ -725,6 +725,16 @@ kbd {
   margin-left: auto;
 }
 
+/* Tab 内联改名复用共享文本输入，只在这里限定标签栏所需的紧凑尺寸。 */
+.repository-tab__rename {
+  min-width: 0;
+  height: 24px;
+  flex: 1;
+  padding: 2px 7px;
+  margin: 3px 6px;
+  font-size: 12px;
+}
+
 .repository-tab:hover {
   background: var(--bg-panel);
   color: var(--text-soft);
@@ -829,6 +839,77 @@ kbd {
   color: var(--faint);
   font-family: var(--mono);
   font-size: 11px;
+}
+
+/*
+ * 项目 Tab 菜单保持现有对象菜单的工业化表面；类别色只出现在小圆点中，
+ * 不改变菜单选择、焦点或危险状态的语义颜色。
+ */
+.revision-file-menu.repository-tab-menu {
+  /*
+   * 通用 Revision 菜单需要容纳较长的对象操作，因此固定为 288px；项目菜单
+   * 最长操作项明显更短，独立收窄后可以消除色板右侧无意义的留白。
+   */
+  width: 212px;
+  max-width: calc(100vw - 16px);
+}
+
+.revision-file-menu.repository-tab-menu > header small {
+  /*
+   * 仓库路径可能没有适合语言分词的空格，允许在任意字符边界折行，确保路径
+   * 只增加标题高度，而不会反向撑宽菜单和其中的操作项、色板。
+   */
+  overflow: visible;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.repository-tab-menu__color-group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+  padding: 5px 8px 8px;
+}
+
+.repository-tab-menu__color-group > span {
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.repository-tab-menu__color-grid {
+  display: grid;
+  width: max-content;
+  grid-template-columns: repeat(5, 18px);
+  gap: 8px;
+  margin-inline: auto;
+}
+
+.repository-tab-menu__color {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--repo-color) 68%, var(--line-strong));
+  border-radius: 50%;
+  background: var(--repo-color);
+  color: var(--bg-deep);
+}
+
+.repository-tab-menu__color[aria-checked='true'] {
+  outline: 1px solid var(--text-soft);
+  outline-offset: 2px;
+}
+
+.repository-tab-menu__color:hover,
+.repository-tab-menu__color:focus-visible {
+  border-color: var(--text);
+  outline: 1px solid var(--accent-solid);
+  outline-offset: 2px;
 }
 
 .workspace {

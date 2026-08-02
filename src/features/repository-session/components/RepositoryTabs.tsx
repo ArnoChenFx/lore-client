@@ -1,32 +1,74 @@
 import { Plus, X } from 'lucide-react'
-import { useState, type CSSProperties, type DragEvent, type KeyboardEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DragEvent,
+  type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { t } from '../../../i18n'
-import type { Repository } from '../../../types'
+import type { RepositoryAccentColor } from '../../../shared/lib'
+import { TextInput } from '../../../shared/ui'
+import { RepositoryTabContextMenu, type RepositoryTabMenuRequest } from './RepositoryTabContextMenu'
+import type { RepositoryTab } from './repositoryTabsModel'
 
-/** 一个本地工作区 Tab；`sessionKey` 与可相同的 Lore Repository ID 明确分离。 */
-export interface RepositoryTab {
-  sessionKey: string
-  repository: Repository
-}
+export type { RepositoryTab } from './repositoryTabsModel'
 
 interface RepositoryTabsProps {
   tabs: RepositoryTab[]
   activeId: string
   onSelect: (repositoryId: string) => void
   onClose: (repositoryId: string) => void
+  onCloseOthers: (repositoryId: string) => void
+  onCloseAll: () => void
   onReorder: (sourceRepositoryId: string, targetRepositoryId: string) => void
+  onRename: (repositoryPath: string, name: string) => void
+  onRestoreName: (repositoryPath: string) => void
+  onColorChange: (repositoryPath: string, color: RepositoryAccentColor | null) => void
   onAdd: () => void
 }
 
 const REPOSITORY_TAB_DRAG_TYPE = 'application/x-lore-repository-tab'
 
-export function RepositoryTabs({ tabs, activeId, onSelect, onClose, onReorder, onAdd }: RepositoryTabsProps) {
+export function RepositoryTabs({
+  tabs,
+  activeId,
+  onSelect,
+  onClose,
+  onCloseOthers,
+  onCloseAll,
+  onReorder,
+  onRename,
+  onRestoreName,
+  onColorChange,
+  onAdd
+}: RepositoryTabsProps) {
   const { t } = useTranslation()
   const [draggingRepositoryId, setDraggingRepositoryId] = useState<string | null>(null)
   const [dropTargetRepositoryId, setDropTargetRepositoryId] = useState<string | null>(null)
+  const [menuRequest, setMenuRequest] = useState<RepositoryTabMenuRequest | null>(null)
+  const [editingSessionKey, setEditingSessionKey] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+  const renameInputRef = useRef<HTMLInputElement>(null)
   const draggingIndex = tabs.findIndex((tab) => tab.sessionKey === draggingRepositoryId)
+
+  useEffect(() => {
+    if (!editingSessionKey) return
+    const frame = requestAnimationFrame(() => {
+      renameInputRef.current?.focus()
+      renameInputRef.current?.select()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [editingSessionKey])
+
+  useEffect(() => {
+    if (editingSessionKey && !tabs.some((tab) => tab.sessionKey === editingSessionKey)) {
+      setEditingSessionKey(null)
+    }
+  }, [editingSessionKey, tabs])
 
   /**
    * 拖放结束、取消或离开浏览器拖放会话时统一清理视觉状态。这里不修改仓库
@@ -78,83 +120,159 @@ export function RepositoryTabs({ tabs, activeId, onSelect, onClose, onReorder, o
     onReorder(repositoryId, targetTab.sessionKey)
   }
 
-  return (
-    <nav className="repository-tabs" aria-label={t('openRepositories')}>
-      {tabs.map(({ sessionKey, repository }, index) => {
-        const isDragging = sessionKey === draggingRepositoryId
-        const isDropTarget = sessionKey === dropTargetRepositoryId && !isDragging
-        const dropTargetSide = isDropTarget && draggingIndex < index ? 'after' : 'before'
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, tab: RepositoryTab, index: number) => {
+    if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+      event.preventDefault()
+      event.stopPropagation()
+      const bounds = event.currentTarget.getBoundingClientRect()
+      setMenuRequest({
+        tab,
+        x: Math.min(bounds.left + 18, bounds.right),
+        y: Math.min(bounds.bottom, window.innerHeight - 8),
+        anchor: event.currentTarget
+      })
+      return
+    }
+    handleReorderKeyDown(event, tab.sessionKey, index)
+  }
 
-        return (
-          <div
-            key={sessionKey}
-            className={[
-              'repository-tab',
-              sessionKey === activeId ? 'is-active' : '',
-              isDragging ? 'is-dragging' : '',
-              isDropTarget ? `is-drop-target-${dropTargetSide}` : ''
-            ]
-              .filter(Boolean)
-              .join(' ')}
-            onDragEnter={(event) => {
-              if (!draggingRepositoryId || isDragging) return
-              event.preventDefault()
-              setDropTargetRepositoryId(sessionKey)
-            }}
-            onDragOver={(event) => {
-              if (!draggingRepositoryId || isDragging) return
-              event.preventDefault()
-              event.dataTransfer.dropEffect = 'move'
-            }}
-            onDrop={(event) => handleDrop(event, sessionKey)}
-          >
-            <button
-              type="button"
-              className="repository-tab__select"
-              draggable={tabs.length > 1}
-              aria-current={sessionKey === activeId ? 'page' : undefined}
-              aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
-              aria-label={t('status.openRepositoryReorder', { name: repository.name })}
-              title={t('status.tabReorderHint', { name: repository.path })}
-              onClick={() => onSelect(sessionKey)}
-              onKeyDown={(event) => handleReorderKeyDown(event, sessionKey, index)}
-              onDragStart={(event) => handleDragStart(event, sessionKey)}
-              onDragEnd={clearDragState}
+  const openContextMenu = (event: ReactMouseEvent<HTMLDivElement>, tab: RepositoryTab) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const anchor = event.currentTarget.querySelector<HTMLElement>('.repository-tab__select') ?? event.currentTarget
+    setMenuRequest({ tab, x: event.clientX, y: event.clientY, anchor })
+  }
+
+  const beginRename = (sessionKey: string) => {
+    const tab = tabs.find((candidate) => candidate.sessionKey === sessionKey)
+    if (!tab) return
+    setRenameDraft(tab.displayName)
+    setEditingSessionKey(sessionKey)
+  }
+
+  const finishRename = () => {
+    const tab = tabs.find((candidate) => candidate.sessionKey === editingSessionKey)
+    const name = renameDraft.trim()
+    setEditingSessionKey(null)
+    if (tab && name && name !== tab.displayName) onRename(tab.repository.path, name)
+  }
+
+  return (
+    <>
+      <nav className="repository-tabs" aria-label={t('openRepositories')}>
+        {tabs.map((tab, index) => {
+          const { sessionKey, repository, displayName, displayColor } = tab
+          const isDragging = sessionKey === draggingRepositoryId
+          const isDropTarget = sessionKey === dropTargetRepositoryId && !isDragging
+          const dropTargetSide = isDropTarget && draggingIndex < index ? 'after' : 'before'
+
+          return (
+            <div
+              key={sessionKey}
+              className={[
+                'repository-tab',
+                sessionKey === activeId ? 'is-active' : '',
+                isDragging ? 'is-dragging' : '',
+                isDropTarget ? `is-drop-target-${dropTargetSide}` : ''
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              onContextMenu={(event) => openContextMenu(event, tab)}
+              onDragEnter={(event) => {
+                if (!draggingRepositoryId || isDragging) return
+                event.preventDefault()
+                setDropTargetRepositoryId(sessionKey)
+              }}
+              onDragOver={(event) => {
+                if (!draggingRepositoryId || isDragging) return
+                event.preventDefault()
+                event.dataTransfer.dropEffect = 'move'
+              }}
+              onDrop={(event) => handleDrop(event, sessionKey)}
             >
-              <i style={{ '--repo-color': repository.color } as CSSProperties} />
-              <span>{repository.name}</span>
-              {(repository.ahead > 0 || repository.behind > 0) && (
-                <small>
-                  {repository.ahead > 0 && `↑${repository.ahead}`}
-                  {repository.behind > 0 && ` ↓${repository.behind}`}
-                </small>
+              {editingSessionKey === sessionKey ? (
+                <TextInput
+                  ref={renameInputRef}
+                  className="repository-tab__rename"
+                  value={renameDraft}
+                  maxLength={80}
+                  aria-label={t('status.renameRepositoryTabInput', { name: displayName })}
+                  onChange={(event) => setRenameDraft(event.target.value)}
+                  onBlur={finishRename}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      finishRename()
+                    } else if (event.key === 'Escape') {
+                      event.preventDefault()
+                      setEditingSessionKey(null)
+                    }
+                  }}
+                  onClick={(event) => event.stopPropagation()}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="repository-tab__select"
+                  draggable={tabs.length > 1}
+                  aria-current={sessionKey === activeId ? 'page' : undefined}
+                  aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Shift+F10"
+                  aria-label={t('status.openRepositoryReorder', { name: displayName })}
+                  title={t('status.tabReorderHint', { name: repository.path })}
+                  onClick={() => onSelect(sessionKey)}
+                  onKeyDown={(event) => handleTabKeyDown(event, tab, index)}
+                  onDragStart={(event) => handleDragStart(event, sessionKey)}
+                  onDragEnd={clearDragState}
+                >
+                  <i style={{ '--repo-color': displayColor } as CSSProperties} />
+                  <span>{displayName}</span>
+                  {(repository.ahead > 0 || repository.behind > 0) && (
+                    <small>
+                      {repository.ahead > 0 && `↑${repository.ahead}`}
+                      {repository.behind > 0 && ` ↓${repository.behind}`}
+                    </small>
+                  )}
+                </button>
               )}
-            </button>
-            {sessionKey === activeId && (
-              <button
-                type="button"
-                className="repository-tab__close"
-                aria-label={t('status.closeRepository', { name: repository.name })}
-                title={t('status.closeRepository', { name: repository.name })}
-                onClick={() => onClose(sessionKey)}
-              >
-                <X size={12} />
-              </button>
-            )}
-          </div>
-        )
-      })}
-      <button
-        type="button"
-        className="repository-tabs__add"
-        aria-label={t('openAnotherRepository')}
-        title={t('openAnotherRepository')}
-        onClick={onAdd}
-      >
-        <Plus size={15} />
-      </button>
-      <span className="repository-tabs__spacer" />
-      <span className="repository-tabs__cache">{t('status.repositoriesOpen', { count: tabs.length })}</span>
-    </nav>
+              {sessionKey === activeId && (
+                <button
+                  type="button"
+                  className="repository-tab__close"
+                  aria-label={t('status.closeRepository', { name: displayName })}
+                  title={t('status.closeRepository', { name: displayName })}
+                  onClick={() => onClose(sessionKey)}
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          )
+        })}
+        <button
+          type="button"
+          className="repository-tabs__add"
+          aria-label={t('openAnotherRepository')}
+          title={t('openAnotherRepository')}
+          onClick={onAdd}
+        >
+          <Plus size={15} />
+        </button>
+        <span className="repository-tabs__spacer" />
+        <span className="repository-tabs__cache">{t('status.repositoriesOpen', { count: tabs.length })}</span>
+      </nav>
+      {menuRequest && (
+        <RepositoryTabContextMenu
+          request={menuRequest}
+          tabCount={tabs.length}
+          onClose={() => setMenuRequest(null)}
+          onCloseTab={onClose}
+          onCloseOthers={onCloseOthers}
+          onCloseAll={onCloseAll}
+          onRename={beginRename}
+          onRestoreName={onRestoreName}
+          onColorChange={onColorChange}
+        />
+      )}
+    </>
   )
 }

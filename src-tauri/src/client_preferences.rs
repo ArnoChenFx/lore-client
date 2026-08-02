@@ -8,7 +8,7 @@ use crate::asset_preview::{binary_preview_limit_bytes, DEFAULT_BINARY_PREVIEW_LI
 use crate::lore_adapter::{sync_auth_account_bindings, LoreCommandError};
 
 /// 当前偏好文件格式版本；后续调整字段语义时在 Rust 边界执行显式迁移。
-const CLIENT_PREFERENCES_VERSION: u32 = 4;
+const CLIENT_PREFERENCES_VERSION: u32 = 5;
 const PREFERENCES_FILE_NAME: &str = "client-preferences.json";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -68,6 +68,17 @@ pub struct RepositoryAuthAccountBinding {
     pub repository_path: String,
     pub auth_url: String,
     pub user_id: String,
+}
+
+/// 本地项目 Tab 的客户端展示覆盖；不会写入 Lore 仓库配置。
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct RepositoryTabCustomization {
+    pub repository_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 impl Default for ExternalDiffPreference {
@@ -178,6 +189,7 @@ pub struct ClientPreferences {
     #[serde(default = "default_external_merge_tools")]
     pub external_merge_tools: Vec<ExternalDiffPreference>,
     pub auth_account_bindings: Vec<RepositoryAuthAccountBinding>,
+    pub repository_tab_customizations: Vec<RepositoryTabCustomization>,
     pub repository_paths: Vec<String>,
     pub active_repository_path: Option<String>,
 }
@@ -204,6 +216,7 @@ impl Default for ClientPreferences {
             external_diff_tools: default_external_diff_tools(),
             external_merge_tools: default_external_merge_tools(),
             auth_account_bindings: Vec::new(),
+            repository_tab_customizations: Vec::new(),
             repository_paths: Vec::new(),
             active_repository_path: None,
         }
@@ -311,6 +324,18 @@ fn write_preferences_file(
     })
 }
 
+/**
+ * Rust 偏好层只验证跨边界颜色的稳定传输格式，不复制前端产品色板。
+ *
+ * 具体可选颜色由前端单一来源维护并在读取偏好时再次收敛；这里保留 `#RRGGBB`
+ * 语法检查，可拒绝超长字符串、CSS 函数和其它不应进入偏好文件的任意样式值，
+ * 同时允许未来调整色板而无需同步修改 Rust 常量。
+ */
+fn is_rgb_hex_color(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 7 && bytes[0] == b'#' && bytes[1..].iter().all(|byte| byte.is_ascii_hexdigit())
+}
+
 fn validate_preferences(preferences: &ClientPreferences) -> Result<(), LoreCommandError> {
     let valid_theme = matches!(preferences.theme.as_str(), "system" | "dark" | "light");
     let valid_language = matches!(preferences.language.as_str(), "zh-CN" | "en-US");
@@ -384,6 +409,28 @@ fn validate_preferences(preferences: &ClientPreferences) -> Result<(), LoreComma
                 && !binding.auth_url.contains('\0')
                 && !binding.user_id.contains('\0')
         });
+    let valid_repository_tab_customizations = preferences.repository_tab_customizations.len()
+        <= 256
+        && preferences
+            .repository_tab_customizations
+            .iter()
+            .all(|customization| {
+                let valid_name = customization.name.as_ref().is_none_or(|name| {
+                    !name.trim().is_empty()
+                        && name.len() <= 80
+                        && !name.contains(['\r', '\n', '\0'])
+                });
+                let valid_color = customization
+                    .color
+                    .as_ref()
+                    .is_none_or(|color| is_rgb_hex_color(color));
+                !customization.repository_path.trim().is_empty()
+                    && customization.repository_path.len() <= 4096
+                    && !customization.repository_path.contains('\0')
+                    && (customization.name.is_some() || customization.color.is_some())
+                    && valid_name
+                    && valid_color
+            });
     if !valid_theme
         || !valid_language
         || !valid_inspector
@@ -397,6 +444,7 @@ fn validate_preferences(preferences: &ClientPreferences) -> Result<(), LoreComma
         || !valid_external_diff
         || !valid_identity
         || !valid_auth_bindings
+        || !valid_repository_tab_customizations
     {
         return Err(LoreCommandError::new(
             "preferences_value_invalid",
@@ -426,6 +474,11 @@ mod tests {
         let preferences = ClientPreferences {
             repository_paths: vec!["E:\\A".to_owned(), "E:\\B".to_owned()],
             active_repository_path: Some("E:\\A".to_owned()),
+            repository_tab_customizations: vec![RepositoryTabCustomization {
+                repository_path: "E:\\A".to_owned(),
+                name: Some("Environment".to_owned()),
+                color: Some("#4aa7ad".to_owned()),
+            }],
             binary_preview_limit_mib: 64,
             external_diff_tools: vec![ExternalDiffPreference {
                 id: "diff-custom".to_owned(),
@@ -455,6 +508,11 @@ mod tests {
         assert_eq!(restored.external_diff_tools[0].kind, "custom");
         assert_eq!(restored.external_diff_tools[0].name, "Studio Diff");
         assert_eq!(restored.binary_preview_limit_mib, 64);
+        assert_eq!(restored.repository_tab_customizations.len(), 1);
+        assert_eq!(
+            restored.repository_tab_customizations[0].name.as_deref(),
+            Some("Environment")
+        );
         assert_eq!(
             restored.external_diff_tools[0].executable,
             "E:\\Tools\\Studio Diff.exe"
@@ -511,6 +569,7 @@ mod tests {
         assert_eq!(preferences.revision_history_lane_mode, "flat");
         assert_eq!(preferences.external_diff_tools.len(), 4);
         assert_eq!(preferences.external_merge_tools.len(), 4);
+        assert!(preferences.repository_tab_customizations.is_empty());
     }
 
     #[test]
@@ -533,5 +592,34 @@ mod tests {
 
         let error = validate_preferences(&preferences).unwrap_err();
         assert_eq!(error.code, "preferences_value_invalid");
+    }
+
+    #[test]
+    fn preferences_reject_repository_tab_customization_with_invalid_color_syntax() {
+        let preferences = ClientPreferences {
+            repository_tab_customizations: vec![RepositoryTabCustomization {
+                repository_path: "E:\\A".to_owned(),
+                name: None,
+                color: Some("hotpink".to_owned()),
+            }],
+            ..Default::default()
+        };
+
+        let error = validate_preferences(&preferences).unwrap_err();
+        assert_eq!(error.code, "preferences_value_invalid");
+    }
+
+    #[test]
+    fn preferences_accept_repository_tab_color_without_backend_palette_knowledge() {
+        let preferences = ClientPreferences {
+            repository_tab_customizations: vec![RepositoryTabCustomization {
+                repository_path: "E:\\A".to_owned(),
+                name: None,
+                color: Some("#123456".to_owned()),
+            }],
+            ..Default::default()
+        };
+
+        assert!(validate_preferences(&preferences).is_ok());
     }
 }

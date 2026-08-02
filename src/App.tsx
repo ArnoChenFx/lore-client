@@ -49,6 +49,9 @@ import {
   useRepositorySession,
   useRepositorySessionLifecycle,
   repositorySessionKey,
+  resolveRepositoryTabPresentation,
+  updateRepositoryTabCustomizations,
+  type RepositoryTabCustomizationPatch,
   useSharedStoreController
 } from './features/repository-session'
 import { useRepositoryToolsController } from './features/repository-tools'
@@ -235,6 +238,34 @@ function App() {
     refresh: refreshActiveRepositorySnapshot
   })
   const activeRepository = activeSnapshot?.repository ?? createPlaceholderRepository()
+  const repositoryTabs = useMemo(
+    () =>
+      snapshots.map((snapshot) => ({
+        sessionKey: repositorySessionKey(snapshot),
+        repository: snapshot.repository,
+        ...resolveRepositoryTabPresentation(snapshot.repository, preferences.repositoryTabCustomizations)
+      })),
+    [preferences.repositoryTabCustomizations, snapshots]
+  )
+
+  /** Tab 覆盖只作用于真实已打开仓库；占位仓库和失效旧路径不会生成孤立偏好。 */
+  const updateRepositoryTabCustomization = useCallback(
+    (repositoryPath: string, patch: RepositoryTabCustomizationPatch) => {
+      const snapshot = snapshots.find(
+        (candidate) =>
+          candidate.repository.path.toLocaleLowerCase('en-US') === repositoryPath.toLocaleLowerCase('en-US')
+      )
+      if (!snapshot) return
+      updatePreferences({
+        repositoryTabCustomizations: updateRepositoryTabCustomizations(
+          preferences.repositoryTabCustomizations,
+          snapshot.repository,
+          patch
+        )
+      })
+    },
+    [preferences.repositoryTabCustomizations, snapshots, updatePreferences]
+  )
   const selectedRevision =
     activeSnapshot?.revisions.find((revision) => revision.id === selectedRevisionId) ??
     activeSnapshot?.revisions.find((revision) => revision.id === activeSnapshot.repository.revision) ??
@@ -782,10 +813,7 @@ function App() {
       repository={activeRepository}
       theme={resolvedTheme}
       operationCount={activeOperationCount}
-      repositoryTabs={snapshots.map((snapshot) => ({
-        sessionKey: repositorySessionKey(snapshot),
-        repository: snapshot.repository
-      }))}
+      repositoryTabs={repositoryTabs}
       activeRepositoryId={activeRepositoryId}
       runtimeInfo={runtimeInfo}
       busyLabel={busyAction ? t(busyAction as never) : null}
@@ -802,7 +830,19 @@ function App() {
         const next = removeRepositorySnapshot(repositoryId)
         if (next) activateSnapshot(next)
       }}
+      onCloseOtherRepositories={(repositoryId) => {
+        const retained = sessionSnapshots.find((snapshot) => repositorySessionKey(snapshot) === repositoryId)
+        if (!retained) return
+        replaceRepositorySession([retained], [])
+        activateSnapshot(retained)
+      }}
+      onCloseAllRepositories={() => replaceRepositorySession([], [])}
       onReorderRepositories={reorderRepositoryTabs}
+      onRenameRepositoryTab={(repositoryPath, name) => updateRepositoryTabCustomization(repositoryPath, { name })}
+      onRestoreRepositoryTabName={(repositoryPath) => updateRepositoryTabCustomization(repositoryPath, { name: null })}
+      onRepositoryTabColorChange={(repositoryPath, color) =>
+        updateRepositoryTabCustomization(repositoryPath, { color })
+      }
       onAddRepository={() => void openRepository()}
       onCloseToast={closeToast}
       overlays={appOverlays}
