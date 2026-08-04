@@ -15,7 +15,7 @@
 
 ---
 
-![Lore Client 深色主题修订历史](../img/lore-client-revision-history-dark-zh.png)
+![Lore Client 修订历史](../img/lore-client-revision-history-dark-zh.png)
 
 ## 你可以完成什么
 
@@ -39,7 +39,7 @@ Revision History 默认使用平铺模式，只聚焦当前分支的修订、该
 
 分别管理本地、远端和已归档分支，并随时确认当前检出位置。你可以创建和切换分支、合并工作线、拣选或撤销修订、比较分支，以及创建和管理标签。引导式冲突会话支持解决、重新开始或中止合并、拣选和撤销操作。
 
-![分支总览与修订文件树](../img/lore-client-branch-overview-light-zh.png)
+![分支总览与修订文件树](../img/lore-client-branch-overview-dark-zh.png)
 
 ---
 

@@ -15,7 +15,7 @@
 
 ---
 
-![Lore Client revision history in the dark theme](docs/img/lore-client-revision-history-dark.png)
+![Lore Client revision history](docs/img/lore-client-revision-history-dark.png)
 
 ## What you can do
 
@@ -39,7 +39,7 @@ Configure multiple External Diff and External Merge tools from client settings. 
 
 Work with local, remote, and archived branches without losing track of the current checkout. Create and switch branches, merge lines of work, cherry-pick or revert revisions, compare branches, and create or manage labels. Guided conflict sessions help you resolve, restart, or abort Merge, Cherry-pick, and Revert operations.
 
-![Branch overview and revision file tree](docs/img/lore-client-branch-overview-light.png)
+![Branch overview and revision file tree](docs/img/lore-client-branch-overview-dark.png)
 
 ---
 

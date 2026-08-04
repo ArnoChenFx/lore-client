@@ -2,18 +2,18 @@
 
 ## Top toolbar
 
-| Control | Purpose | Notes |
-| --- | --- | --- |
-| Repository switcher | Switch between open repositories. | Switching does not Sync or close other tabs. |
-| Remote status | Distinguishes online, offline, local-only, and reauthentication-required states. | Offline remotes retry read-only probes automatically; uncached content may remain unavailable. |
-| **Open project directory** | Open another local repository or regular directory. | Initialization requires confirmation. |
-| **Sync** | Merge remote Branch progress locally. | Local writes or conflicts may block it. |
-| **Push** | Advance the current Branch remotely. | Requires configuration and a non-diverged remote Latest. |
-| **New Revision** | Enter the Revision creation flow. | Selection, staging, and a message are still required. |
-| **Command** | Open the Command Palette. | Search and run major actions by keyboard. |
-| **Global Search** | Search loaded Revisions, Branches, and file paths. | It is not a remote full-text index. |
-| **Server Settings** | Browse the remote repository directory. | The address is temporary and does not edit repository configuration. |
-| **Client Settings** | Open appearance, identity, integrations, storage, and maintenance. | Most settings apply immediately. |
+| Control                    | Purpose                                                                          | Notes                                                                                          |
+| -------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Repository switcher        | Switch between open repositories.                                                | Switching does not Sync or close other tabs.                                                   |
+| Remote status              | Distinguishes online, offline, local-only, and reauthentication-required states. | Offline remotes retry read-only probes automatically; uncached content may remain unavailable. |
+| **Open project directory** | Open another local repository or regular directory.                              | Initialization requires confirmation.                                                          |
+| **Sync**                   | Merge remote Branch progress locally.                                            | Local writes or conflicts may block it.                                                        |
+| **Push**                   | Advance the current Branch remotely.                                             | Requires configuration and a non-diverged remote Latest.                                       |
+| **New Revision**           | Enter the Revision creation flow.                                                | Selection, staging, and a message are still required.                                          |
+| **Command**                | Open the Command Palette.                                                        | Search and run major actions by keyboard.                                                      |
+| **Global Search**          | Search loaded Revisions, Branches, and file paths.                               | It is not a remote full-text index.                                                            |
+| **Server Settings**        | Browse the remote repository directory.                                          | The address is temporary and does not edit repository configuration.                           |
+| **Client Settings**        | Open appearance, identity, integrations, storage, and maintenance.               | Most settings apply immediately.                                                               |
 
 ## Repository tabs
 
@@ -28,7 +28,7 @@ client display preferences only: they do not rename a directory, Lore repository
 
 ## Sidebar
 
-![Lore Client Branch Overview workspace in English](../../img/lore-client-branch-overview-light.png)
+![Lore Client Branch Overview workspace](../../img/lore-client-branch-overview-dark.png)
 
 _Branch Overview presents workspace attachment, local and remote Branches, and the Revision file tree together._
 
