@@ -4913,9 +4913,12 @@ kbd {
 }
 
 .branch-overview__column-empty {
+  /* 空态容器与分支卡保持相同的高度预算，并让短文案在其中双向居中。 */
+  display: grid;
   min-height: 86px;
+  place-items: center;
   margin: 6px 0 0;
-  padding: 18px 10px;
+  padding: 10px;
   border: 1px dashed var(--line);
   border-radius: 4px;
   color: var(--muted);
