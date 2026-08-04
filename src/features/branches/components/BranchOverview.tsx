@@ -166,7 +166,13 @@ export function BranchOverview({
       <strong>{branch.name}</strong>
       <span className="branch-card__revision">
         <code>{branch.latest?.slice(0, 8) || t('noRevisions')}</code>
-        <span>{branch.author ?? (demoMode ? 'lore-eu-01' : t('unknownCreator'))}</span>
+        {/*
+         * 本地分支缺少创建者时不显示无行动价值的占位文案；远程分支仍需明确来源
+         * 信息不可用。演示模式保留稳定样例身份，避免示例卡片产生偶发空列。
+         */}
+        {(branch.author || demoMode || branch.remote) && (
+          <span>{branch.author ?? (demoMode ? 'lore-eu-01' : t('unknownCreator'))}</span>
+        )}
       </span>
       <span className="branch-card__footer">
         {renderBranchSyncState(branch)}

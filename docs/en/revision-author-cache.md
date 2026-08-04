@@ -1,16 +1,18 @@
-# Offline Revision Author Cache
+# Offline Revision Author and Branch Creator Cache
 
-Lore Client stores Auth-confirmed Revision `userId → display name` mappings in a local,
-redacted cache. Entries are scoped by stable Repository ID and user ID, so moving a local
-repository does not lose the mapping and identical IDs from different repositories do not mix.
+Lore Client stores Auth-confirmed Revision author and branch creator
+`userId → display name` mappings in a local, redacted cache. Entries are scoped by stable
+Repository ID and user ID, so moving a local repository does not lose the mapping and identical
+IDs from different repositories do not mix.
 
 ## User-visible behavior
 
-- While online, names returned by Auth override older cache entries and appear immediately.
+- While loading an online repository snapshot or history, names returned by Auth override older
+  cache entries and appear immediately in the branch overview and Revision History.
 - After a repository goes offline, Auth becomes unavailable, or the account signs out,
   previously resolved authors remain readable.
-- A user ID that has never been resolved remains unchanged; the current repository identity
-  is never guessed as a historical author.
+- A user ID that has never been resolved remains unchanged; the current repository identity is
+  never guessed as a historical author or branch creator.
 - A partial Auth response does not erase cached names for other authors.
 
 ## Privacy and capacity boundaries

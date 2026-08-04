@@ -1,14 +1,16 @@
-# Revision 作者离线缓存
+# Revision 作者与分支创建者离线缓存
 
-Lore Client 会把 Auth 服务已经确认的 Revision `userId → 显示名` 保存为本地脱敏缓存。
-缓存按稳定 Repository ID 与 userId 隔离，因此移动仓库目录不会丢失映射，不同仓库也不会
-误用同名 userId。
+Lore Client 会把 Auth 服务已经确认的 Revision 作者和分支创建者
+`userId → 显示名` 保存为本地脱敏缓存。缓存按稳定 Repository ID 与 userId 隔离，
+因此移动仓库目录不会丢失映射，不同仓库也不会误用同名 userId。
 
 ## 用户可感知行为
 
-- 在线读取历史时，Auth 返回的用户名覆盖旧缓存并用于当前 Revision History。
+- 在线读取仓库快照或历史时，Auth 返回的用户名覆盖旧缓存，并用于分支总览和
+  Revision History。
 - 仓库离线、Auth 暂时不可用或账户退出后，已解析过的作者继续显示缓存名称。
-- 从未成功解析的 userId 继续原样显示；客户端不会用当前仓库 identity 猜测历史作者。
+- 从未成功解析的 userId 继续原样显示；客户端不会用当前仓库 identity 猜测历史作者
+  或分支创建者。
 - Auth 只返回部分作者时，已缓存的其他作者不会被清空。
 
 ## 隐私与容量边界

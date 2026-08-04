@@ -72,8 +72,25 @@ describe('archived branch filtering in the branch overview', () => {
 
     expect(markup).not.toContain('已同步')
     expect(markup).toContain('同步状态未知')
-    expect(markup).toContain('未知创建者')
+    expect(markup).not.toContain('未知创建者')
     expect(markup).not.toContain('&lt;unknown&gt;')
+  })
+
+  it('keeps the unknown creator fallback for remote branches only', async () => {
+    await i18n.changeLanguage('zh-CN')
+    const markup = renderToStaticMarkup(
+      <BranchOverview
+        branches={[currentBranch, remoteBranch]}
+        demoMode={false}
+        selectedBranchId={currentBranch.id}
+        onSelect={() => undefined}
+        onCheckout={() => undefined}
+        onContextMenu={() => undefined}
+        onCreate={() => undefined}
+      />
+    )
+
+    expect(markup.match(/未知创建者/g)).toHaveLength(1)
   })
 
   it('shows synced only when the branch carries explicit evidence', async () => {
