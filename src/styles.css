@@ -83,7 +83,7 @@
   --button-primary-border: #78a4ff;
   --button-primary-text: #0e1b32;
   --button-neutral-active-bg: #303642;
-  --resizer-active: #77756e;
+  --resizer-active: var(--accent-solid);
   /* 功能色只描述真实状态，不参与普通导航、选中或类别区分。 */
   --success: #76bd90;
   --success-surface: #20362a;
@@ -934,13 +934,6 @@ kbd {
   background: var(--bg-raised);
 }
 
-.history-panel,
-.local-changes,
-.branch-overview,
-.tag-overview {
-  border-right: 1px solid var(--line);
-}
-
 /* ==========================================================================
    左侧导航
    ========================================================================== */
@@ -948,7 +941,6 @@ kbd {
 .sidebar {
   display: grid;
   grid-template-rows: 51px auto 33px minmax(0, 1fr) auto;
-  border-right: 1px solid var(--line);
   background: var(--bg-raised);
 }
 
@@ -2998,10 +2990,6 @@ kbd {
   border-top: 1px solid var(--line);
 }
 
-.local-changes__lists > .change-list-section:first-child {
-  border-right: 1px solid var(--line);
-}
-
 .change-group-toolbar {
   position: sticky;
   z-index: 2;
@@ -3612,12 +3600,14 @@ kbd {
   grid-template-rows: minmax(96px, 0.58fr) 6px minmax(96px, 0.42fr);
 }
 
-.local-changes__lists > .change-list-section,
-.local-changes__lists > .change-list-section:first-child {
+.local-changes__lists > .change-list-section {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   border: 0;
+}
+
+.local-changes__lists > .change-list-section:first-child {
   border-top: 1px solid var(--line);
 }
 
@@ -13342,7 +13332,7 @@ html[data-theme='light'] {
   --button-primary-border: #5f8ee6;
   --button-primary-text: #10213d;
   --button-neutral-active-bg: #f5f8ff;
-  --resizer-active: #88867f;
+  --resizer-active: var(--accent-solid);
   --success: #267b46;
   --success-surface: #e5f2e9;
   --success-border: #a8ccb5;
