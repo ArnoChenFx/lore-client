@@ -910,17 +910,24 @@ export async function loadRepositorySnapshot(repositoryPath: string, scan = fals
     limit: 100,
     revision: historyAnchor || null
   })
-  const resolvedRevisionAuthors = await resolveRevisionAuthorNames(statusRepository, history.events)
+  /*
+   * Branch creator 与 Revision 作者都可能是 Auth userId。把两类 identity 合并为一次
+   * 仓库级查询，既避免卡片泄露 userId，也不会为同一个用户重复访问 Auth 服务。
+   */
+  const resolvedAuthorNames = await resolveAuthorNames(statusRepository, [
+    ...collectRevisionAuthorIdentities(history.events),
+    ...collectBranchCreatorIdentities(branchList.events)
+  ])
   const tags = await listTags(repositoryPath)
   const config = await loadRepositoryConfig(repositoryPath)
 
   const repository = parseRepository(repositoryPath, status.events, config)
-  const branches = parseBranches(branchList.events, repository)
+  const branches = parseBranches(branchList.events, repository, resolvedAuthorNames)
 
   return {
     repository,
     branches,
-    revisions: parseRevisions(history.events, repository, branches, resolvedRevisionAuthors),
+    revisions: parseRevisions(history.events, repository, branches, resolvedAuthorNames),
     changes,
     tags,
     conflictSession,
@@ -2102,8 +2109,8 @@ export async function loadRevisionHistory(
     date: query.beforeDate || null,
     onlyBranch: query.onlyBranch
   })
-  const resolvedRevisionAuthors = await resolveRevisionAuthorNames(repository, result.events)
-  return parseRevisions(result.events, repository, branches, resolvedRevisionAuthors)
+  const resolvedAuthorNames = await resolveAuthorNames(repository, collectRevisionAuthorIdentities(result.events))
+  return parseRevisions(result.events, repository, branches, resolvedAuthorNames)
 }
 
 /** 使用系统文件管理器定位当前 Lore 工作区。 */
@@ -2422,7 +2429,11 @@ function parseRepository(repositoryPath: string, events: LoreEvent[], config: Re
   }
 }
 
-function parseBranches(events: LoreEvent[], repository: Repository): Branch[] {
+function parseBranches(
+  events: LoreEvent[],
+  repository: Repository,
+  resolvedCreatorNames: ReadonlyMap<string, string> = new Map()
+): Branch[] {
   const branchEntries = events.filter((event) => event.tagName === 'branchListEntry')
   const remoteLatestById = new Map<string, string>()
   for (const event of branchEntries) {
@@ -2445,6 +2456,7 @@ function parseBranches(events: LoreEvent[], repository: Repository): Branch[] {
     const rawId = readString(event.data.id, name)
     const latest = readRevisionId(event.data.latest)
     const current = readBoolean(event.data.isCurrent)
+    const creator = readKnownLoreLabel(event.data.creator)
     const branchPoints = Array.isArray(event.data.stack)
       ? event.data.stack
           .filter(isRecord)
@@ -2464,7 +2476,11 @@ function parseBranches(events: LoreEvent[], repository: Repository): Branch[] {
       archived: readBoolean(event.data.archived),
       branchPoints,
       ...branchSyncProjection(remote, current, repository, rawId, latest, remoteEvidence),
-      author: readString(event.data.creator, remote ? t('remote') : t('local'))
+      /*
+       * Lore 会用 `unknown` / `<unknown>` 表示缺失的创建者。稳定 DTO 保持字段缺失，
+       * 由组件在渲染期按当前语言显示“未知创建者”，避免泄露协议哨兵或冻结翻译。
+       */
+      author: creator ? (resolvedCreatorNames.get(creator) ?? creator) : undefined
     }
   })
 
@@ -2752,7 +2768,7 @@ function collectRevisionAuthorIdentities(events: LoreEvent[]): string[] {
   /** 只提交该 Revision 最终会显示的 identity，与 `parseRevisions` 保持同一优先级。 */
   const appendCurrentIdentity = () => {
     if (!currentMetadata) return
-    const identity = readString(currentMetadata.get('committed-by') ?? currentMetadata.get('created-by')).trim()
+    const identity = readKnownLoreLabel(currentMetadata.get('committed-by') ?? currentMetadata.get('created-by'))
     if (identity && identity.length <= 512 && !containsIdentityControlCharacter(identity)) {
       identities.add(identity)
     }
@@ -2774,19 +2790,38 @@ function collectRevisionAuthorIdentities(events: LoreEvent[]): string[] {
 }
 
 /**
+ * Branch List 的 creator 与 Revision identity 使用同一种 Auth userId 语义。
+ * 这里只收集可安全查询的真实值；缺失值和 Lore 哨兵继续交给界面本地化降级。
+ */
+function collectBranchCreatorIdentities(events: LoreEvent[]): string[] {
+  const identities = new Set<string>()
+  for (const event of events) {
+    if (event.tagName !== 'branchListEntry') continue
+    const identity = readKnownLoreLabel(event.data.creator)
+    if (identity && identity.length <= 512 && !containsIdentityControlCharacter(identity)) {
+      identities.add(identity)
+    }
+  }
+  return [...identities]
+}
+
+/**
  * 尽力把历史 userId 解析为 Auth 用户名。
  *
  * 这是不可依赖的显示增强：未绑定账户、离线、无权限、旧服务器
  * 或部分 ID 不存在时都返回已成功的子集，调用方继续使用原 identity。
  */
-async function resolveRevisionAuthorNames(repository: Repository, events: LoreEvent[]): Promise<Map<string, string>> {
-  const identities = collectRevisionAuthorIdentities(events)
+async function resolveAuthorNames(
+  repository: Repository,
+  identityCandidates: readonly string[]
+): Promise<Map<string, string>> {
+  const identities = [...new Set(identityCandidates)]
   if (identities.length === 0) return new Map()
   /*
    * 持久化缓存是离线基线；在线或 Token Store 中的已验证资料只会覆盖它。
    * 缓存键包含稳定 Repository ID，不能把其他仓库或 Auth 域的相同 userId 串入。
    */
-  const resolved = await loadCachedRevisionAuthorNames(repository.id, identities)
+  const resolved = await loadCachedAuthorNames(repository.id, identities)
 
   if (repository.online) {
     try {
@@ -2809,7 +2844,7 @@ async function resolveRevisionAuthorNames(repository: Repository, events: LoreEv
           remotelyResolved.set(userId, username)
         }
       }
-      await rememberRevisionAuthorNames(repository.id, remotelyResolved)
+      await rememberAuthorNames(repository.id, remotelyResolved)
       for (const [userId, username] of remotelyResolved) resolved.set(userId, username)
       return resolved
     } catch {
@@ -2841,7 +2876,7 @@ async function resolveRevisionAuthorNames(repository: Repository, events: LoreEv
         locallyResolved.set(userId, username)
       }
     }
-    await rememberRevisionAuthorNames(repository.id, locallyResolved)
+    await rememberAuthorNames(repository.id, locallyResolved)
     for (const [userId, username] of locallyResolved) resolved.set(userId, username)
     return resolved
   } catch {
@@ -2849,18 +2884,15 @@ async function resolveRevisionAuthorNames(repository: Repository, events: LoreEv
   }
 }
 
-type RevisionAuthorCacheEntry = {
+type AuthorCacheEntry = {
   userId: string
   displayName: string
 }
 
 /** 独立缓存文件损坏或不可读不能阻断历史读取；失败时退回 Revision 原始 identity。 */
-async function loadCachedRevisionAuthorNames(
-  repositoryId: string,
-  userIds: readonly string[]
-): Promise<Map<string, string>> {
+async function loadCachedAuthorNames(repositoryId: string, userIds: readonly string[]): Promise<Map<string, string>> {
   try {
-    const entries = await invokeLogged<RevisionAuthorCacheEntry[]>('lore_revision_author_cache_get', {
+    const entries = await invokeLogged<AuthorCacheEntry[]>('lore_revision_author_cache_get', {
       repositoryId,
       userIds
     })
@@ -2871,10 +2903,7 @@ async function loadCachedRevisionAuthorNames(
 }
 
 /** 只把 Auth 已确认的显示名交给 Rust；Token、JWT 与头像地址从不进入该 IPC。 */
-async function rememberRevisionAuthorNames(
-  repositoryId: string,
-  resolvedNames: ReadonlyMap<string, string>
-): Promise<void> {
+async function rememberAuthorNames(repositoryId: string, resolvedNames: ReadonlyMap<string, string>): Promise<void> {
   if (resolvedNames.size === 0) return
   try {
     await invokeLogged('lore_revision_author_cache_store', {
@@ -3039,6 +3068,16 @@ function readString(value: unknown, fallback = ''): string {
     return String(value)
   }
   return fallback
+}
+
+/**
+ * 读取 Lore 的可选展示文本，并过滤固定版本用于表达“无数据”的内部哨兵。
+ * 当前只用于身份类标签；真实用户输入即使包含尖括号，也不会被宽泛规则误删。
+ */
+function readKnownLoreLabel(value: unknown): string | undefined {
+  const label = readString(value).trim()
+  const normalized = label.toLowerCase()
+  return label.length > 0 && normalized !== 'unknown' && normalized !== '<unknown>' ? label : undefined
 }
 
 /**

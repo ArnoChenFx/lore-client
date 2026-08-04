@@ -72,6 +72,8 @@ describe('archived branch filtering in the branch overview', () => {
 
     expect(markup).not.toContain('已同步')
     expect(markup).toContain('同步状态未知')
+    expect(markup).toContain('未知创建者')
+    expect(markup).not.toContain('&lt;unknown&gt;')
   })
 
   it('shows synced only when the branch carries explicit evidence', async () => {

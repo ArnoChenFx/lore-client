@@ -229,6 +229,31 @@ describe('Lore event adapter', () => {
     expect(repositoryWithNullMarkers.currentBranchSyncState).toBe('unknown')
   })
 
+  it('normalizes unknown branch creator sentinels while preserving real creators', () => {
+    const repository = loreEventParsers.parseRepository(repositoryPath, [])
+    const branches = loreEventParsers.parseBranches(
+      [
+        {
+          tagName: 'branchListEntry',
+          data: { id: 'angle-id', name: 'angle', location: 'local', creator: '<unknown>' }
+        },
+        {
+          tagName: 'branchListEntry',
+          data: { id: 'plain-id', name: 'plain', location: 'local', creator: ' UNKNOWN ' }
+        },
+        {
+          tagName: 'branchListEntry',
+          data: { id: 'known-id', name: 'known', location: 'local', creator: ' Arno Chen ' }
+        }
+      ],
+      repository
+    )
+
+    expect(branches.find((branch) => branch.name === 'angle')?.author).toBeUndefined()
+    expect(branches.find((branch) => branch.name === 'plain')?.author).toBeUndefined()
+    expect(branches.find((branch) => branch.name === 'known')?.author).toBe('Arno Chen')
+  })
+
   it('uses exact branch IDs to distinguish local-only synced and different pointers', () => {
     const repository = loreEventParsers.parseRepository(
       repositoryPath,

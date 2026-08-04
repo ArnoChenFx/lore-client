@@ -288,6 +288,86 @@ describe('repository snapshot branch loading', () => {
     ])
   })
 
+  it('resolves branch creator user IDs to Auth user names in the repository snapshot', async () => {
+    repositoryStatusEvents = [
+      {
+        tagName: 'repositoryStatusRevision',
+        data: {
+          repository: 'repository-id',
+          branchName: 'main',
+          revision: 'old-revision',
+          remoteAvailable: true,
+          remoteAuthorized: true
+        }
+      }
+    ]
+    branchListEvents = [
+      {
+        tagName: 'branchListEntry',
+        data: {
+          id: 'main-id',
+          name: 'main',
+          latest: 'main-tip',
+          location: 'local',
+          isCurrent: true,
+          creator: 'user-42'
+        }
+      }
+    ]
+    const fallbackInvoke = invokeMock.getMockImplementation()
+    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+      if (command === 'lore_auth_user_info') {
+        expect(args).toEqual({ repositoryPath: 'E:\\Worlds\\RealLore', userIds: ['user-42'] })
+        return {
+          operation: 'auth.user-info',
+          status: 0,
+          events: [{ tagName: 'authUserInfo', data: { id: 'user-42', name: 'Arno Chen' } }]
+        }
+      }
+      if (command === 'lore_revision_author_cache_get') return []
+      if (command === 'lore_revision_author_cache_store') return null
+      if (!fallbackInvoke) throw new Error(`The test does not handle command: ${command}`)
+      return fallbackInvoke(command, args)
+    })
+
+    const snapshot = await loadRepositorySnapshot('E:\\Worlds\\RealLore')
+
+    expect(snapshot.branches[0]).toMatchObject({ name: 'main', author: 'Arno Chen' })
+  })
+
+  it('uses cached Auth user names for branch creators while the repository is offline', async () => {
+    branchListEvents = [
+      {
+        tagName: 'branchListEntry',
+        data: {
+          id: 'main-id',
+          name: 'main',
+          latest: 'main-tip',
+          location: 'local',
+          isCurrent: true,
+          creator: 'user-42'
+        }
+      }
+    ]
+    const fallbackInvoke = invokeMock.getMockImplementation()
+    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+      if (command === 'lore_revision_author_cache_get') {
+        expect(args).toEqual({ repositoryId: 'repository-id', userIds: ['user-42'] })
+        return [{ userId: 'user-42', displayName: 'Cached Arno' }]
+      }
+      if (command === 'lore_auth_repository_local_user_info') {
+        throw new Error('No bound local Auth profile')
+      }
+      if (!fallbackInvoke) throw new Error(`The test does not handle command: ${command}`)
+      return fallbackInvoke(command, args)
+    })
+
+    const snapshot = await loadRepositorySnapshot('E:\\Worlds\\RealLore')
+
+    expect(snapshot.branches[0]).toMatchObject({ name: 'main', author: 'Cached Arno' })
+    expect(invokeMock).not.toHaveBeenCalledWith('lore_auth_user_info', expect.anything())
+  })
+
   it('keeps account identities when display-name resolution fails', async () => {
     invokeMock.mockImplementation(async (command: string) => {
       if (command === 'lore_auth_list') {
