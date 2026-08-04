@@ -20,6 +20,24 @@ type AppOverlayAction =
   | { type: 'settingsCategory'; category: SettingsCategory }
   | { type: 'showUpdate' }
 
+interface KeyboardShortcutInput {
+  key: string
+  ctrlKey: boolean
+  metaKey: boolean
+  altKey: boolean
+  shiftKey: boolean
+}
+
+/**
+ * React 只识别产品自己的命令面板快捷键。打印、查找、刷新等浏览器默认行为已由
+ * Tauri prevent-default 插件在 WebView 初始化阶段统一关闭，不在组件层重复枚举。
+ */
+export function isCommandPaletteShortcut(event: KeyboardShortcutInput): boolean {
+  const key = event.key.toLocaleLowerCase()
+  const primaryModifier = (event.ctrlKey || event.metaKey) && !event.altKey
+  return primaryModifier && key === 'p' && !event.shiftKey
+}
+
 export const initialAppOverlayState: AppOverlayState = {
   commandPaletteOpen: false,
   serverDialogOpen: false,
@@ -83,7 +101,7 @@ export function useAppOverlayState() {
 
   useEffect(() => {
     const handleKeyboard = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === 'k') {
+      if (isCommandPaletteShortcut(event)) {
         event.preventDefault()
         setCommandPaletteOpen(true)
       }
@@ -92,8 +110,9 @@ export function useAppOverlayState() {
       }
     }
 
-    window.addEventListener('keydown', handleKeyboard)
-    return () => window.removeEventListener('keydown', handleKeyboard)
+    // 捕获阶段确保命令面板动作先于输入框等局部键盘处理执行。
+    window.addEventListener('keydown', handleKeyboard, true)
+    return () => window.removeEventListener('keydown', handleKeyboard, true)
   }, [setCommandPaletteOpen])
 
   return {

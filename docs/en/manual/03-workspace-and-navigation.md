@@ -78,7 +78,7 @@ files in the workspace. Locating changes view and selection only; it does not Ch
 Global Search groups loaded results into Revisions, Branches, and workspace files. A
 result is located, not executed as a write action.
 
-Open Command Palette with `Ctrl/Cmd+K`. It includes Sync, Push, Open, New Revision,
+Open Command Palette with `Ctrl/Cmd+P`. It includes Sync, Push, Open, New Revision,
 Switch Branch, View, Layers, locks, dependencies, Branch collaboration, Revision
 recovery, Accounts, server browsing, verification, Search, Operation History, and
 Client Settings. Use Arrow keys, Enter, and Escape.
@@ -92,7 +92,7 @@ history only; it does not undo work.
 
 ## Selection and keyboard rules
 
-- `Ctrl/Cmd+K`: Command Palette.
+- `Ctrl/Cmd+P`: Command Palette.
 - `Shift+F10`: open the focused project tab context menu.
 - `Escape`: close the active menu, popover, or dialog.
 - Arrow keys, Home, End: navigate supported tabs and menus.

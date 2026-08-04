@@ -4148,19 +4148,47 @@ try {
   await cdp.evaluate(`document.querySelector(".tag-dialog button[aria-label='关闭']")?.click()`)
   await delay(40)
 
+  // 纯前端演示同样提供产品级 Ctrl+P，但不拦截查找、刷新等其他浏览器默认快捷键。
+  results.frontendBrowserShortcuts = await cdp.evaluate(`(() => {
+    const findEvent = new KeyboardEvent("keydown", {
+      key: "f",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true
+    });
+    const shiftedPaletteEvent = new KeyboardEvent("keydown", {
+      key: "p",
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true
+    });
+    window.dispatchEvent(findEvent);
+    window.dispatchEvent(shiftedPaletteEvent);
+    return {
+      findPrevented: findEvent.defaultPrevented,
+      shiftedPalettePrevented: shiftedPaletteEvent.defaultPrevented
+    };
+  })()`)
+  assert(
+    !results.frontendBrowserShortcuts.findPrevented &&
+      !results.frontendBrowserShortcuts.shiftedPalettePrevented,
+    `The browser demo unexpectedly blocked native shortcuts: ${JSON.stringify(results.frontendBrowserShortcuts)}`
+  )
+
   await cdp.evaluate(`
     window.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "k",
+      key: "p",
       ctrlKey: true,
       bubbles: true
     }))
   `)
   await delay(60)
   results.commandPalette = await cdp.evaluate(`Boolean(document.querySelector(".command-palette"))`)
-  assert(results.commandPalette, 'Ctrl+K did not open the command palette')
+  assert(results.commandPalette, 'Ctrl+P did not open the command palette')
 
   await cdp.evaluate(`
-    window.dispatchEvent(new KeyboardEvent("keydown", {
+    document.querySelector(".command-palette input")?.dispatchEvent(new KeyboardEvent("keydown", {
       key: "Escape",
       bubbles: true
     }));

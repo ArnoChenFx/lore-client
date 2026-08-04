@@ -1,6 +1,6 @@
 [package]
 name = "lore-client"
-version = "0.2.8"
+version = "0.2.9"
 description = "Lore desktop version control client"
 authors = ["Lore Client Contributors"]
 edition = "2021"
@@ -36,6 +36,9 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2.10"
+# 统一在 WebView 初始化阶段禁用浏览器默认快捷键；Windows 功能同时启用 WebView2
+# 原生总开关，其他平台由插件注入的初始化脚本执行同一策略。
+tauri-plugin-prevent-default = { version = "5.0.2", features = ["platform-windows"] }
 open = "5.4.0"
 tempfile = "3"
 toml_edit = "0.25.13"

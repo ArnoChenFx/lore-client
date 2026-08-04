@@ -5,6 +5,53 @@ mod client_preferences;
 mod lore_adapter;
 mod revision_author_cache;
 
+/// 构建浏览器默认行为拦截插件。
+///
+/// 插件内置集合覆盖打印、查找、刷新、打开文件、源码、下载与开发者工具。默认集合还会
+/// 禁用 `Shift+Tab`，这与桌面端反向焦点导航冲突，因此明确排除 `FOCUS_MOVE`。应用已经
+/// 拥有全局自定义右键菜单策略，`CONTEXT_MENU` 也不在这里重复注册。
+fn prevent_default_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_prevent_default::{
+        Builder, Flags, KeyboardShortcut,
+        ModifierKey::{AltKey, CtrlKey, MetaKey, ShiftKey},
+    };
+
+    let flags = Flags::keyboard().difference(Flags::FOCUS_MOVE);
+    let mut builder = Builder::new().with_flags(flags);
+
+    // 插件内置快捷键使用 Ctrl 语义；为 macOS 补齐等价的 Command 组合键，并覆盖浏览器
+    // 标签页、历史导航、缩放等内置 Flags 尚未列出的常见默认行为。
+    for key in ["d", "h", "k", "l", "n", "s", "t", "w", "0", "=", "+", "-"] {
+        builder = builder
+            .shortcut(KeyboardShortcut::with_ctrl(key))
+            .shortcut(KeyboardShortcut::with_meta(key));
+    }
+    for key in ["f", "g", "j", "o", "p", "r", "u"] {
+        builder = builder.shortcut(KeyboardShortcut::with_meta(key));
+    }
+    for key in ["b", "c", "g", "i", "j", "p", "r"] {
+        builder = builder
+            .shortcut(KeyboardShortcut::with_modifiers(key, &[CtrlKey, ShiftKey]))
+            .shortcut(KeyboardShortcut::with_modifiers(key, &[MetaKey, ShiftKey]));
+    }
+    for key in ["F1", "F6", "F11", "F12"] {
+        builder = builder.shortcut(KeyboardShortcut::new(key));
+    }
+    for key in ["ArrowLeft", "ArrowRight", "Home"] {
+        builder = builder.shortcut(KeyboardShortcut::with_modifiers(key, &[AltKey]));
+    }
+
+    // Windows 同时从 WebView2 宿主层关闭全部浏览器加速键，即使 React 尚未挂载或页面
+    // 正在重载也不会短暂触发打印、查找等原生界面。
+    #[cfg(windows)]
+    {
+        use tauri_plugin_prevent_default::PlatformOptions;
+        builder = builder.platform(PlatformOptions::new().browser_accelerator_keys(false));
+    }
+
+    builder.build()
+}
+
 /// 构建并启动 Tauri 桌面应用。
 pub fn run() {
     // 限制 Lore 的全局并行度，避免桌面客户端在扫描大型仓库时占满所有逻辑核心。
@@ -12,6 +59,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(app_logging::plugin())
+        .plugin(prevent_default_plugin())
         .setup(|app| {
             app_logging::install_panic_hook();
             lore_adapter::install_event_emitter(app.handle().clone());
