@@ -4,13 +4,14 @@ import { useTranslation } from 'react-i18next'
 
 import { RepositoryTabs, type RepositoryTab } from '../features/repository-session'
 import type { RepositoryAccentColor } from '../shared/lib'
-import type { LoreRuntimeInfo, Repository, ResolvedTheme, ToastMessage } from '../types'
+import type { LoreRuntimeInfo, Repository, RepositoryIconId, ResolvedTheme, ToastMessage } from '../types'
 import { StatusBar } from './components/StatusBar'
 import { TitleBar } from './components/TitleBar'
 import { Toolbar } from './components/Toolbar'
 
 interface AppShellProps {
   repository: Repository
+  repositoryIcon: RepositoryIconId
   theme: ResolvedTheme
   operationCount: number
   repositoryTabs: RepositoryTab[]
@@ -44,6 +45,7 @@ interface AppShellProps {
  */
 export function AppShell({
   repository,
+  repositoryIcon,
   theme,
   operationCount,
   repositoryTabs,
@@ -85,7 +87,12 @@ export function AppShell({
         onAction={onToolbarAction}
         onToggleTheme={onToggleTheme}
       />
-      <Toolbar repository={repository} onAction={onToolbarAction} onOpenCommands={onOpenCommands} />
+      <Toolbar
+        repository={repository}
+        repositoryIcon={repositoryIcon}
+        onAction={onToolbarAction}
+        onOpenCommands={onOpenCommands}
+      />
       <RepositoryTabs
         tabs={repositoryTabs}
         activeId={activeRepositoryId}

@@ -247,6 +247,10 @@ function App() {
       })),
     [preferences.repositoryTabCustomizations, snapshots]
   )
+  const activeRepositoryPresentation = resolveRepositoryTabPresentation(
+    activeRepository,
+    preferences.repositoryTabCustomizations
+  )
 
   /** Tab 覆盖只作用于真实已打开仓库；占位仓库和失效旧路径不会生成孤立偏好。 */
   const updateRepositoryTabCustomization = useCallback(
@@ -811,6 +815,7 @@ function App() {
   return (
     <AppShell
       repository={activeRepository}
+      repositoryIcon={activeRepositoryPresentation.displayIcon}
       theme={resolvedTheme}
       operationCount={activeOperationCount}
       repositoryTabs={repositoryTabs}
@@ -871,6 +876,7 @@ function App() {
               selectedBranchId={selectedBranchId}
               selectedTagId={selectedTagId}
               changeCount={activeSnapshot.changes.length}
+              repositoryIcon={activeRepositoryPresentation.displayIcon}
               onViewChange={setActiveView}
               onBranchSelect={locateSidebarBranchRevision}
               onBranchCheckout={(branch) => void switchBranchFromMenu(branch)}
@@ -883,6 +889,7 @@ function App() {
               onOpenConfiguration={() => void openRepositoryTools('configuration')}
               onOpenAccounts={() => void openRepositoryTools('accounts')}
               onOpenRepositoryTools={() => void openRepositoryTools('maintenance')}
+              onRepositoryIconChange={(icon) => updateRepositoryTabCustomization(activeRepository.path, { icon })}
             />
 
             <PaneResizer

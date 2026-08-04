@@ -62,4 +62,11 @@ describe('ControlPrimitives', () => {
     expect(html).toContain('title="关闭"')
     expect(html).toContain('aria-hidden="true"')
   })
+
+  it('can keep an accessible icon name without rendering a tooltip', () => {
+    const html = renderToStaticMarkup(<IconButton icon={<span>×</span>} label="Close" tooltip={false} />)
+
+    expect(html).toContain('aria-label="Close"')
+    expect(html).not.toContain('title=')
+  })
 })

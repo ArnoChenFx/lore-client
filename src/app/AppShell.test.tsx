@@ -32,6 +32,7 @@ describe('AppShell toast diagnostics', () => {
     const html = renderToStaticMarkup(
       <AppShell
         repository={repository}
+        repositoryIcon="gamepad"
         theme="dark"
         operationCount={0}
         repositoryTabs={[
@@ -40,8 +41,10 @@ describe('AppShell toast diagnostics', () => {
             repository,
             displayName: repository.name,
             displayColor: repository.color,
+            displayIcon: 'boxes',
             hasCustomName: false,
-            hasCustomColor: false
+            hasCustomColor: false,
+            hasCustomIcon: false
           }
         ]}
         activeRepositoryId={repository.path.toLocaleLowerCase('en-US')}
@@ -70,5 +73,6 @@ describe('AppShell toast diagnostics', () => {
 
     expect(html).toContain(`title="${detail.replaceAll("'", '&#x27;')}"`)
     expect(html).toContain(detail.replaceAll("'", '&#x27;'))
+    expect(html).toContain('data-repository-icon="gamepad"')
   })
 })

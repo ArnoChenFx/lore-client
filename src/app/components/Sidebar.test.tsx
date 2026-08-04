@@ -184,6 +184,7 @@ describe('sidebar Lore tools and archived branches', () => {
         selectedBranchId={selectedBranch.id}
         selectedTagId="tag:release"
         changeCount={0}
+        repositoryIcon="gamepad"
         onViewChange={() => undefined}
         onBranchSelect={() => undefined}
         onBranchCheckout={() => undefined}
@@ -196,6 +197,7 @@ describe('sidebar Lore tools and archived branches', () => {
         onOpenConfiguration={() => undefined}
         onOpenAccounts={() => undefined}
         onOpenRepositoryTools={() => undefined}
+        onRepositoryIconChange={() => undefined}
       />
     )
 
@@ -209,5 +211,6 @@ describe('sidebar Lore tools and archived branches', () => {
       /class="tree-row tree-row--tag tree-row--path-node is-selected"[^>]*aria-label="release\/v1"[^>]*aria-pressed="true"/
     )
     expect(html).toContain('<span>v1</span>')
+    expect(html).toContain('aria-label="Change workspace icon"')
   })
 })

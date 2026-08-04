@@ -70,7 +70,7 @@ pub struct RepositoryAuthAccountBinding {
     pub user_id: String,
 }
 
-/// 本地项目 Tab 的客户端展示覆盖；不会写入 Lore 仓库配置。
+/// 本地项目的客户端名称、Tab 颜色与工作区图标覆盖；不会写入 Lore 仓库配置。
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct RepositoryTabCustomization {
@@ -79,6 +79,8 @@ pub struct RepositoryTabCustomization {
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 impl Default for ExternalDiffPreference {
@@ -424,12 +426,36 @@ fn validate_preferences(preferences: &ClientPreferences) -> Result<(), LoreComma
                     .color
                     .as_ref()
                     .is_none_or(|color| is_rgb_hex_color(color));
+                let valid_icon = customization.icon.as_ref().is_none_or(|icon| {
+                    matches!(
+                        icon.as_str(),
+                        "boxes"
+                            | "folder-git"
+                            | "code"
+                            | "gamepad"
+                            | "globe"
+                            | "database"
+                            | "package"
+                            | "book"
+                            | "palette"
+                            | "image"
+                            | "music"
+                            | "film"
+                            | "flask"
+                            | "cpu"
+                            | "terminal"
+                            | "rocket"
+                    )
+                });
                 !customization.repository_path.trim().is_empty()
                     && customization.repository_path.len() <= 4096
                     && !customization.repository_path.contains('\0')
-                    && (customization.name.is_some() || customization.color.is_some())
+                    && (customization.name.is_some()
+                        || customization.color.is_some()
+                        || customization.icon.is_some())
                     && valid_name
                     && valid_color
+                    && valid_icon
             });
     if !valid_theme
         || !valid_language
@@ -478,6 +504,7 @@ mod tests {
                 repository_path: "E:\\A".to_owned(),
                 name: Some("Environment".to_owned()),
                 color: Some("#4aa7ad".to_owned()),
+                icon: Some("gamepad".to_owned()),
             }],
             binary_preview_limit_mib: 64,
             external_diff_tools: vec![ExternalDiffPreference {
@@ -512,6 +539,10 @@ mod tests {
         assert_eq!(
             restored.repository_tab_customizations[0].name.as_deref(),
             Some("Environment")
+        );
+        assert_eq!(
+            restored.repository_tab_customizations[0].icon.as_deref(),
+            Some("gamepad")
         );
         assert_eq!(
             restored.external_diff_tools[0].executable,
@@ -601,6 +632,7 @@ mod tests {
                 repository_path: "E:\\A".to_owned(),
                 name: None,
                 color: Some("hotpink".to_owned()),
+                icon: None,
             }],
             ..Default::default()
         };
@@ -616,10 +648,27 @@ mod tests {
                 repository_path: "E:\\A".to_owned(),
                 name: None,
                 color: Some("#123456".to_owned()),
+                icon: None,
             }],
             ..Default::default()
         };
 
         assert!(validate_preferences(&preferences).is_ok());
+    }
+
+    #[test]
+    fn preferences_reject_unknown_repository_icon() {
+        let preferences = ClientPreferences {
+            repository_tab_customizations: vec![RepositoryTabCustomization {
+                repository_path: "E:\\A".to_owned(),
+                name: None,
+                color: None,
+                icon: Some("arbitrary-svg".to_owned()),
+            }],
+            ..Default::default()
+        };
+
+        let error = validate_preferences(&preferences).unwrap_err();
+        assert_eq!(error.code, "preferences_value_invalid");
     }
 }

@@ -1,5 +1,5 @@
-import { isRepositoryAccentColor } from '../../../shared/lib'
-import type { Repository, RepositoryTabCustomization } from '../../../types'
+import { DEFAULT_REPOSITORY_ICON_ID, isRepositoryAccentColor, isRepositoryIconId } from '../../../shared/lib'
+import type { Repository, RepositoryIconId, RepositoryTabCustomization } from '../../../types'
 
 /** 一个本地工作区 Tab；`sessionKey` 与可相同的 Lore Repository ID 明确分离。 */
 export interface RepositoryTab {
@@ -7,8 +7,10 @@ export interface RepositoryTab {
   repository: Repository
   displayName: string
   displayColor: string
+  displayIcon: RepositoryIconId
   hasCustomName: boolean
   hasCustomColor: boolean
+  hasCustomIcon: boolean
 }
 
 /**
@@ -49,11 +51,17 @@ function sameRepositoryPath(left: string, right: string): boolean {
 /** 把仓库原始 DTO 与可选客户端覆盖合成为 Tab 专用展示数据。 */
 export function resolveRepositoryTabPresentation(repository: Repository, customizations: RepositoryTabCustomization[]) {
   const customization = customizations.find((item) => sameRepositoryPath(item.repositoryPath, repository.path))
+  const icon =
+    isRepositoryIconId(customization?.icon) && customization.icon !== DEFAULT_REPOSITORY_ICON_ID
+      ? customization.icon
+      : undefined
   return {
     displayName: customization?.name || repository.name,
     displayColor: customization?.color || repository.color,
+    displayIcon: icon || DEFAULT_REPOSITORY_ICON_ID,
     hasCustomName: Boolean(customization?.name),
-    hasCustomColor: Boolean(customization?.color)
+    hasCustomColor: Boolean(customization?.color),
+    hasCustomIcon: Boolean(icon)
   }
 }
 
@@ -62,6 +70,8 @@ export interface RepositoryTabCustomizationPatch {
   name?: string | null
   /** null 表示恢复路径哈希自动配色；undefined 表示本次不修改颜色。 */
   color?: string | null
+  /** null 表示恢复既有 Boxes 图标；undefined 表示本次不修改图标。 */
+  icon?: RepositoryIconId | null
 }
 
 /**
@@ -81,8 +91,18 @@ export function updateRepositoryTabCustomizations(
   const requestedColor = patch.color === undefined ? existing?.color : patch.color || undefined
   const color =
     isRepositoryAccentColor(requestedColor) && requestedColor !== repository.color ? requestedColor : undefined
+  const requestedIcon = patch.icon === undefined ? existing?.icon : patch.icon || undefined
+  const icon =
+    isRepositoryIconId(requestedIcon) && requestedIcon !== DEFAULT_REPOSITORY_ICON_ID ? requestedIcon : undefined
   const next =
-    name || color ? { repositoryPath: repository.path, ...(name ? { name } : {}), ...(color ? { color } : {}) } : null
+    name || color || icon
+      ? {
+          repositoryPath: repository.path,
+          ...(name ? { name } : {}),
+          ...(color ? { color } : {}),
+          ...(icon ? { icon } : {})
+        }
+      : null
 
   if (!existing && !next) return customizations
   const updated = [...customizations]

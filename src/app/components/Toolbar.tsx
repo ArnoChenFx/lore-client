@@ -1,6 +1,5 @@
 import {
   ArrowUpFromLine,
-  Boxes,
   CloudCog,
   Command,
   FolderOpen,
@@ -12,10 +11,12 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import type { Repository } from '../../types'
+import type { Repository, RepositoryIconId } from '../../types'
+import { RepositoryIconGlyph } from './RepositoryIconPicker'
 
 interface ToolbarProps {
   repository: Repository
+  repositoryIcon: RepositoryIconId
   onAction: (action: string) => void
   onOpenCommands: () => void
 }
@@ -27,7 +28,7 @@ interface ToolbarAction {
   accent?: boolean
 }
 
-export function Toolbar({ repository, onAction, onOpenCommands }: ToolbarProps) {
+export function Toolbar({ repository, repositoryIcon, onAction, onOpenCommands }: ToolbarProps) {
   const { t } = useTranslation()
   // 工具栏标签必须在渲染期取 t()，避免模块导入时冻结为默认语言。
   const primaryActions: ToolbarAction[] = [
@@ -61,8 +62,8 @@ export function Toolbar({ repository, onAction, onOpenCommands }: ToolbarProps) 
         aria-label={t('switchCurrentRepository')}
         onClick={() => onAction('repository')}
       >
-        <span className="repository-switcher__icon">
-          <Boxes size={17} />
+        <span className="repository-switcher__icon" data-repository-icon={repositoryIcon}>
+          <RepositoryIconGlyph icon={repositoryIcon} size={17} />
         </span>
         <span className="repository-switcher__copy">
           <strong>{repository.name}</strong>

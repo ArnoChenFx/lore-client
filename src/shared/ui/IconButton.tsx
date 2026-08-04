@@ -5,6 +5,8 @@ export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEle
   icon: ReactNode
   label: string
   badge?: string | number
+  /** 少数纯图形选择面板会在外层提供完整语义，可显式关闭原生 title Tooltip。 */
+  tooltip?: boolean
 }
 
 /**
@@ -12,7 +14,7 @@ export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEle
  * 将可访问名称、禁用状态和徽标收敛到同一组件，避免纯图标按钮失去语义。
  */
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { icon, label, badge, className = '', title = label, type = 'button', ...buttonProps },
+  { icon, label, badge, tooltip = true, className = '', title = label, type = 'button', ...buttonProps },
   ref
 ) {
   return (
@@ -21,7 +23,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       type={type}
       className={`control-icon-button icon-button ${className}`.trim()}
       aria-label={label}
-      title={title}
+      title={tooltip ? title : undefined}
       {...buttonProps}
     >
       <span className="icon-button__glyph" aria-hidden="true">

@@ -1,6 +1,12 @@
 import { t } from '../i18n'
 import { resolveSystemLanguagePreference } from '../i18n/systemLanguage'
-import { DEFAULT_EXTERNAL_DIFF_TOOLS, DEFAULT_EXTERNAL_MERGE_TOOLS, isRepositoryAccentColor } from '../shared/lib'
+import {
+  DEFAULT_EXTERNAL_DIFF_TOOLS,
+  DEFAULT_EXTERNAL_MERGE_TOOLS,
+  DEFAULT_REPOSITORY_ICON_ID,
+  isRepositoryAccentColor,
+  isRepositoryIconId
+} from '../shared/lib'
 import type { ClientPreferences, WorkspaceLayout } from '../types'
 import { invokeLogged, logError } from './logging'
 
@@ -136,17 +142,22 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
               ? customization.name.replaceAll('\r', '').replaceAll('\n', '').trim().slice(0, 80)
               : ''
           const color = isRepositoryAccentColor(customization.color) ? customization.color : undefined
+          const icon =
+            isRepositoryIconId(customization.icon) && customization.icon !== DEFAULT_REPOSITORY_ICON_ID
+              ? customization.icon
+              : undefined
           return {
             repositoryPath,
             ...(name ? { name } : {}),
-            ...(color ? { color } : {})
+            ...(color ? { color } : {}),
+            ...(icon ? { icon } : {})
           }
         })
         .filter(
           (customization) =>
             customization.repositoryPath.length > 0 &&
             !customization.repositoryPath.includes('\0') &&
-            Boolean(customization.name || customization.color)
+            Boolean(customization.name || customization.color || customization.icon)
         )
         .filter(
           (customization, index, customizations) =>

@@ -1,5 +1,4 @@
 import {
-  Boxes,
   ChevronDown,
   ChevronRight,
   CircleDot,
@@ -28,7 +27,8 @@ import {
   type SidebarTagTreeNode
 } from '../../shared/lib'
 import type { ContextMenuPoint } from '../../shared/ui'
-import type { Branch, LoreTag, NavigationView, Repository } from '../../types'
+import type { Branch, LoreTag, NavigationView, Repository, RepositoryIconId } from '../../types'
+import { RepositoryIconPicker } from './RepositoryIconPicker'
 
 interface SidebarProps {
   repository: Repository
@@ -39,6 +39,7 @@ interface SidebarProps {
   selectedBranchId: string
   selectedTagId: string
   changeCount: number
+  repositoryIcon: RepositoryIconId
   onViewChange: (view: NavigationView) => void
   onBranchSelect: (branch: Branch) => void
   onBranchCheckout: (branch: Branch) => void
@@ -51,6 +52,7 @@ interface SidebarProps {
   onOpenConfiguration: () => void
   onOpenAccounts: () => void
   onOpenRepositoryTools: () => void
+  onRepositoryIconChange: (icon: RepositoryIconId | null) => void
 }
 
 function SidebarSection({ title, children }: { title: string; children: React.ReactNode }) {
@@ -306,6 +308,7 @@ export function Sidebar({
   selectedBranchId,
   selectedTagId,
   changeCount,
+  repositoryIcon,
   onViewChange,
   onBranchSelect,
   onBranchCheckout,
@@ -317,7 +320,8 @@ export function Sidebar({
   onOpenServer,
   onOpenConfiguration,
   onOpenAccounts,
-  onOpenRepositoryTools
+  onOpenRepositoryTools,
+  onRepositoryIconChange
 }: SidebarProps) {
   const { t } = useTranslation()
   // 分支筛选只影响侧栏投影，不参与仓库查询或其他工作区，因此由侧栏自行持有。
@@ -349,9 +353,11 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar__repo-heading">
-        <span className="sidebar__repo-mark">
-          <Boxes size={16} />
-        </span>
+        <RepositoryIconPicker
+          repositoryName={repository.name}
+          icon={repositoryIcon}
+          onChange={onRepositoryIconChange}
+        />
         <div>
           <strong>{repository.name}</strong>
           <small title={repository.path}>{repository.path}</small>

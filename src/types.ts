@@ -957,16 +957,36 @@ export interface RepositoryAuthAccountBinding {
 /** Revision History 左侧轨道的持久化视觉投影。 */
 export type RevisionHistoryLaneMode = 'topology' | 'flat'
 
+/** 工作区标题允许持久化的受控图标标识；具体 SVG 只在 React 渲染边界映射。 */
+export type RepositoryIconId =
+  | 'boxes'
+  | 'folder-git'
+  | 'code'
+  | 'gamepad'
+  | 'globe'
+  | 'database'
+  | 'package'
+  | 'book'
+  | 'palette'
+  | 'image'
+  | 'music'
+  | 'film'
+  | 'flask'
+  | 'cpu'
+  | 'terminal'
+  | 'rocket'
+
 /**
  * 单个本地仓库 Tab 的展示覆盖。
  *
- * 路径是本地会话身份；名称和颜色只影响客户端 Tab，不会改写 Lore 仓库配置、目录名
- * 或远端名称。两个覆盖字段都可选，便于用户分别恢复默认值。
+ * 路径是本地会话身份；名称、颜色和图标只影响客户端展示，不会改写 Lore 仓库配置、
+ * 目录名或远端名称。所有覆盖字段都可选，便于用户分别恢复默认值。
  */
 export interface RepositoryTabCustomization {
   repositoryPath: string
   name?: string
   color?: string
+  icon?: RepositoryIconId
 }
 
 /**
@@ -1009,7 +1029,7 @@ export interface ClientPreferences {
   externalMergeTools: ExternalMergeToolPreference[]
   /** 按规范化本地路径保存的认证账户覆盖；没有条目表示由 Lore 自动选择。 */
   authAccountBindings: RepositoryAuthAccountBinding[]
-  /** 按规范化本地路径保存的项目 Tab 名称和颜色覆盖。 */
+  /** 按规范化本地路径保存的项目名称、Tab 颜色和工作区图标覆盖。 */
   repositoryTabCustomizations: RepositoryTabCustomization[]
   repositoryPaths: string[]
   activeRepositoryPath: string | null

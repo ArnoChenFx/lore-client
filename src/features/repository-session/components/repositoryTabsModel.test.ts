@@ -53,32 +53,38 @@ describe('repository tab ordering model', () => {
     expect(reorderItemsById(items, 'a', 'missing', readId)).toBe(items)
   })
 
-  it('applies a custom name and color by case-insensitive repository path', () => {
+  it('applies a custom name, color, and icon by case-insensitive repository path', () => {
     const presentation = resolveRepositoryTabPresentation(repository, [
       {
         repositoryPath: 'e:\\worlds\\lore',
         name: 'Environment',
-        color: '#e47a3f'
+        color: '#e47a3f',
+        icon: 'gamepad'
       }
     ])
 
     expect(presentation).toEqual({
       displayName: 'Environment',
       displayColor: '#e47a3f',
+      displayIcon: 'gamepad',
       hasCustomName: true,
-      hasCustomColor: true
+      hasCustomColor: true,
+      hasCustomIcon: true
     })
   })
 
-  it('removes the customization after both fields return to repository defaults', () => {
+  it('removes the customization after all fields return to repository defaults', () => {
     const customized = updateRepositoryTabCustomizations([], repository, {
       name: 'Environment',
-      color: '#4aa7ad'
+      color: '#4aa7ad',
+      icon: 'code'
     })
     const nameRestored = updateRepositoryTabCustomizations(customized, repository, { name: null })
-    const allRestored = updateRepositoryTabCustomizations(nameRestored, repository, { color: null })
+    const colorRestored = updateRepositoryTabCustomizations(nameRestored, repository, { color: null })
+    const allRestored = updateRepositoryTabCustomizations(colorRestored, repository, { icon: null })
 
-    expect(nameRestored).toEqual([{ repositoryPath: repository.path, color: '#4aa7ad' }])
+    expect(nameRestored).toEqual([{ repositoryPath: repository.path, color: '#4aa7ad', icon: 'code' }])
+    expect(colorRestored).toEqual([{ repositoryPath: repository.path, icon: 'code' }])
     expect(allRestored).toEqual([])
   })
 
@@ -86,5 +92,12 @@ describe('repository tab ordering model', () => {
     const customizations = [{ repositoryPath: repository.path, name: 'Environment' }]
 
     expect(updateRepositoryTabCustomizations(customizations, repository, { color: 'hotpink' })).toBe(customizations)
+  })
+
+  it('uses the default icon when no icon customization exists', () => {
+    expect(resolveRepositoryTabPresentation(repository, [])).toMatchObject({
+      displayIcon: 'boxes',
+      hasCustomIcon: false
+    })
   })
 })

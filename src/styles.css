@@ -194,7 +194,7 @@ button:hover:not(:disabled):not(.is-primary):not(.is-danger):not(.branch-card):n
  * 普通按钮按住时把边框切换到更深的主题蓝，并使用更亮的中性蓝调表面。
  * 松开后 :active 立即失效；普通 focus 仍不会残留蓝色高亮。
  */
-button:active:not(:disabled):not(.is-primary):not(.is-danger) {
+button:active:not(:disabled):not(.is-primary):not(.is-danger):not(.branch-card):not(.tag-row) {
   border-color: var(--accent-muted) !important;
   background: var(--button-neutral-active-bg) !important;
 }
@@ -963,6 +963,108 @@ kbd {
   border-radius: 4px;
   background: var(--bg-control);
   color: var(--text-soft);
+}
+
+/*
+ * 标题图标同时是选择器入口；复用 IconButton 的语义后，在这里恢复仓库标记原有的
+ * 中性容器外观。普通 hover/focus 使用主题蓝边界，但不会把图标本身染成品牌色。
+ */
+.sidebar__repo-icon-control {
+  position: relative;
+  display: grid;
+}
+
+button.sidebar__repo-mark {
+  padding: 0;
+  background: var(--bg-control);
+  box-shadow: none;
+}
+
+button.sidebar__repo-mark:hover,
+button.sidebar__repo-mark[aria-expanded='true'] {
+  border-color: var(--accent-solid);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+button.sidebar__repo-mark:focus-visible {
+  border-color: var(--accent-solid);
+  outline: 1px solid var(--accent-solid);
+  outline-offset: 1px;
+}
+
+.repository-icon-picker {
+  position: absolute;
+  z-index: 60;
+  top: 34px;
+  left: 0;
+  display: flex;
+  width: 180px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--bg-panel);
+  color: var(--text);
+}
+
+.repository-icon-picker__heading {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 2px;
+}
+
+.repository-icon-picker__heading strong {
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.repository-icon-picker__heading small {
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repository-icon-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(4, 32px);
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.repository-icon-picker__option.icon-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-control);
+  color: var(--muted);
+}
+
+.repository-icon-picker__option.icon-button:hover {
+  border-color: var(--accent-solid);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.repository-icon-picker__option.icon-button[aria-checked='true'] {
+  border-color: var(--text-soft);
+  background: var(--bg-selected);
+  color: var(--text);
+  outline: 1px solid var(--text-soft);
+  outline-offset: 1px;
+}
+
+.repository-icon-picker__option.icon-button:focus-visible {
+  border-color: var(--accent-solid);
+  outline: 1px solid var(--accent-solid);
+  outline-offset: 1px;
 }
 
 .sidebar__repo-heading > div {
@@ -8084,7 +8186,6 @@ body.is-resizing-panes {
   gap: 2px;
   padding: 9px 10px;
   list-style: none;
-  cursor: pointer;
   user-select: none;
 }
 

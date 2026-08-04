@@ -143,13 +143,14 @@ describe('client preferences stored on disk', () => {
     })
   })
 
-  it('persists safe repository tab names and controlled colors by normalized path', () => {
+  it('persists safe repository presentation values by normalized path', () => {
     updateClientPreferences({
       repositoryTabCustomizations: [
         {
           repositoryPath: '\\\\?\\E:\\Worlds\\Lore',
           name: '  Environment\r\n',
-          color: '#e47a3f'
+          color: '#e47a3f',
+          icon: 'gamepad'
         },
         {
           repositoryPath: 'E:\\Worlds\\Lore',
@@ -158,7 +159,8 @@ describe('client preferences stored on disk', () => {
         },
         {
           repositoryPath: 'E:\\Invalid',
-          color: 'hotpink'
+          color: 'hotpink',
+          icon: 'unknown' as 'gamepad'
         }
       ]
     })
@@ -167,7 +169,8 @@ describe('client preferences stored on disk', () => {
       {
         repositoryPath: 'E:\\Worlds\\Lore',
         name: 'Environment',
-        color: '#e47a3f'
+        color: '#e47a3f',
+        icon: 'gamepad'
       }
     ])
 
