@@ -5047,18 +5047,33 @@ kbd {
   color: var(--faint);
 }
 
-.branch-card__footer b {
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 520;
-}
-
-.branch-card__footer span {
+.branch-card__footer .branch-sync-state {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 4px;
-  color: var(--success);
+  color: var(--muted);
   font-size: 11px;
+}
+
+.branch-card__footer .branch-sync-state.is-synced {
+  color: var(--success);
+}
+
+.branch-card__footer .branch-sync-state.is-ahead {
+  color: var(--accent);
+}
+
+.branch-card__footer .branch-sync-state.is-behind {
+  color: var(--warning);
+}
+
+.branch-card__footer .branch-sync-state.is-diverged {
+  color: var(--danger);
+}
+
+.branch-card__footer .branch-sync-state.is-remote {
+  color: var(--branch-remote);
 }
 
 .merge-readiness {

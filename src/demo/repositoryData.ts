@@ -52,6 +52,7 @@ export const branches: Branch[] = [
     name: 'world/lighting-pass',
     latest: 'c7f3a81d824a47d1a329d9ee9dc53703',
     current: true,
+    syncState: 'ahead',
     ahead: 2,
     author: 'Lin Moore'
   },
@@ -59,12 +60,14 @@ export const branches: Branch[] = [
     id: 'main',
     name: 'main',
     latest: '5de935ea27ae40b0a6ba6df114dad190',
+    syncState: 'synced',
     author: 'Team'
   },
   {
     id: 'terrain',
     name: 'world/terrain-v7',
     latest: '1dd6e2a38c1d4719b9ce1156695ef1ca',
+    syncState: 'ahead',
     ahead: 1,
     author: 'Chen Yu'
   },
@@ -72,30 +75,35 @@ export const branches: Branch[] = [
     id: 'cinematic',
     name: 'cinematic/prologue',
     latest: '0a9d82f37dfa4f3fb252f4f04669514c',
+    syncState: 'synced',
     author: 'Xu Tang'
   },
   {
     id: 'audio',
     name: 'audio/ambient-remix',
     latest: 'c7f3a81d824a47d1a329d9ee9dc53703',
+    syncState: 'local-only',
     author: 'Zhou Ye'
   },
   {
     id: 'origin-main',
     name: 'origin/main',
     latest: '5de935ea27ae40b0a6ba6df114dad190',
+    syncState: 'remote',
     remote: true
   },
   {
     id: 'origin-release',
     name: 'origin/release/0.8',
     latest: '1206db638d224805aef96f815da0cd43',
+    syncState: 'remote',
     remote: true
   },
   {
     id: 'origin-cinematic',
     name: 'origin/cinematic/prologue',
     latest: '0a9d82f37dfa4f3fb252f4f04669514c',
+    syncState: 'remote',
     remote: true
   }
 ]

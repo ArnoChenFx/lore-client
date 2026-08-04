@@ -2381,6 +2381,22 @@ function parseRepository(repositoryPath: string, events: LoreEvent[], config: Re
    * 少数只消费 Status 的调用没有配置投影，因此成功连接本身也足以证明存在远端。
    */
   const remoteState = online ? 'online' : !config.remoteUrl ? 'local' : remoteAvailable ? 'unauthorized' : 'offline'
+  const hasSyncEvidence =
+    status != null && isBooleanEvidence(status.isLocalAhead) && isBooleanEvidence(status.isRemoteAhead)
+  const currentBranchSyncState =
+    remoteState === 'local'
+      ? 'local-only'
+      : remoteState !== 'online'
+        ? 'unavailable'
+        : !hasSyncEvidence
+          ? 'unknown'
+          : localAhead && remoteAhead
+            ? 'diverged'
+            : localAhead
+              ? 'ahead'
+              : remoteAhead
+                ? 'behind'
+                : 'synced'
 
   return {
     id: readString(status?.repository, stablePathId(repositoryPath)),
@@ -2397,6 +2413,7 @@ function parseRepository(repositoryPath: string, events: LoreEvent[], config: Re
     identity: config.identity,
     ahead: localAhead ? Math.max(1, localRevision - remoteRevision) : 0,
     behind: remoteAhead ? Math.max(1, remoteRevision - localRevision) : 0,
+    currentBranchSyncState,
     online,
     remoteState,
     color: colorFromText(repositoryPath),
@@ -2406,42 +2423,104 @@ function parseRepository(repositoryPath: string, events: LoreEvent[], config: Re
 }
 
 function parseBranches(events: LoreEvent[], repository: Repository): Branch[] {
-  const branches = events
-    .filter((event) => event.tagName === 'branchListEntry')
-    .map((event): Branch => {
-      const remote = readString(event.data.location).toLowerCase() === 'remote'
-      const name = readString(event.data.name, t('untitledBranch'))
-      const branchPoints = Array.isArray(event.data.stack)
-        ? event.data.stack
-            .filter(isRecord)
-            .map((point) => ({
-              branch: readString(point.branch),
-              revision: readString(point.revision)
-            }))
-            .filter((point) => point.revision.length > 0)
-        : []
-      return {
-        id: `${remote ? 'remote' : 'local'}:${readString(event.data.id, name)}`,
-        name,
-        // 新建空仓库的 Branch Latest 同样是全零哨兵，不应成为历史查询锚点。
-        latest: readRevisionId(event.data.latest),
-        current: readBoolean(event.data.isCurrent),
-        remote,
-        archived: readBoolean(event.data.archived),
-        branchPoints,
-        author: readString(event.data.creator, remote ? t('remote') : t('local'))
-      }
-    })
+  const branchEntries = events.filter((event) => event.tagName === 'branchListEntry')
+  const remoteLatestById = new Map<string, string>()
+  for (const event of branchEntries) {
+    if (readString(event.data.location).toLowerCase() !== 'remote') continue
+    const name = readString(event.data.name, t('untitledBranch'))
+    remoteLatestById.set(readString(event.data.id, name), readRevisionId(event.data.latest))
+  }
+  const remoteListLoaded =
+    remoteLatestById.size > 0 ||
+    events.some(
+      (event) =>
+        (event.tagName === 'branchListBegin' || event.tagName === 'branchListEnd') &&
+        readString(event.data.location).toLowerCase() === 'remote'
+    )
+  const remoteEvidence: BranchRemoteEvidence = { listLoaded: remoteListLoaded, latestById: remoteLatestById }
+
+  const branches = branchEntries.map((event): Branch => {
+    const remote = readString(event.data.location).toLowerCase() === 'remote'
+    const name = readString(event.data.name, t('untitledBranch'))
+    const rawId = readString(event.data.id, name)
+    const latest = readRevisionId(event.data.latest)
+    const current = readBoolean(event.data.isCurrent)
+    const branchPoints = Array.isArray(event.data.stack)
+      ? event.data.stack
+          .filter(isRecord)
+          .map((point) => ({
+            branch: readString(point.branch),
+            revision: readString(point.revision)
+          }))
+          .filter((point) => point.revision.length > 0)
+      : []
+    return {
+      id: `${remote ? 'remote' : 'local'}:${rawId}`,
+      name,
+      // 新建空仓库的 Branch Latest 同样是全零哨兵，不应成为历史查询锚点。
+      latest,
+      current,
+      remote,
+      archived: readBoolean(event.data.archived),
+      branchPoints,
+      ...branchSyncProjection(remote, current, repository, rawId, latest, remoteEvidence),
+      author: readString(event.data.creator, remote ? t('remote') : t('local'))
+    }
+  })
 
   // 某些离线状态只返回当前 Branch 而没有列表事件，仍应保留可操作的当前指针。
   if (!branches.some((branch) => branch.current) && repository.branch) {
     branches.unshift({
       id: `local:${repository.branch}`,
       name: repository.branch,
-      current: true
+      current: true,
+      ...branchSyncProjection(false, true, repository)
     })
   }
   return branches
+}
+
+interface BranchRemoteEvidence {
+  /** 只有成功取得远端列表后，“没有对应 ID”才足以证明分支是纯本地。 */
+  listLoaded: boolean
+  /** Lore 对同一逻辑 Branch 的本地与远端条目使用相同原始 ID。 */
+  latestById: ReadonlyMap<string, string>
+}
+
+/**
+ * Branch List 没有分支级 ahead/behind；只有当前 Branch 可以消费 Repository Status。
+ * 但本地与远端条目共享稳定原始 ID，因此远端列表成功后可以证明某分支“仅本地”，
+ * 或在两侧 Latest 完全一致时证明“已同步”；Latest 不同仍保持未知方向，不猜测拓扑关系。
+ */
+function branchSyncProjection(
+  remote: boolean,
+  current: boolean,
+  repository: Repository,
+  rawId?: string,
+  localLatest?: string,
+  remoteEvidence?: BranchRemoteEvidence
+): Pick<Branch, 'syncState' | 'ahead' | 'behind'> {
+  if (remote) return { syncState: 'remote' }
+  if (repository.remoteState === 'local') return { syncState: 'local-only' }
+  if (repository.remoteState !== 'online') return { syncState: 'unavailable' }
+  const hasRemoteBranch = rawId != null && remoteEvidence?.latestById.has(rawId)
+  if (remoteEvidence?.listLoaded && !hasRemoteBranch) return { syncState: 'local-only' }
+  const remoteLatest = rawId == null ? undefined : remoteEvidence?.latestById.get(rawId)
+  if (current && repository.currentBranchSyncState !== 'unknown') {
+    return {
+      syncState: repository.currentBranchSyncState ?? 'unknown',
+      ahead: repository.ahead,
+      behind: repository.behind
+    }
+  }
+  if (localLatest && remoteLatest && localLatest === remoteLatest) {
+    return { syncState: 'synced', ahead: 0, behind: 0 }
+  }
+  return {
+    syncState: 'unknown',
+    ahead: current ? repository.ahead : undefined,
+    behind: current ? repository.behind : undefined
+  }
 }
 
 function parseBranchInfo(infoEvents: LoreEvent[], protectionEvents: LoreEvent[]): LoreBranchInfo {
@@ -3015,6 +3094,14 @@ function readFileContentClassification(
 
 function readBoolean(value: unknown): boolean {
   return value === true || value === 1 || value === 'true'
+}
+
+/**
+ * 区分 Lore 明确返回的 false/0 与字段缺失、null 或未知协议值。
+ * `readBoolean` 负责投影真假，本函数只判断该真假是否拥有足够证据。
+ */
+function isBooleanEvidence(value: unknown): boolean {
+  return value === true || value === false || value === 1 || value === 0 || value === 'true' || value === 'false'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

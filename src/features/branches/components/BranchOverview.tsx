@@ -1,4 +1,17 @@
-import { ArrowRight, CheckCircle2, GitBranch, Plus, Radio, ShieldCheck } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowRight,
+  ArrowUp,
+  CheckCircle2,
+  CircleHelp,
+  CloudOff,
+  GitBranch,
+  GitCompareArrows,
+  HardDrive,
+  Plus,
+  Radio,
+  ShieldCheck
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { sortBranchesByEnglishName } from '../../../shared/lib'
@@ -58,6 +71,72 @@ export function BranchOverview({
   const current = visibleBranches.find((branch) => branch.current) ?? visibleBranches[0]
 
   /**
+   * 只消费适配层给出的显式状态。旧快照仅在携带正数 `ahead` 时保留兼容展示；
+   * 缺失状态一律落到“未知”，绝不再把 `undefined` 当成已经同步。
+   */
+  const renderBranchSyncState = (branch: Branch) => {
+    const syncState = branch.syncState ?? (branch.ahead ? 'ahead' : 'unknown')
+    switch (syncState) {
+      case 'synced':
+        return (
+          <span className="branch-sync-state is-synced">
+            <ShieldCheck size={12} />
+            {t('synced')}
+          </span>
+        )
+      case 'ahead':
+        return (
+          <span className="branch-sync-state is-ahead">
+            <ArrowUp size={12} />
+            {t('status.aheadBy', { value: branch.ahead ?? 1 })}
+          </span>
+        )
+      case 'behind':
+        return (
+          <span className="branch-sync-state is-behind">
+            <ArrowDown size={12} />
+            {t('status.behindBy', { value: branch.behind ?? 1 })}
+          </span>
+        )
+      case 'diverged':
+        return (
+          <span className="branch-sync-state is-diverged">
+            <GitCompareArrows size={12} />
+            {t('status.branchDivergedBy', { ahead: branch.ahead ?? 1, behind: branch.behind ?? 1 })}
+          </span>
+        )
+      case 'local-only':
+        return (
+          <span className="branch-sync-state is-neutral">
+            <HardDrive size={12} />
+            {t('localOnlyBranch')}
+          </span>
+        )
+      case 'unavailable':
+        return (
+          <span className="branch-sync-state is-neutral">
+            <CloudOff size={12} />
+            {t('remoteStateUnavailable')}
+          </span>
+        )
+      case 'remote':
+        return (
+          <span className="branch-sync-state is-remote">
+            <Radio size={12} />
+            {t('remotePointer')}
+          </span>
+        )
+      default:
+        return (
+          <span className="branch-sync-state is-neutral">
+            <CircleHelp size={12} />
+            {t('branchSyncStateUnknown')}
+          </span>
+        )
+    }
+  }
+
+  /**
    * 两栏复用同一张分支卡片，避免本地与远程动作或可访问语义在后续演进中分叉。
    * 卡片始终从当前 DTO 读取修订号；排序改变时不会再出现数组下标造成的修订错配。
    */
@@ -90,14 +169,7 @@ export function BranchOverview({
         <span>{branch.author ?? (demoMode ? 'lore-eu-01' : t('unknownCreator'))}</span>
       </span>
       <span className="branch-card__footer">
-        {branch.ahead ? (
-          <b>{t('status.aheadBy', { value: branch.ahead })}</b>
-        ) : (
-          <span>
-            <ShieldCheck size={12} />
-            {t('synced')}
-          </span>
-        )}
+        {renderBranchSyncState(branch)}
         <ArrowRight size={14} />
       </span>
     </button>

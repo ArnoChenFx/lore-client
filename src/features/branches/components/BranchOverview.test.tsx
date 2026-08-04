@@ -1,7 +1,9 @@
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
+import i18n from '../../../i18n'
 import type { Branch } from '../../../types'
-import { activeOverviewBranches, groupOverviewBranches } from './BranchOverview'
+import { activeOverviewBranches, BranchOverview, groupOverviewBranches } from './BranchOverview'
 
 const currentBranch: Branch = {
   id: 'local:main',
@@ -52,5 +54,42 @@ describe('archived branch filtering in the branch overview', () => {
       'Alpha'
     ])
     expect(groups.remoteBranches.map((branch) => branch.name)).toEqual(['origin/release/0.8', 'origin/main', 'Zulu'])
+  })
+
+  it('does not claim an unknown branch sync state is synced', async () => {
+    await i18n.changeLanguage('zh-CN')
+    const markup = renderToStaticMarkup(
+      <BranchOverview
+        branches={[currentBranch]}
+        demoMode={false}
+        selectedBranchId={currentBranch.id}
+        onSelect={() => undefined}
+        onCheckout={() => undefined}
+        onContextMenu={() => undefined}
+        onCreate={() => undefined}
+      />
+    )
+
+    expect(markup).not.toContain('已同步')
+    expect(markup).toContain('同步状态未知')
+  })
+
+  it('shows synced only when the branch carries explicit evidence', async () => {
+    await i18n.changeLanguage('zh-CN')
+    const syncedBranch: Branch = { ...currentBranch, syncState: 'synced' }
+    const markup = renderToStaticMarkup(
+      <BranchOverview
+        branches={[syncedBranch]}
+        demoMode={false}
+        selectedBranchId={syncedBranch.id}
+        onSelect={() => undefined}
+        onCheckout={() => undefined}
+        onContextMenu={() => undefined}
+        onCreate={() => undefined}
+      />
+    )
+
+    expect(markup).toContain('已同步')
+    expect(markup).not.toContain('同步状态未知')
   })
 })

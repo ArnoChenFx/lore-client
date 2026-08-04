@@ -121,6 +121,8 @@ const enUSDynamic = {
       '{{count}} saved directories are unavailable; the remaining project tabs were restored',
     repositoriesLoaded: 'Loaded {{count}} repositories',
     aheadBy: '{{value}} ahead',
+    behindBy: '{{value}} behind',
+    branchDivergedBy: 'Diverged +{{ahead}} / −{{behind}}',
     pointsToRevision: 'Points to revision {{id}}',
     chooseAnotherName: 'Choose another name for “{{name}}”',
     connectedRepositories_one: 'Connected · {{count}} repository',

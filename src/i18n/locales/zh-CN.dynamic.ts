@@ -115,6 +115,8 @@ const zhCNDynamic = {
     savedDirectoriesUnavailable: '{{count}} 个已保存目录当前不可用；其余项目标签已恢复',
     repositoriesLoaded: '读取到 {{count}} 个仓库',
     aheadBy: '领先 {{value}}',
+    behindBy: '落后 {{value}}',
+    branchDivergedBy: '已分叉 +{{ahead}} / −{{behind}}',
     pointsToRevision: '指向修订 {{id}}',
     chooseAnotherName: '请为“{{name}}”选择其他名称',
     connectedRepositories_one: '已连接 · {{count}} 个仓库',

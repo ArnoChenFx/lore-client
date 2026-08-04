@@ -173,6 +173,186 @@ describe('Lore event adapter', () => {
     ).toBe('unauthorized')
   })
 
+  it('does not infer branch synchronization without explicit status evidence', () => {
+    const branchEvents: LoreEvent[] = [
+      {
+        tagName: 'branchListEntry',
+        data: { id: 'main-id', name: 'main', latest: 'main-tip', location: 'local', isCurrent: true }
+      },
+      {
+        tagName: 'branchListEntry',
+        data: { id: 'feature-id', name: 'feature/a', latest: 'feature-tip', location: 'local' }
+      },
+      {
+        tagName: 'branchListEntry',
+        data: { id: 'main-id', name: 'main', latest: 'remote-tip', location: 'remote' }
+      }
+    ]
+    const repositoryWithoutEvidence = loreEventParsers.parseRepository(
+      repositoryPath,
+      [
+        {
+          tagName: 'repositoryStatusRevision',
+          data: {
+            branchName: 'main',
+            remoteAvailable: true,
+            remoteAuthorized: true
+          }
+        }
+      ],
+      { remoteUrl: 'lore://example.com' }
+    )
+
+    expect(repositoryWithoutEvidence.currentBranchSyncState).toBe('unknown')
+    expect(loreEventParsers.parseBranches(branchEvents, repositoryWithoutEvidence)).toEqual([
+      expect.objectContaining({ name: 'main', syncState: 'unknown', current: true }),
+      expect.objectContaining({ name: 'feature/a', syncState: 'local-only' }),
+      expect.objectContaining({ name: 'main', syncState: 'remote', remote: true })
+    ])
+
+    const repositoryWithNullMarkers = loreEventParsers.parseRepository(
+      repositoryPath,
+      [
+        {
+          tagName: 'repositoryStatusRevision',
+          data: {
+            branchName: 'main',
+            isLocalAhead: null,
+            isRemoteAhead: null,
+            remoteAvailable: true,
+            remoteAuthorized: true
+          }
+        }
+      ],
+      { remoteUrl: 'lore://example.com' }
+    )
+    expect(repositoryWithNullMarkers.currentBranchSyncState).toBe('unknown')
+  })
+
+  it('uses exact branch IDs to distinguish local-only synced and different pointers', () => {
+    const repository = loreEventParsers.parseRepository(
+      repositoryPath,
+      [
+        {
+          tagName: 'repositoryStatusRevision',
+          data: {
+            branchName: 'main',
+            remoteAvailable: true,
+            remoteAuthorized: true
+          }
+        }
+      ],
+      { remoteUrl: 'lore://example.com' }
+    )
+    const branches = loreEventParsers.parseBranches(
+      [
+        {
+          tagName: 'branchListEntry',
+          data: { id: 'local-id', name: 'feature/local', latest: 'local-tip', location: 'local' }
+        },
+        {
+          tagName: 'branchListEntry',
+          data: { id: 'synced-id', name: 'feature/synced', latest: 'same-tip', location: 'local' }
+        },
+        {
+          tagName: 'branchListEntry',
+          data: { id: 'different-id', name: 'feature/different', latest: 'local-new', location: 'local' }
+        },
+        {
+          tagName: 'branchListBegin',
+          data: { location: 'remote' }
+        },
+        {
+          tagName: 'branchListEntry',
+          data: { id: 'synced-id', name: 'feature/synced', latest: 'same-tip', location: 'remote' }
+        },
+        {
+          tagName: 'branchListEntry',
+          data: { id: 'different-id', name: 'feature/different', latest: 'remote-old', location: 'remote' }
+        },
+        {
+          tagName: 'branchListEnd',
+          data: { location: 'remote', count: 2 }
+        }
+      ],
+      repository
+    )
+
+    expect(branches.find((branch) => branch.id === 'local:local-id')?.syncState).toBe('local-only')
+    expect(branches.find((branch) => branch.id === 'local:synced-id')?.syncState).toBe('synced')
+    expect(branches.find((branch) => branch.id === 'local:different-id')?.syncState).toBe('unknown')
+  })
+
+  it('projects explicit current branch status without applying it to other branches', () => {
+    const repository = loreEventParsers.parseRepository(
+      repositoryPath,
+      [
+        {
+          tagName: 'repositoryStatusRevision',
+          data: {
+            branchName: 'main',
+            revisionLocalNumber: 8,
+            revisionRemoteNumber: 6,
+            isLocalAhead: true,
+            isRemoteAhead: false,
+            remoteAvailable: true,
+            remoteAuthorized: true
+          }
+        }
+      ],
+      { remoteUrl: 'lore://example.com' }
+    )
+    const branches = loreEventParsers.parseBranches(
+      [
+        {
+          tagName: 'branchListEntry',
+          data: { id: 'main-id', name: 'main', latest: 'main-tip', location: 'local', isCurrent: true }
+        },
+        {
+          tagName: 'branchListEntry',
+          data: { id: 'feature-id', name: 'feature/a', latest: 'feature-tip', location: 'local' }
+        }
+      ],
+      repository
+    )
+
+    expect(repository.currentBranchSyncState).toBe('ahead')
+    expect(branches[0]).toMatchObject({ name: 'main', syncState: 'ahead', ahead: 2, behind: 0 })
+    expect(branches[1]).toMatchObject({ name: 'feature/a', syncState: 'unknown' })
+  })
+
+  it('distinguishes synced unavailable and local-only branch evidence', () => {
+    const status = (remoteAvailable: boolean, remoteAuthorized: boolean): LoreEvent[] => [
+      {
+        tagName: 'repositoryStatusRevision',
+        data: {
+          branchName: 'main',
+          isLocalAhead: false,
+          isRemoteAhead: false,
+          remoteAvailable,
+          remoteAuthorized
+        }
+      }
+    ]
+    const currentBranch: LoreEvent[] = [
+      {
+        tagName: 'branchListEntry',
+        data: { id: 'main-id', name: 'main', latest: 'main-tip', location: 'local', isCurrent: true }
+      }
+    ]
+    const onlineRepository = loreEventParsers.parseRepository(repositoryPath, status(true, true), {
+      remoteUrl: 'lore://example.com'
+    })
+    const offlineRepository = loreEventParsers.parseRepository(repositoryPath, status(false, false), {
+      remoteUrl: 'lore://example.com'
+    })
+    const localRepository = loreEventParsers.parseRepository(repositoryPath, status(false, false))
+
+    expect(loreEventParsers.parseBranches(currentBranch, onlineRepository)[0]?.syncState).toBe('synced')
+    expect(loreEventParsers.parseBranches(currentBranch, offlineRepository)[0]?.syncState).toBe('unavailable')
+    expect(loreEventParsers.parseBranches(currentBranch, localRepository)[0]?.syncState).toBe('local-only')
+  })
+
   it('maps query and status events to one stable collaborative lock DTO', () => {
     const events: LoreEvent[] = [
       {

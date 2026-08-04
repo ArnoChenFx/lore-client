@@ -48,6 +48,13 @@ export interface Repository {
   path: string
   ahead: number
   behind: number
+  /**
+   * Lore Status 对当前工作区 Branch 的远端比较结论。
+   *
+   * 该状态只属于当前 Branch，不能复制给其他本地 Branch；旧 Lore 未返回比较标记时
+   * 必须保持 `unknown`，不得把缺失字段解释为已经同步。
+   */
+  currentBranchSyncState?: BranchSyncState
   online: boolean
   /** 当前快照观察到的远端状态；`online` 保留为常用布尔投影。 */
   remoteState: RepositoryRemoteState
@@ -63,6 +70,17 @@ export interface Repository {
   /** 当前仍需要用户处理的冲突文件数量。 */
   unresolvedConflictCount: number
 }
+
+/** 分支总览可诚实表达的远端比较状态；不包含任何按名称猜测的跟踪关系。 */
+export type BranchSyncState =
+  | 'synced'
+  | 'ahead'
+  | 'behind'
+  | 'diverged'
+  | 'unknown'
+  | 'unavailable'
+  | 'local-only'
+  | 'remote'
 
 /**
  * `.lore/config.toml` 中允许客户端编辑的稳定投影。
@@ -178,7 +196,10 @@ export interface Branch {
     branch: string
     revision: string
   }>
+  /** 只有适配层取得真实证据后才能设置为 `synced`。 */
+  syncState?: BranchSyncState
   ahead?: number
+  behind?: number
   author?: string
 }
 
