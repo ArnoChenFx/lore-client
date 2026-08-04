@@ -417,7 +417,7 @@ try {
     if (list instanceof HTMLElement) list.scrollTop = list.scrollHeight;
     const branch = Array.from(
       document.querySelectorAll(".sidebar__scroll .tree-row--local")
-    ).find((button) => button.querySelector(":scope > span")?.textContent?.trim() === "main");
+    ).find((button) => button.getAttribute("aria-label") === "main");
     branch?.click();
   })()`)
   await delay(450)
@@ -431,8 +431,9 @@ try {
     const rowBounds = selectedRow?.getBoundingClientRect();
     return {
       historyVisible: Boolean(document.querySelector(".history-panel")),
-      selectedBranch: selectedBranch?.querySelector(":scope > span")?.textContent?.trim() ?? "",
-      currentBranch: currentBranch?.querySelector(":scope > span")?.textContent?.trim() ?? "",
+      // 树叶只显示末段，完整 Lore Branch 名称由稳定可访问名称保留。
+      selectedBranch: selectedBranch?.getAttribute("aria-label") ?? "",
+      currentBranch: currentBranch?.getAttribute("aria-label") ?? "",
       revisionId: selectedGraph?.getAttribute("data-revision-id") ?? "",
       revisionVisible: Boolean(listBounds && rowBounds) &&
         rowBounds.top >= listBounds.top && rowBounds.bottom <= listBounds.bottom,
@@ -1092,12 +1093,9 @@ try {
 
   // 侧栏 Branch 树与总览卡片必须共享同一菜单，而不是只在单一视图生效。
   await cdp.evaluate(`(() => {
-    const row = Array.from(document.querySelectorAll(".tree-row"))
-      .find((element) =>
-        !element.classList.contains("tree-row--root") &&
-        !element.classList.contains("tree-row--remote") &&
-        !element.classList.contains("is-current")
-      );
+    const row = document.querySelector(
+      ".tree-row--local.tree-row--branch-node:not(.is-current)"
+    );
     const bounds = row?.getBoundingClientRect();
     row?.dispatchEvent(new MouseEvent("contextmenu", {
       bubbles: true,
@@ -3527,8 +3525,36 @@ try {
     await waitForRender();
     const localCollapsed =
       localToggle?.getAttribute("aria-expanded") === "false" &&
-      !branchSection?.querySelector(".tree-row:not(.tree-row--remote)");
+      !branchSection?.querySelector(".tree-row--local");
     localToggle?.click();
+    await waitForRender();
+
+    /*
+     * 演示数据覆盖根目录、多层目录和根叶子：目录必须优先且逐层按英文名称排序。
+     * 折叠 world 目录后只隐藏其后代叶子，重新展开以免影响后续 Branch 流程。
+     */
+    const localFolders = Array.from(
+      branchSection?.querySelectorAll(
+        ".sidebar-path-folder--local > .tree-row--folder"
+      ) ?? []
+    ).map((button) => button.getAttribute("aria-label") ?? "");
+    const remoteFolders = Array.from(
+      branchSection?.querySelectorAll(
+        ".sidebar-path-folder--remote > .tree-row--folder"
+      ) ?? []
+    ).map((button) => button.getAttribute("aria-label") ?? "");
+    const localBranches = Array.from(
+      branchSection?.querySelectorAll(".tree-row--local") ?? []
+    ).map((button) => button.getAttribute("aria-label") ?? "");
+    const worldFolder = branchSection?.querySelector(
+      '.tree-row--folder[aria-label="world"]'
+    );
+    worldFolder?.click();
+    await waitForRender();
+    const pathFolderCollapsed =
+      worldFolder?.getAttribute("aria-expanded") === "false" &&
+      !branchSection?.querySelector('.tree-row--local[aria-label^="world/"]');
+    worldFolder?.click();
     await waitForRender();
 
     const loreSection = findSection("LORE");
@@ -3556,6 +3582,26 @@ try {
     tagToggle?.click();
     await waitForRender();
 
+    // 标签与 Branch 使用同一目录优先规则，但折叠状态和真实叶子动作必须彼此隔离。
+    const tagFolders = Array.from(
+      tagSection?.querySelectorAll(
+        ".sidebar-path-folder--tag > .tree-row--folder"
+      ) ?? []
+    ).map((button) => button.getAttribute("aria-label") ?? "");
+    const sidebarTags = Array.from(
+      tagSection?.querySelectorAll(".tree-row--tag") ?? []
+    ).map((button) => button.getAttribute("aria-label") ?? "");
+    const releaseTagFolder = tagSection?.querySelector(
+      '.tree-row--folder[aria-label="release"]'
+    );
+    releaseTagFolder?.click();
+    await waitForRender();
+    const tagFolderCollapsed =
+      releaseTagFolder?.getAttribute("aria-expanded") === "false" &&
+      !tagSection?.querySelector('.tree-row--tag[aria-label^="release/"]');
+    releaseTagFolder?.click();
+    await waitForRender();
+
     const archivedToggle = document.querySelector(".sidebar__collapsed-row");
     const loreToggleLeft =
       loreToggle?.querySelector("svg")?.getBoundingClientRect().left ?? -1;
@@ -3574,7 +3620,14 @@ try {
     return {
       branchCollapsed,
       localCollapsed,
+      localFolders,
+      remoteFolders,
+      localBranches,
+      pathFolderCollapsed,
       tagCollapsed,
+      tagFolders,
+      sidebarTags,
+      tagFolderCollapsed,
       loreCollapsed,
       loreEntries,
       archivedAligned,
@@ -3584,10 +3637,33 @@ try {
   assert(
     results.sidebarTree.branchCollapsed &&
       results.sidebarTree.localCollapsed &&
+      results.sidebarTree.pathFolderCollapsed &&
       results.sidebarTree.tagCollapsed &&
+      results.sidebarTree.tagFolderCollapsed &&
       results.sidebarTree.loreCollapsed &&
       results.sidebarTree.archivedExpanded &&
       results.sidebarTree.archivedAligned &&
+      JSON.stringify(results.sidebarTree.localFolders) ===
+        JSON.stringify(['audio', 'cinematic', 'world']) &&
+      JSON.stringify(results.sidebarTree.remoteFolders) ===
+        JSON.stringify(['origin', 'origin/cinematic', 'origin/release']) &&
+      JSON.stringify(results.sidebarTree.localBranches) ===
+        JSON.stringify([
+          'audio/ambient-remix',
+          'cinematic/prologue',
+          'world/lighting-pass',
+          'world/terrain-v7',
+          'main'
+        ]) &&
+      JSON.stringify(results.sidebarTree.tagFolders) ===
+        JSON.stringify(['cinematic', 'lighting', 'preview', 'release']) &&
+      JSON.stringify(results.sidebarTree.sidebarTags) ===
+        JSON.stringify([
+          'cinematic/prologue-preview',
+          'lighting/review-2',
+          'preview/terrain-v7',
+          'release/meridian-0.8'
+        ]) &&
       JSON.stringify(results.sidebarTree.loreEntries) ===
         JSON.stringify(['克隆 / 选择性同步', '仓库配置', '账户', '仓库工具']),
     `Sidebar tree-group expansion, collapse, compact Lore entries, or archived alignment are invalid: ${JSON.stringify(results.sidebarTree)}`
@@ -3628,6 +3704,8 @@ try {
   results.tags = await cdp.evaluate(`({
     rows: document.querySelectorAll(".tag-row").length,
     sidebarRows: document.querySelectorAll(".tree-row--tag").length,
+    sidebarNames: Array.from(document.querySelectorAll(".tree-row--tag"))
+      .map((element) => element.getAttribute("aria-label") ?? ""),
     primaryHasCount: Boolean(Array.from(
       document.querySelectorAll(".sidebar__primary button")
     ).find((button) => button.textContent?.includes("标签列表"))?.querySelector("b")),
@@ -3637,6 +3715,13 @@ try {
   assert(
     results.tags.rows >= 4 &&
       results.tags.sidebarRows >= 4 &&
+      JSON.stringify(results.tags.sidebarNames) ===
+        JSON.stringify([
+          'cinematic/prologue-preview',
+          'lighting/review-2',
+          'preview/terrain-v7',
+          'release/meridian-0.8'
+        ]) &&
       !results.tags.primaryHasCount &&
       results.tags.columns.includes('目标') &&
       results.tags.columns.includes('说明'),

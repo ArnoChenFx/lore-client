@@ -35,6 +35,13 @@ _Branch Overview presents workspace attachment, local and remote Branches, and t
 Primary views are **Local Changes**, **Revision History**, **Branch Overview**, and
 **Tag List**. The Branch tree separates local, remote, and archived Branches.
 
+Local Branches, remote Branches, and Tags use a fixed English alphabetical order that
+does not change with the interface language or operating-system locale. Slash-delimited
+active Branch and Tag names are projected into expandable path folders. Every level lists
+folders first and then real objects alphabetically. Collapsing a folder only hides rows;
+it does not change the selection, checkout, Tag location context, or real object name.
+Archived Branches remain a separate flat read-only list, also sorted alphabetically.
+
 A single click selects a Branch; a double-click checks it out. Context menus differ:
 
 - local: Switch, New Branch, New Tag, Push, Merge, Archive, and Copy;

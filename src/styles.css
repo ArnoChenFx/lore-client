@@ -1133,6 +1133,20 @@ kbd {
   text-align: left;
 }
 
+/*
+ * 活动分支树只通过统一缩进变量表达层级。目录本身使用中性图标；本地青绿和远端紫色
+ * 仍只落在真实 Branch 叶子的细图标上，避免把类别色扩散到普通容器。
+ */
+.tree-row--path-node,
+.tree-row--folder {
+  padding-left: var(--tree-indent);
+}
+
+.tree-row--folder {
+  grid-template-columns: 12px 15px minmax(0, 1fr);
+  color: var(--muted);
+}
+
 .tree-row--root {
   padding-left: 11px;
 }
@@ -1198,6 +1212,16 @@ kbd {
 
 .tree-row > svg:not(:first-child) {
   color: var(--accent);
+}
+
+/* 目录是中性结构节点；此规则必须位于通用行内 SVG 规则之后，避免继承品牌蓝。 */
+.tree-row--folder > svg {
+  color: var(--faint);
+}
+
+.tree-row--folder:hover > svg,
+.tree-row--folder:focus-visible > svg {
+  color: var(--text-soft);
 }
 
 .tree-row small {
