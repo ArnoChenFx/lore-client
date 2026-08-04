@@ -3288,11 +3288,19 @@ try {
     const names = (column) => Array.from(
       column?.querySelectorAll(".branch-card > strong") ?? []
     ).map((element) => element.textContent?.trim() ?? "");
+    const states = (column) => Object.fromEntries(Array.from(
+      column?.querySelectorAll(".branch-card") ?? []
+    ).map((card) => [
+      card.querySelector(":scope > strong")?.textContent?.trim() ?? "",
+      card.querySelector(".branch-sync-state")?.textContent?.trim() ?? ""
+    ]));
     const localBounds = localColumn?.getBoundingClientRect();
     const remoteBounds = remoteColumn?.getBoundingClientRect();
     return {
       localNames: names(localColumn),
       remoteNames: names(remoteColumn),
+      localStates: states(localColumn),
+      remoteStates: states(remoteColumn),
       localIsLeft: Boolean(localBounds && remoteBounds) &&
         localBounds.left < remoteBounds.left && localBounds.right <= remoteBounds.left
     };
@@ -3310,11 +3318,74 @@ try {
         'origin/cinematic/prologue',
         'origin/release/0.8',
         'origin/main'
-      ]),
+      ]) &&
+      results.branchColumns.localStates['world/lighting-pass'] === '领先 2' &&
+      results.branchColumns.localStates.main === '已同步' &&
+      results.branchColumns.localStates['audio/ambient-remix'] === '仅本地' &&
+      Object.values(results.branchColumns.remoteStates).every((state) => state === '远程指针'),
     `The branch overview columns or hierarchical ordering are invalid: ${JSON.stringify(
       results.branchColumns
     )}`
   )
+
+  /*
+   * 分支卡片继承自原生 button，但它的卡片边界只表达对象与选中状态；
+   * 真实鼠标 hover 不得把四边切换成普通按钮的品牌蓝边界。
+   */
+  results.branchHoverBefore = await cdp.evaluate(`(() => {
+    const card = document.querySelector(".branch-overview__column--remote .branch-card");
+    if (!card) return null;
+    const bounds = card.getBoundingClientRect();
+    const style = getComputedStyle(card);
+    return {
+      point: {
+        x: Math.round(bounds.left + bounds.width / 2),
+        y: Math.round(bounds.top + bounds.height / 2)
+      },
+      borderColors: [
+        style.borderTopColor,
+        style.borderRightColor,
+        style.borderBottomColor,
+        style.borderLeftColor
+      ]
+    };
+  })()`)
+  assert(Boolean(results.branchHoverBefore), 'Failed to locate the branch-card hover test point')
+  await cdp.send('Input.dispatchMouseEvent', {
+    type: 'mouseMoved',
+    x: results.branchHoverBefore.point.x,
+    y: results.branchHoverBefore.point.y
+  })
+  await delay(40)
+  results.branchHoverAfter = await cdp.evaluate(`(() => {
+    const card = document.querySelector(".branch-overview__column--remote .branch-card:hover");
+    if (!card) return null;
+    const style = getComputedStyle(card);
+    return {
+      borderColors: [
+        style.borderTopColor,
+        style.borderRightColor,
+        style.borderBottomColor,
+        style.borderLeftColor
+      ],
+      outlineStyle: style.outlineStyle
+    };
+  })()`)
+  assert(
+    results.branchHoverAfter &&
+      JSON.stringify(results.branchHoverAfter.borderColors) ===
+        JSON.stringify(results.branchHoverBefore.borderColors) &&
+      results.branchHoverAfter.outlineStyle === 'none',
+    `Branch-card hover changes the neutral card boundary: ${JSON.stringify({
+      before: results.branchHoverBefore,
+      after: results.branchHoverAfter
+    })}`
+  )
+  await cdp.send('Input.dispatchMouseEvent', {
+    type: 'mouseMoved',
+    x: 8,
+    y: 8
+  })
 
   // Branch 单击只改变选择边框，不能改变当前工作区附着 Branch 或跳转视图。
   await cdp.evaluate(`(() => {
@@ -3813,6 +3884,16 @@ try {
   )
 
   // 使用真实鼠标位置触发 :hover，避免仅派发 DOM 事件却没有进入 CSS 悬停状态。
+  results.tagHoverBefore = await cdp.evaluate(`(() => {
+    const row = document.querySelectorAll(".tag-row")[2];
+    if (!row) return null;
+    const style = getComputedStyle(row);
+    return {
+      borderBottomColor: style.borderBottomColor,
+      borderBottomWidth: style.borderBottomWidth,
+      outlineStyle: style.outlineStyle
+    };
+  })()`)
   const tagHoverPoint = await cdp.evaluate(`(() => {
     const bounds = document.querySelectorAll(".tag-row")[2]?.getBoundingClientRect();
     return bounds ? {
@@ -3827,6 +3908,28 @@ try {
     y: tagHoverPoint.y
   })
   await delay(40)
+
+  results.tagHoverAfter = await cdp.evaluate(`(() => {
+    const row = document.querySelectorAll(".tag-row")[2];
+    if (!row || !row.matches(":hover")) return null;
+    const style = getComputedStyle(row);
+    return {
+      borderBottomColor: style.borderBottomColor,
+      borderBottomWidth: style.borderBottomWidth,
+      outlineStyle: style.outlineStyle
+    };
+  })()`)
+  assert(
+    results.tagHoverBefore &&
+      results.tagHoverAfter &&
+      results.tagHoverAfter.borderBottomColor === results.tagHoverBefore.borderBottomColor &&
+      results.tagHoverAfter.borderBottomWidth === results.tagHoverBefore.borderBottomWidth &&
+      results.tagHoverAfter.outlineStyle === results.tagHoverBefore.outlineStyle,
+    `Tag-row hover changes the neutral bottom divider: ${JSON.stringify({
+      before: results.tagHoverBefore,
+      after: results.tagHoverAfter
+    })}`
+  )
 
   // 分割线在默认、悬停与选中背景上都必须拥有实际宽度和可感知色差。
   const collectTagDividerState = (rowIndex) =>

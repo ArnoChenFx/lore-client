@@ -183,9 +183,10 @@ textarea:focus {
 /*
  * 旧面板仍有少量尚未迁移到 TextButton 的原生按钮。只要按钮本身拥有实体边框，
  * 普通 hover 就统一染成主题蓝；border-style 为 none 的菜单项和无框图标不会凭空增框。
- * 危险按钮保留红色语义，不参与普通蓝色反馈。
+ * 分支卡片与标签表格行拥有独立的中性对象边界，因此不消费这条兼容规则；危险按钮
+ * 也保留自身的红色语义。
  */
-button:hover:not(:disabled):not(.is-primary):not(.is-danger) {
+button:hover:not(:disabled):not(.is-primary):not(.is-danger):not(.branch-card):not(.tag-row) {
   border-color: var(--accent-solid) !important;
 }
 
@@ -4944,7 +4945,7 @@ kbd {
 }
 
 .branch-card:hover {
-  border-color: var(--line-strong);
+  /* 卡片 hover 只改变表面，不覆盖默认、当前或选中状态各自的中性边界。 */
   background: var(--bg-hover);
 }
 
