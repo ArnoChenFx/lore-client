@@ -41,6 +41,8 @@ active Branch and Tag names are projected into expandable path folders. Every le
 folders first and then real objects alphabetically. Collapsing a folder only hides rows;
 it does not change the selection, checkout, Tag location context, or real object name.
 Archived Branches remain a separate flat read-only list, also sorted alphabetically.
+Branch Overview applies the same hierarchy while keeping local Branches in the left
+column and remote Branches in the right. Tag List applies it to the filtered table rows.
 
 A single click selects a Branch; a double-click checks it out. Context menus differ:
 

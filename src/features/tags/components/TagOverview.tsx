@@ -2,7 +2,7 @@ import { Plus, Search, Tags } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { t } from '../../../i18n'
+import { sortTagsByEnglishName } from '../../../shared/lib'
 import type { ContextMenuPoint } from '../../../shared/ui'
 import type { LoreTag } from '../../../types'
 
@@ -13,6 +13,20 @@ interface TagOverviewProps {
   onLocateRevision: (tag: LoreTag) => void
   onContextMenu: (tag: LoreTag, point: ContextMenuPoint) => void
   onCreate: () => void
+}
+
+/**
+ * 标签筛选只决定哪些真实 DTO 可见，排序则统一使用路径树的逐层规则。
+ * 先筛选后排序可以避免搜索状态改变比较语义，也不会修改调用方持有的原始数组。
+ */
+export function filterAndSortOverviewTags(tags: LoreTag[], filter: string): LoreTag[] {
+  const query = filter.trim().toLocaleLowerCase()
+  const filteredTags = query
+    ? tags.filter((tag) =>
+        [tag.name, tag.branch, tag.revision, tag.message].some((value) => value.toLocaleLowerCase().includes(query))
+      )
+    : tags
+  return sortTagsByEnglishName(filteredTags)
 }
 
 /** 仓库级标签列表；单击只选择，双击才定位到对应 Revision。 */
@@ -26,13 +40,7 @@ export function TagOverview({
 }: TagOverviewProps) {
   const { t } = useTranslation()
   const [filter, setFilter] = useState('')
-  const visibleTags = useMemo(() => {
-    const query = filter.trim().toLocaleLowerCase()
-    if (!query) return tags
-    return tags.filter((tag) =>
-      [tag.name, tag.branch, tag.revision, tag.message].some((value) => value.toLocaleLowerCase().includes(query))
-    )
-  }, [filter, tags])
+  const visibleTags = useMemo(() => filterAndSortOverviewTags(tags, filter), [filter, tags])
 
   return (
     <section className="tag-overview">

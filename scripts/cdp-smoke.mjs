@@ -3282,13 +3282,45 @@ try {
   await delay(60)
   results.branches = await cdp.evaluate(`document.querySelectorAll(".branch-card").length`)
   assert(results.branches >= 6, 'The branch overview card count is invalid')
+  results.branchColumns = await cdp.evaluate(`(() => {
+    const localColumn = document.querySelector(".branch-overview__column--local");
+    const remoteColumn = document.querySelector(".branch-overview__column--remote");
+    const names = (column) => Array.from(
+      column?.querySelectorAll(".branch-card > strong") ?? []
+    ).map((element) => element.textContent?.trim() ?? "");
+    const localBounds = localColumn?.getBoundingClientRect();
+    const remoteBounds = remoteColumn?.getBoundingClientRect();
+    return {
+      localNames: names(localColumn),
+      remoteNames: names(remoteColumn),
+      localIsLeft: Boolean(localBounds && remoteBounds) &&
+        localBounds.left < remoteBounds.left && localBounds.right <= remoteBounds.left
+    };
+  })()`)
+  assert(
+    results.branchColumns.localIsLeft &&
+      JSON.stringify(results.branchColumns.localNames) === JSON.stringify([
+        'audio/ambient-remix',
+        'cinematic/prologue',
+        'world/lighting-pass',
+        'world/terrain-v7',
+        'main'
+      ]) &&
+      JSON.stringify(results.branchColumns.remoteNames) === JSON.stringify([
+        'origin/cinematic/prologue',
+        'origin/release/0.8',
+        'origin/main'
+      ]),
+    `The branch overview columns or hierarchical ordering are invalid: ${JSON.stringify(
+      results.branchColumns
+    )}`
+  )
 
   // Branch 单击只改变选择边框，不能改变当前工作区附着 Branch 或跳转视图。
   await cdp.evaluate(`(() => {
     const card = Array.from(document.querySelectorAll(".branch-card"))
-      .find((element) => !element.classList.contains("is-current") &&
-        element.querySelector(".branch-card__top small")
-          ?.textContent?.trim() === "本地");
+      .find((element) =>
+        element.querySelector(":scope > strong")?.textContent?.trim() === "main");
     card?.click();
   })()`)
   await delay(60)
@@ -3333,9 +3365,8 @@ try {
   // 本地 Branch 菜单包含切换、推送、合并、归档。
   await cdp.evaluate(`(() => {
     const card = Array.from(document.querySelectorAll(".branch-card"))
-      .find((element) => !element.classList.contains("is-current") &&
-        element.querySelector(".branch-card__top small")
-          ?.textContent?.trim() === "本地");
+      .find((element) =>
+        element.querySelector(":scope > strong")?.textContent?.trim() === "main");
     const bounds = card?.getBoundingClientRect();
     card?.dispatchEvent(new MouseEvent("contextmenu", {
       bubbles: true,
@@ -3703,6 +3734,8 @@ try {
   await delay(60)
   results.tags = await cdp.evaluate(`({
     rows: document.querySelectorAll(".tag-row").length,
+    tableNames: Array.from(document.querySelectorAll(".tag-row .tag-row__identity strong"))
+      .map((element) => element.textContent?.trim() ?? ""),
     sidebarRows: document.querySelectorAll(".tree-row--tag").length,
     sidebarNames: Array.from(document.querySelectorAll(".tree-row--tag"))
       .map((element) => element.getAttribute("aria-label") ?? ""),
@@ -3714,6 +3747,13 @@ try {
   })`)
   assert(
     results.tags.rows >= 4 &&
+      JSON.stringify(results.tags.tableNames) ===
+        JSON.stringify([
+          'cinematic/prologue-preview',
+          'lighting/review-2',
+          'preview/terrain-v7',
+          'release/meridian-0.8'
+        ]) &&
       results.tags.sidebarRows >= 4 &&
       JSON.stringify(results.tags.sidebarNames) ===
         JSON.stringify([
@@ -3888,7 +3928,10 @@ try {
     .find((button) => button.textContent?.includes("标签列表"))?.click()`)
   await delay(40)
   await cdp.evaluate(`(() => {
-    const row = document.querySelectorAll(".tag-row")[0];
+    const row = Array.from(document.querySelectorAll(".tag-row")).find((element) =>
+      element.querySelector(".tag-row__identity strong")
+        ?.textContent?.trim() === "release/meridian-0.8"
+    );
     const bounds = row?.getBoundingClientRect();
     row?.dispatchEvent(new MouseEvent("contextmenu", {
       bubbles: true,
@@ -3948,7 +3991,10 @@ try {
   await delay(40)
 
   await cdp.evaluate(`(() => {
-    const row = document.querySelectorAll(".tag-row")[0];
+    const row = Array.from(document.querySelectorAll(".tag-row")).find((element) =>
+      element.querySelector(".tag-row__identity strong")
+        ?.textContent?.trim() === "release/meridian-0.8"
+    );
     row?.dispatchEvent(new MouseEvent("contextmenu", {
       bubbles: true, cancelable: true, clientX: 700, clientY: 260
     }));

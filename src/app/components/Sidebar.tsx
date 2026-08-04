@@ -18,8 +18,6 @@ import {
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import type { ContextMenuPoint } from '../../shared/ui'
-import type { Branch, LoreTag, NavigationView, Repository } from '../../types'
 import {
   buildSidebarBranchTree,
   buildSidebarTagTree,
@@ -28,7 +26,9 @@ import {
   type SidebarPathTreeLeaf,
   type SidebarPathTreeNode,
   type SidebarTagTreeNode
-} from './sidebarTree'
+} from '../../shared/lib'
+import type { ContextMenuPoint } from '../../shared/ui'
+import type { Branch, LoreTag, NavigationView, Repository } from '../../types'
 
 interface SidebarProps {
   repository: Repository

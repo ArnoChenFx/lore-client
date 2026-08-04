@@ -2,14 +2,14 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import i18n from '../../i18n'
-import type { Branch, LoreTag } from '../../types'
-import { groupSidebarBranches, Sidebar } from './Sidebar'
 import {
   buildSidebarBranchTree,
   buildSidebarTagTree,
   sortTagsByEnglishName,
   type SidebarPathTreeNode
-} from './sidebarTree'
+} from '../../shared/lib'
+import type { Branch, LoreTag } from '../../types'
+import { groupSidebarBranches, Sidebar } from './Sidebar'
 
 const archivedBranch: Branch = {
   id: 'local:feature-archive-id',

@@ -14,20 +14,6 @@ export function compareEnglishNames(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
-export function sortBranchesByEnglishName(branches: Branch[]): Branch[] {
-  return [...branches].sort((left, right) => {
-    const nameOrder = compareEnglishNames(left.name, right.name)
-    return nameOrder || compareEnglishNames(left.id, right.id)
-  })
-}
-
-export function sortTagsByEnglishName(tags: LoreTag[]): LoreTag[] {
-  return [...tags].sort((left, right) => {
-    const nameOrder = compareEnglishNames(left.name, right.name)
-    return nameOrder || compareEnglishNames(left.id, right.id)
-  })
-}
-
 export interface SidebarPathTreeLeaf<T> {
   kind: 'item'
   /** 树行只显示当前层的最后一段；完整名称始终保留在原始 DTO 中。 */
@@ -132,6 +118,45 @@ export function buildSidebarPathTree<T>(
   }
 
   return finalizeFolder(root)
+}
+
+/**
+ * 按树的可见预序把 DTO 展平：先输出当前层的文件夹内容，再输出当前层叶子。
+ * 主视图虽然不绘制目录行，但借此与侧栏保持完全相同的逐层排序语义。
+ */
+function flattenPathTree<T>(nodes: SidebarPathTreeNode<T>[], result: T[] = []): T[] {
+  for (const node of nodes) {
+    if (node.kind === 'folder') {
+      flattenPathTree(node.children, result)
+    } else {
+      result.push(node.item)
+    }
+  }
+  return result
+}
+
+export function sortPathItemsByEnglishName<T>(
+  items: T[],
+  getName: (item: T) => string,
+  getId: (item: T) => string
+): T[] {
+  return flattenPathTree(buildSidebarPathTree(items, getName, getId))
+}
+
+export function sortBranchesByEnglishName(branches: Branch[]): Branch[] {
+  return sortPathItemsByEnglishName(
+    branches,
+    (branch) => branch.name,
+    (branch) => branch.id
+  )
+}
+
+export function sortTagsByEnglishName(tags: LoreTag[]): LoreTag[] {
+  return sortPathItemsByEnglishName(
+    tags,
+    (tag) => tag.name,
+    (tag) => tag.id
+  )
 }
 
 export function buildSidebarBranchTree(branches: Branch[]): SidebarBranchTreeNode[] {

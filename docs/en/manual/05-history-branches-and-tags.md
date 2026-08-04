@@ -57,9 +57,11 @@ selects context.
 
 ## Branch Overview and menus
 
-Overview separates selected Branch, attached workspace Branch, and Branch Latest.
-Double-click performs Checkout. Ahead means local work is not yet pushed; Synced reflects
-the latest loaded state.
+Overview separates selected Branch, attached workspace Branch, and Branch Latest. Its
+left column contains local Branches and its right column contains remote Branches. Each
+column uses folder-first alphabetical hierarchy for slash-delimited names. Double-click
+performs Checkout. Ahead means local work is not yet pushed; Synced reflects the latest
+loaded state.
 
 A local Branch can Switch, create Branch/Tag, Push, Merge into current, Archive, and
 Copy. It cannot merge into itself or archive the currently attached Branch. Remote
@@ -74,9 +76,9 @@ Latest. On success, the workspace attaches to the new Branch.
 
 ## Tags
 
-Tag List shows name, target, description, and update time. Create/Edit shows target
-Branch, exact target Revision, name, description, and the repository-shared metadata
-boundary.
+Tag List shows name, target, description, and update time. Rows use the same folder-first
+alphabetical hierarchy as Branches, including after filtering. Create/Edit shows target
+Branch, exact target Revision, name, description, and the repository-shared metadata boundary.
 
 Tag actions include details, locate Revision, edit, delete, and copy name, Revision ID,
 or full information. Deleting a Tag never deletes its Revision.

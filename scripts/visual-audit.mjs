@@ -1776,6 +1776,27 @@ async function auditLightThemeComponents(cdp) {
 
   await clickMatchingButton(cdp, '.sidebar__primary button', '分支总览')
   await assertFlatSurfaces(cdp, ['.repository-switcher', '.current-branch-card'])
+  const branchColumnLayout = await cdp.evaluate(`(() => {
+    const localColumn = document.querySelector(".branch-overview__column--local");
+    const remoteColumn = document.querySelector(".branch-overview__column--remote");
+    const localBounds = localColumn?.getBoundingClientRect();
+    const remoteBounds = remoteColumn?.getBoundingClientRect();
+    return {
+      hasColumns: Boolean(localColumn && remoteColumn),
+      localIsLeft: Boolean(localBounds && remoteBounds) &&
+        localBounds.left < remoteBounds.left && localBounds.right <= remoteBounds.left,
+      localWidth: localBounds?.width ?? 0,
+      remoteWidth: remoteBounds?.width ?? 0
+    };
+  })()`)
+  if (
+    !branchColumnLayout.hasColumns ||
+    !branchColumnLayout.localIsLeft ||
+    branchColumnLayout.localWidth < 180 ||
+    branchColumnLayout.remoteWidth < 180
+  ) {
+    throw new Error(`Branch overview columns are invalid: ${JSON.stringify(branchColumnLayout)}`)
+  }
   checkpoints.push(await captureCheckpoint(cdp, 'branches'))
 
   // 侧栏二级分组收起后仍需保留明确的树层级和可点击标题。

@@ -4853,11 +4853,73 @@ kbd {
   font-size: 11px;
 }
 
-.branch-grid {
+.branch-overview__columns {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  align-items: start;
+  gap: 8px;
   margin-top: 8px;
+}
+
+.branch-overview__column {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+}
+
+.branch-overview__column--remote {
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+
+.branch-overview__column-header {
+  display: grid;
+  min-width: 0;
+  height: 30px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-soft);
+}
+
+.branch-overview__column-header strong {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-overview__column-header small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+/* 类别色只落在小面积图标上，双栏表面和分隔线仍保持中性。 */
+.branch-overview__column--local .branch-overview__column-header > svg {
+  color: var(--branch-label);
+}
+
+.branch-overview__column--remote .branch-overview__column-header > svg {
+  color: var(--branch-remote);
+}
+
+.branch-overview__column-list {
+  display: grid;
+  gap: 6px;
+  padding-top: 6px;
+}
+
+.branch-overview__column-empty {
+  min-height: 86px;
+  margin: 6px 0 0;
+  padding: 18px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
 }
 
 .branch-card {
