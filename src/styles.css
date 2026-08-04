@@ -820,7 +820,6 @@ kbd {
   width: 35px;
   flex: 0 0 auto;
   place-items: center;
-  border-right: 1px solid var(--line-soft);
   color: var(--faint);
 }
 
@@ -6666,7 +6665,7 @@ body.is-resizing-panes {
   grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   /* 单版本保留紧凑的可用下限；双版本比较会在下方覆盖为完全弹性的等分行。 */
   grid-auto-rows: minmax(220px, 1fr);
-  gap: 8px;
+  gap: 2px;
   overflow: auto;
   /*
    * 单版本 CSV、模型、PDF 与图片预览直接占满 Diff 内容区；比较模式只在

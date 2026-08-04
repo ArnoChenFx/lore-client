@@ -56,12 +56,7 @@ export function Toolbar({ repository, repositoryIcon, onAction, onOpenCommands }
         })}
       </div>
 
-      <button
-        type="button"
-        className="repository-switcher"
-        aria-label={t('switchCurrentRepository')}
-        onClick={() => onAction('repository')}
-      >
+      <button type="button" className="repository-switcher" aria-label={t('currentRepository')}>
         <span className="repository-switcher__icon" data-repository-icon={repositoryIcon}>
           <RepositoryIconGlyph icon={repositoryIcon} size={17} />
         </span>
