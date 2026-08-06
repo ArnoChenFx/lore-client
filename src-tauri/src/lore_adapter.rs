@@ -129,6 +129,7 @@ static HEAVY_READ_LOCK: OnceLock<tauri::async_runtime::Mutex<()>> = OnceLock::ne
 static WORKSPACE_DIFF_READ_LANE: HeavyReadLane = HeavyReadLane::new();
 static REVISION_FILES_READ_LANE: HeavyReadLane = HeavyReadLane::new();
 static FILE_PREVIEW_READ_LANE: HeavyReadLane = HeavyReadLane::new();
+static WORKSPACE_TEXT_READ_LANE: HeavyReadLane = HeavyReadLane::new();
 static REVISION_DIFF_READ_LANE: HeavyReadLane = HeavyReadLane::new();
 static REVISION_CHANGES_READ_LANE: HeavyReadLane = HeavyReadLane::new();
 /// 通知 Subscribe/Unsubscribe 共享异步门，避免标签切换把 blocking pool 填满。
@@ -297,7 +298,7 @@ pub enum LoreConflictOperationKind {
 ///
 /// `staged_revision` 是 Lore 当前冲突状态的不可变签名；Merge 还会尽量附带
 /// `incoming_revision`。React 不接触 State flags 或元数据二进制格式。
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoreConflictSession {
     pub kind: LoreConflictOperationKind,

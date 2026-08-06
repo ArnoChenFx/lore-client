@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import type { DiffPreferences } from '../types'
 import { DEFAULT_CLIENT_PREFERENCES, getClientPreferences, updateClientPreferences } from './preferences'
 
 describe('client preferences stored on disk', () => {
@@ -35,6 +36,8 @@ describe('client preferences stored on disk', () => {
       revisionHistoryLaneMode: 'flat',
       diff: {
         contextLines: 3,
+        diffStyle: 'unified',
+        expandFullFile: false,
         ignoreWhitespaceEol: false,
         ignoreWhitespaceInline: false
       },
@@ -177,10 +180,33 @@ describe('client preferences stored on disk', () => {
     updateClientPreferences({ repositoryTabCustomizations: [] })
   })
 
+  it('falls back to default layout preferences when the disk file lacks them', () => {
+    // 旧版本偏好文件没有 diffStyle / expandFullFile；normalize 必须回退默认
+    // unified 布局与关闭展开，不能把缺失字段当成 undefined 写回 UI。
+    // 类型断言模拟磁盘上缺少新字段的旧数据，normalize 仍会补齐默认值。
+    updateClientPreferences({
+      diff: {
+        contextLines: 5,
+        ignoreWhitespaceEol: false,
+        ignoreWhitespaceInline: false
+      } as DiffPreferences
+    })
+
+    expect(getClientPreferences().diff).toEqual({
+      contextLines: 5,
+      diffStyle: 'unified',
+      expandFullFile: false,
+      ignoreWhitespaceEol: false,
+      ignoreWhitespaceInline: false
+    })
+  })
+
   it('persists and bounds shared Diff preferences', () => {
     updateClientPreferences({
       diff: {
         contextLines: 999,
+        diffStyle: 'split',
+        expandFullFile: true,
         ignoreWhitespaceEol: true,
         ignoreWhitespaceInline: true
       }
@@ -188,6 +214,8 @@ describe('client preferences stored on disk', () => {
 
     expect(getClientPreferences().diff).toEqual({
       contextLines: 100,
+      diffStyle: 'split',
+      expandFullFile: true,
       ignoreWhitespaceEol: true,
       ignoreWhitespaceInline: true
     })

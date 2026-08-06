@@ -30,6 +30,17 @@ async function applicationServerIsReady() {
   }
 }
 
+/** Vite 监听端口后仍可能正在完成首轮依赖优化；在有界窗口内等待页面真正可响应。 */
+async function waitForApplicationServer() {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (await applicationServerIsReady()) {
+      return true
+    }
+    await delay(250)
+  }
+  return false
+}
+
 async function closeOwnedApplicationServer() {
   if (!applicationServer) {
     return
@@ -71,7 +82,7 @@ async function ensureApplicationServer() {
     throw error
   }
 
-  if (!(await applicationServerIsReady())) {
+  if (!(await waitForApplicationServer())) {
     await closeOwnedApplicationServer()
     throw new Error('The Lore Client UI test server did not respond after startup')
   }
@@ -188,6 +199,19 @@ function assert(condition, message) {
   if (!condition) {
     throw new Error(message)
   }
+}
+
+/** 按需模块与 Shadow DOM 需要异步挂载；用状态轮询替代依赖机器速度的固定延迟。 */
+async function waitForEvaluatedState(cdp, expression, isReady, attempts = 30) {
+  let result = null
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    result = await cdp.evaluate(expression)
+    if (isReady(result)) {
+      return result
+    }
+    await delay(100)
+  }
+  return result
 }
 
 async function waitForApplication(cdp) {
@@ -1608,8 +1632,22 @@ try {
       ))?.click();
   })()`)
   await delay(40)
-  results.revisionTextDiff = await cdp.evaluate(`document.querySelectorAll(".revision-diff-pane__line").length`)
-  assert(results.revisionTextDiff > 0, 'The revision text file did not display a unified diff')
+  results.revisionTextDiff = await waitForEvaluatedState(cdp, `(() => {
+    const container = document.querySelector(".revision-diff-pane diffs-container");
+    return {
+      mounted: Boolean(container),
+      shadowReady: Boolean(container?.shadowRoot),
+      shadowChildCount: container?.shadowRoot?.childElementCount ?? 0,
+      shadowHtmlLength: container?.shadowRoot?.innerHTML.length ?? 0
+    };
+  })()`, (result) => result?.mounted && result?.shadowReady && result?.shadowChildCount > 0)
+  assert(
+    results.revisionTextDiff.mounted &&
+      results.revisionTextDiff.shadowReady &&
+      results.revisionTextDiff.shadowChildCount > 0 &&
+      results.revisionTextDiff.shadowHtmlLength > 0,
+    `The revision text file did not mount a populated Diffs view: ${JSON.stringify(results.revisionTextDiff)}`
+  )
 
   /*
    * Revision Diff 标题只保留文件信息、选项和有意义的统计。单选时不再输出
@@ -2436,7 +2474,7 @@ try {
   await delay(60)
 
   // Fork 式变更工作区默认显示树视图，右侧应立即呈现主选中文本文件的真实补丁。
-  results.localChangesInitial = await cdp.evaluate(`({
+  results.localChangesInitial = await waitForEvaluatedState(cdp, `({
     treeActive:
       document.querySelector("button[aria-label='目录树视图']")
         ?.getAttribute("aria-pressed") === "true",
@@ -2446,8 +2484,8 @@ try {
       document.querySelectorAll(".change-file-row.is-selected").length,
     hasWorkingDiff: Boolean(document.querySelector(".working-diff")),
     hasOldInspector: Boolean(document.querySelector(".inspector")),
-    diffLines: document.querySelectorAll(".working-diff__line").length
-  })`)
+    hasTextDiff: Boolean(document.querySelector(".working-diff diffs-container"))
+  })`, (result) => result?.hasTextDiff)
   assert(
     results.localChangesInitial.treeActive &&
       results.localChangesInitial.directoryRows > 0 &&
@@ -2455,42 +2493,26 @@ try {
       results.localChangesInitial.selectedRows === 1 &&
       results.localChangesInitial.hasWorkingDiff &&
       !results.localChangesInitial.hasOldInspector &&
-      results.localChangesInitial.diffLines > 0,
+      results.localChangesInitial.hasTextDiff,
     `The initial local-changes workspace is invalid: ${JSON.stringify(results.localChangesInitial)}`
   )
 
-  /*
-   * Old Lines / New Lines 使用双轴居中，避免窄列中的两行文字贴住左上角；
-   * Content 列继续保持左对齐，不改变代码正文的阅读起点。
-   */
-  results.localDiffColumnHeadingAlignment = await cdp.evaluate(`(() => {
-    const headings = Array.from(document.querySelectorAll(".working-diff__columns > span"));
-    return headings.map((heading) => {
-      const style = getComputedStyle(heading);
-      return {
-        text: heading.textContent?.trim() ?? "",
-        display: style.display,
-        alignItems: style.alignItems,
-        justifyItems: style.justifyItems,
-        textAlign: style.textAlign
-      };
-    });
-  })()`)
+  // Diffs 库通过 Shadow DOM 承载正文；必须确认真实正文已挂载，而不再断言旧表格列头。
+  results.localTextDiffSurface = await waitForEvaluatedState(cdp, `(() => {
+    const container = document.querySelector(".working-diff diffs-container");
+    return {
+      mounted: Boolean(container),
+      shadowReady: Boolean(container?.shadowRoot),
+      shadowChildCount: container?.shadowRoot?.childElementCount ?? 0,
+      shadowHtmlLength: container?.shadowRoot?.innerHTML.length ?? 0
+    };
+  })()`, (result) => result?.mounted && result?.shadowReady && result?.shadowChildCount > 0)
   assert(
-    results.localDiffColumnHeadingAlignment.length === 3 &&
-      results.localDiffColumnHeadingAlignment
-        .slice(0, 2)
-        .every(
-          (heading) =>
-            heading.display === 'grid' &&
-            heading.alignItems === 'center' &&
-            heading.justifyItems === 'center' &&
-            heading.textAlign === 'center'
-        ) &&
-      results.localDiffColumnHeadingAlignment[2]?.textAlign === 'start',
-    `Local Diff line headings are not centered independently: ${JSON.stringify(
-      results.localDiffColumnHeadingAlignment
-    )}`
+    results.localTextDiffSurface.mounted &&
+      results.localTextDiffSurface.shadowReady &&
+      results.localTextDiffSurface.shadowChildCount > 0 &&
+      results.localTextDiffSurface.shadowHtmlLength > 0,
+    `The local text Diff surface is not populated: ${JSON.stringify(results.localTextDiffSurface)}`
   )
 
   /*
@@ -2751,14 +2773,14 @@ try {
     selectedName:
       document.querySelector(".change-file-row.is-selected strong")
         ?.textContent?.trim() ?? "",
-    diffLines: document.querySelectorAll(".working-diff__line").length
+    hasTextDiff: Boolean(document.querySelector(".working-diff diffs-container"))
   })`)
   assert(
     results.localChangeTreeCollapsed.expanded === 'false' &&
       results.localChangeTreeCollapsed.files < results.localChangeTreeBeforeCollapse.files &&
       results.localChangeTreeExpanded.files === results.localChangeTreeBeforeCollapse.files &&
       results.localChangeTreeExpanded.selectedName === results.localChangeTreeBeforeCollapse.selectedName &&
-      results.localChangeTreeExpanded.diffLines > 0,
+      results.localChangeTreeExpanded.hasTextDiff,
     `Collapsing a local-changes directory did not preserve selection: ${JSON.stringify({
       before: results.localChangeTreeBeforeCollapse,
       collapsed: results.localChangeTreeCollapsed,

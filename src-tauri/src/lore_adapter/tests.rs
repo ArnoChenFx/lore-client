@@ -9,9 +9,12 @@ use super::{
     composition::{
         build_layer_add_args, build_layer_remove_args, build_link_add_args, build_link_update_args,
     },
-    operations::{contains_conflict_markers, lore_commit},
+    operations::{
+        contains_conflict_markers, lore_commit, validate_conflict_resolution_preconditions,
+    },
     workspace::{
-        lore_revision_changes, lore_stage, lore_stage_move, lore_unstage, lore_write_patch_file,
+        lore_read_revision_text, lore_revision_changes, lore_stage, lore_stage_move, lore_unstage,
+        lore_workspace_diff, lore_write_patch_file,
     },
 };
 
@@ -1271,6 +1274,170 @@ fn revision_content_reading_preserves_storage_item_error_code() {
 }
 
 #[test]
+fn revision_text_command_rejects_invalid_revisions_before_storage() {
+    let empty = tauri::async_runtime::block_on(lore_read_revision_text(
+        "unused-repository".into(),
+        "   ".into(),
+        "a.txt".into(),
+        None,
+    ))
+    .expect_err("An empty revision must be rejected before any storage access");
+    assert_eq!(empty.code, "empty_revision");
+
+    let whitespace = tauri::async_runtime::block_on(lore_read_revision_text(
+        "unused-repository".into(),
+        "abc def".into(),
+        "a.txt".into(),
+        None,
+    ))
+    .expect_err("A whitespace revision must be rejected before any storage access");
+    assert_eq!(whitespace.code, "invalid_revision");
+}
+
+#[test]
+fn revision_text_command_rejects_invalid_paths_before_storage() {
+    let error = tauri::async_runtime::block_on(lore_read_revision_text(
+        "unused-repository".into(),
+        "abc123".into(),
+        "../outside.txt".into(),
+        None,
+    ))
+    .expect_err("A parent traversal must be rejected before any repository or storage access");
+    assert_eq!(error.code, "invalid_repository_relative_path");
+}
+
+#[test]
+fn revision_text_command_reads_committed_file_content() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("System time should be later than the Unix epoch")
+        .as_nanos();
+    let repository_path = std::env::temp_dir().join(format!("lore-client-revision-text-{unique}"));
+    let _cleanup = TemporaryRepository::new(repository_path.clone());
+    std::fs::create_dir_all(&repository_path)
+        .expect("The temporary test directory should be created");
+    let repository_path_string = repository_path.to_string_lossy().into_owned();
+
+    initialize_repository(
+        &repository_path_string,
+        "revision-text",
+        "Revision text content regression",
+        "lore-client-test",
+        None,
+        false,
+        None,
+    )
+    .expect("The temporary Lore repository should be initialized");
+    std::fs::create_dir_all(repository_path.join("Content"))
+        .expect("The temporary Content directory should be created");
+    std::fs::write(
+        repository_path.join("Content").join("World.txt"),
+        "const mode = 'dark';",
+    )
+    .expect("The committed text file should be created");
+    tauri::async_runtime::block_on(lore_stage(
+        repository_path_string.clone(),
+        vec!["Content/World.txt".to_owned()],
+    ))
+    .expect("The text file should be staged");
+    let commit = tauri::async_runtime::block_on(lore_commit(
+        repository_path_string.clone(),
+        "Commit the text file".to_owned(),
+        None,
+    ))
+    .expect("The text file should be committed");
+    let revision = committed_revision(&commit);
+
+    let content = tauri::async_runtime::block_on(lore_read_revision_text(
+        repository_path_string.clone(),
+        revision.clone(),
+        "Content/World.txt".to_owned(),
+        None,
+    ))
+    .expect("Committed text must be readable from the immutable revision");
+    assert_eq!(content, "const mode = 'dark';");
+}
+
+/// 打印并断言 Lore 工作区 diff 的真实 patch 格式。
+///
+/// Diff 展开全文依赖 Diffs 库 `parsePatchFiles` 正确解析 patch；该库对缺少
+/// `---`/`+++` 文件头的裸 hunk 会返回空文件集（`files: []`），导致视图完全不渲染。
+/// 这个测试锁死上游 Lore 的真实输出格式，防止适配层或上游改动破坏前端契约。
+#[test]
+fn workspace_diff_patch_preserves_unified_headers() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("System time should be later than the Unix epoch")
+        .as_nanos();
+    let repository_path = std::env::temp_dir().join(format!("lore-client-workspace-diff-{unique}"));
+    let _cleanup = TemporaryRepository::new(repository_path.clone());
+    std::fs::create_dir_all(&repository_path)
+        .expect("The temporary test directory should be created");
+    let repository_path_string = repository_path.to_string_lossy().into_owned();
+
+    initialize_repository(
+        &repository_path_string,
+        "workspace-diff",
+        "Workspace diff patch format regression",
+        "lore-client-test",
+        None,
+        false,
+        None,
+    )
+    .expect("The temporary Lore repository should be initialized");
+    std::fs::create_dir_all(repository_path.join("Content"))
+        .expect("The temporary Content directory should be created");
+    std::fs::write(
+        repository_path.join("Content").join("World.txt"),
+        "const first = 1;\nconst mode = 'dark';\nconst after = 4;\nconst last = 5;",
+    )
+    .expect("The committed text file should be created");
+    tauri::async_runtime::block_on(lore_stage(
+        repository_path_string.clone(),
+        vec!["Content/World.txt".to_owned()],
+    ))
+    .expect("The text file should be staged");
+    let commit = tauri::async_runtime::block_on(lore_commit(
+        repository_path_string.clone(),
+        "Commit the text file".to_owned(),
+        None,
+    ))
+    .expect("The text file should be committed");
+    committed_revision(&commit);
+
+    // 修改工作区后读取工作区 diff，验证真实 patch 头。
+    std::fs::write(
+        repository_path.join("Content").join("World.txt"),
+        "const first = 1;\nconst mode = 'light';\nconst after = 4;\nconst last = 5;",
+    )
+    .expect("The working-tree file should be modified");
+    let result = tauri::async_runtime::block_on(lore_workspace_diff(
+        repository_path_string.clone(),
+        vec!["Content/World.txt".to_owned()],
+        Some(3),
+        None,
+        None,
+    ))
+    .expect("The workspace diff should be readable");
+    let patch = result
+        .events
+        .iter()
+        .find(|event| {
+            event["tagName"] == "fileDiff" && event["data"]["path"] == "Content/World.txt"
+        })
+        .and_then(|event| event["data"]["patch"].as_str())
+        .expect("The workspace diff should include the modified file patch");
+    assert!(
+        patch.starts_with("--- "),
+        "Lore workspace diff must carry a --- file header so Diffs parsePatchFiles can hydrate it: {patch:?}",
+    );
+    assert!(
+        patch.contains("@@ "),
+        "Lore workspace diff must include unified hunks: {patch:?}",
+    );
+}
+
+#[test]
 fn completed_operation_collects_events_while_callback_is_still_dropping() {
     let mut retained_callback: LoreEventCallback = None;
     let result = run_operation("test.callback-drop-race", |callback| {
@@ -1739,6 +1906,38 @@ fn conflict_kind_prefers_revision_metadata_and_detects_merge_from_second_parent(
         LoreConflictOperationKind::Unknown,
         "The conflict kind must not be guessed without persisted evidence"
     );
+}
+
+#[test]
+fn conflict_resolution_preconditions_reject_stale_content_and_session() {
+    let expected_session = LoreConflictSession {
+        kind: LoreConflictOperationKind::Merge,
+        current_revision: "current".to_owned(),
+        staged_revision: "staged".to_owned(),
+        incoming_revision: Some("incoming".to_owned()),
+    };
+    let changed_session = LoreConflictSession {
+        staged_revision: "new-staged".to_owned(),
+        ..expected_session.clone()
+    };
+
+    let content_error = validate_conflict_resolution_preconditions(
+        &expected_session,
+        Some(&expected_session),
+        "read-time content",
+        "externally changed content",
+    )
+    .expect_err("Externally changed content must not be overwritten");
+    assert_eq!(content_error.code, "conflict_content_changed");
+
+    let session_error = validate_conflict_resolution_preconditions(
+        &expected_session,
+        Some(&changed_session),
+        "same content",
+        "same content",
+    )
+    .expect_err("A changed staged Revision must invalidate the old conflict UI");
+    assert_eq!(session_error.code, "conflict_session_changed");
 }
 
 #[test]

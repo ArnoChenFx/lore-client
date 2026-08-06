@@ -421,6 +421,10 @@ export interface WorkingTreeDiff {
 export interface DiffPreferences {
   /** Lore unified diff 的上下文行数；0 表示只显示变化行。 */
   contextLines: number
+  /** Diff 视图布局：统一视图（unified）或左右分栏（split）。 */
+  diffStyle: 'unified' | 'split'
+  /** 展开全文：按需读取真实前后文件内容并显示所有未变化行；unified 与 split 均可用。 */
+  expandFullFile: boolean
   ignoreWhitespaceEol: boolean
   ignoreWhitespaceInline: boolean
 }

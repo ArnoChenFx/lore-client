@@ -274,49 +274,62 @@ pub async fn lore_conflict_session(
                 callback,
             ))
         })?;
-        ensure_conflict_read_succeeded(&status, "Read conflict status")?;
-        if !status.events.iter().any(|event| {
-            event.get("tagName").and_then(Value::as_str) == Some("repositoryStatusFile")
-                && event.pointer("/data/flagConflict").is_some_and(|value| {
-                    value.as_bool().unwrap_or(false) || value.as_u64().is_some_and(|flag| flag != 0)
-                })
-        }) {
-            return Ok(None);
-        }
-
-        let Some((current_revision, staged_revision, incoming_revision)) =
-            conflict_revision_ids(&status.events)
-        else {
-            return Ok(None);
-        };
-        if is_zero_hash(&staged_revision) || staged_revision == current_revision {
-            return Ok(None);
-        }
-
-        let info_globals = global_args(&repository_path)?;
-        let staged_for_info = staged_revision.clone();
-        let info = run_operation("conflict.session.revision-info", move |callback| {
-            lore::runtime().block_on(lore::revision::info(
-                info_globals,
-                LoreRevisionInfoArgs {
-                    revision: staged_for_info.into(),
-                    // 顶层 Revision 元数据无论此开关都会发出；关闭它可避免遍历每个文件的元数据。
-                    delta: 0,
-                    metadata: 0,
-                },
-                callback,
-            ))
-        })?;
-        ensure_conflict_read_succeeded(&info, "Read conflict revision information")?;
-
-        Ok(Some(LoreConflictSession {
-            kind: classify_conflict_operation(&info.events, incoming_revision.as_deref()),
-            current_revision,
-            staged_revision,
-            incoming_revision,
-        }))
+        recover_conflict_session(&repository_path, &status)
     })
     .await
+}
+
+/**
+ * 从一次真实 Status 结果恢复冲突会话。
+ *
+ * 读命令与行内写命令共享本函数，确保写边界比较的是同一套 staged Revision、
+ * incoming Revision 和元数据分类，而不是只相信前端传入的操作类型。
+ */
+fn recover_conflict_session(
+    repository_path: &str,
+    status: &LoreOperationResult,
+) -> Result<Option<LoreConflictSession>, LoreCommandError> {
+    ensure_conflict_read_succeeded(status, "Read conflict status")?;
+    if !status.events.iter().any(|event| {
+        event.get("tagName").and_then(Value::as_str) == Some("repositoryStatusFile")
+            && event.pointer("/data/flagConflict").is_some_and(|value| {
+                value.as_bool().unwrap_or(false) || value.as_u64().is_some_and(|flag| flag != 0)
+            })
+    }) {
+        return Ok(None);
+    }
+
+    let Some((current_revision, staged_revision, incoming_revision)) =
+        conflict_revision_ids(&status.events)
+    else {
+        return Ok(None);
+    };
+    if is_zero_hash(&staged_revision) || staged_revision == current_revision {
+        return Ok(None);
+    }
+
+    let info_globals = global_args(repository_path)?;
+    let staged_for_info = staged_revision.clone();
+    let info = run_operation("conflict.session.revision-info", move |callback| {
+        lore::runtime().block_on(lore::revision::info(
+            info_globals,
+            LoreRevisionInfoArgs {
+                revision: staged_for_info.into(),
+                // 顶层 Revision 元数据无论此开关都会发出；关闭它避免遍历逐文件元数据。
+                delta: 0,
+                metadata: 0,
+            },
+            callback,
+        ))
+    })?;
+    ensure_conflict_read_succeeded(&info, "Read conflict revision information")?;
+
+    Ok(Some(LoreConflictSession {
+        kind: classify_conflict_operation(&info.events, incoming_revision.as_deref()),
+        current_revision,
+        staged_revision,
+        incoming_revision,
+    }))
 }
 
 /// 对当前冲突会话执行一个经过类型和路径验证的真实 Lore 动作。
@@ -558,23 +571,25 @@ pub struct LoreConflictResolutionWriteResult {
 /// 把行内解决后的完整文本写回工作区，并在内容干净时标记为已解决。
 ///
 /// 这是 Diffs 库行内冲突解决（Accept current / incoming / both）的 Rust 写入口：
-/// 前端只提交单条仓库相对路径与解决后的 UTF-8 正文，Rust 在写入前重新确认该文件
-/// 仍处于真实冲突会话，避免旧 UI 快照把任意内容写回非冲突文件；内容仍包含冲突
-/// 标记时只写回不标记，全部区域解决后 Lore 才把该路径标记为 resolved。
+/// 前端提交单条仓库相对路径、读取时会话、读取时正文与解决后的 UTF-8 正文；Rust
+/// 在写入前重新恢复真实会话并重读正文，任一前置条件漂移都拒绝覆盖。内容仍包含
+/// 冲突标记时只写回不标记，全部区域解决后 Lore 才把该路径标记为 resolved。
 #[tauri::command]
 pub async fn lore_write_conflict_resolution(
     repository_path: String,
-    operation: LoreConflictOperationKind,
+    expected_session: LoreConflictSession,
     path: String,
+    expected_content: String,
     content: String,
 ) -> Result<LoreConflictResolutionWriteResult, LoreCommandError> {
-    if operation == LoreConflictOperationKind::Unknown {
+    if expected_session.kind == LoreConflictOperationKind::Unknown {
         return Err(LoreCommandError::new(
             "unknown_conflict_operation",
             "The current Lore conflict operation type is unknown; refresh the repository state or verify the repository",
         ));
     }
-    if content.len() > crate::lore_adapter::workspace::DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES as usize {
+    let text_limit = crate::lore_adapter::workspace::DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES as usize;
+    if content.len() > text_limit || expected_content.len() > text_limit {
         return Err(LoreCommandError::new(
             "workspace_text_too_large",
             "The resolved content exceeds the inline text limit; resolve large files with an external merge tool",
@@ -599,7 +614,7 @@ pub async fn lore_write_conflict_resolution(
                 callback,
             ))
         })?;
-        ensure_conflict_read_succeeded(&status, "Read conflict status before writing resolution")?;
+        let actual_session = recover_conflict_session(&repository_path, &status)?;
         let normalized_path = validate_repository_relative_paths(vec![path.clone()])?
             .into_iter()
             .next()
@@ -620,6 +635,21 @@ pub async fn lore_write_conflict_resolution(
         }
 
         let target_path = validate_existing_workspace_file(&repository_path, &normalized_path)?;
+        let actual_content = std::fs::read_to_string(&target_path).map_err(|error| {
+            LoreCommandError::new(
+                "workspace_text_decode_failed",
+                format!(
+                    "Failed to re-read workspace file {} before writing its resolution: {error}",
+                    target_path.display()
+                ),
+            )
+        })?;
+        validate_conflict_resolution_preconditions(
+            &expected_session,
+            actual_session.as_ref(),
+            &expected_content,
+            &actual_content,
+        )?;
         std::fs::write(&target_path, &content).map_err(|error| {
             LoreCommandError::new(
                 "workspace_text_write_failed",
@@ -634,7 +664,7 @@ pub async fn lore_write_conflict_resolution(
         let operation_result = if resolved {
             let globals = global_args(&repository_path)?;
             let lore_paths = || LoreArray::from_vec(vec![normalized_path.clone().into()]);
-            match operation {
+            match expected_session.kind {
                 LoreConflictOperationKind::Merge => {
                     run_operation("branch.merge-resolve", move |callback| {
                         lore::runtime().block_on(lore::branch::merge_resolve(
@@ -687,6 +717,33 @@ pub async fn lore_write_conflict_resolution(
         })
     })
     .await
+}
+
+/**
+ * 校验行内解决所基于的冲突会话与正文仍是当前值。
+ *
+ * React 的仓库串行门闩只能约束本应用内写入；这里的乐观并发前置条件用于拒绝
+ * 外部编辑器、另一个 Lore 客户端或刷新后的新冲突会话覆盖旧 UI 读取到的内容。
+ */
+pub(super) fn validate_conflict_resolution_preconditions(
+    expected_session: &LoreConflictSession,
+    actual_session: Option<&LoreConflictSession>,
+    expected_content: &str,
+    actual_content: &str,
+) -> Result<(), LoreCommandError> {
+    if actual_session != Some(expected_session) {
+        return Err(LoreCommandError::new(
+            "conflict_session_changed",
+            "The conflict session changed after the inline resolution view was loaded",
+        ));
+    }
+    if actual_content != expected_content {
+        return Err(LoreCommandError::new(
+            "conflict_content_changed",
+            "The conflict file changed after the inline resolution view was loaded",
+        ));
+    }
+    Ok(())
 }
 
 /// 检测正文是否仍包含标准冲突标记行（`<<<<<<<` / `|||||||` / `=======` / `>>>>>>>`）。

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadRevisionChanges, loadRevisionDiff, loadRevisionFiles } from '../../services/lore'
 import {
   changeFilePath,
+  createDiffReadPreferences,
   createDemoWorkingTreeDiff,
   LatestTaskQueue,
   readErrorMessage,
@@ -197,6 +198,12 @@ export function useRevisionInspectorData({
   const [revisionFilesRevisionId, setRevisionFilesRevisionId] = useState('')
   const [revisionFilesLoading, setRevisionFilesLoading] = useState(false)
   const [revisionFilesError, setRevisionFilesError] = useState<string | null>(null)
+  const { contextLines, ignoreWhitespaceEol, ignoreWhitespaceInline } = diffPreferences
+  const diffReadPreferences = useMemo(
+    () => createDiffReadPreferences(contextLines, ignoreWhitespaceEol, ignoreWhitespaceInline),
+    // 布局与展开全文只更新当前渲染，不得清空并重新读取远程 Revision patch。
+    [contextLines, ignoreWhitespaceEol, ignoreWhitespaceInline]
+  )
   const revisionChangesRequestCounter = useRef(0)
   const revisionDiffRequestCounter = useRef(0)
   const revisionFilesRequestCounter = useRef(0)
@@ -318,6 +325,7 @@ export function useRevisionInspectorData({
       return
     }
     if (applicationMode === 'browser-demo') {
+      // 只为当前主要选择生成隔离夹具，保持与真实按需读取相同的数据规模。
       setRevisionDiffs(
         demoRevisionFiles
           .filter((file) => changeFilePath(file) === revisionPrimaryChangePath)
@@ -336,7 +344,7 @@ export function useRevisionInspectorData({
           revisionDiffSource,
           selectedRevision.id,
           [revisionPrimaryChangePath],
-          diffPreferences
+          diffReadPreferences
         )
       )
       .then((diffs) => {
@@ -358,7 +366,7 @@ export function useRevisionInspectorData({
     applicationMode,
     binaryDiffVisible,
     demoRevisionFiles,
-    diffPreferences,
+    diffReadPreferences,
     inspectorTab,
     repositoryPath,
     revisionChangesDiffVisible,

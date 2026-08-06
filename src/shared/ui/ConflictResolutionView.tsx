@@ -4,6 +4,15 @@ import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { ResolvedTheme } from '../../types'
+import { LORE_DIFF_DARK_THEME, LORE_DIFF_LIGHT_THEME } from '../lib'
+import { TextButton } from './ControlPrimitives'
+
+export interface ConflictResolutionResult {
+  /** Diffs 生成解决内容时所基于的原始工作区正文。 */
+  expectedContent: string
+  /** 应写回工作区的解决后完整正文。 */
+  resolvedContent: string
+}
 
 export interface ConflictResolutionViewProps {
   /** 带冲突标记的真实工作区文本内容。 */
@@ -12,8 +21,8 @@ export interface ConflictResolutionViewProps {
   fileName: string
   /** 当前应用的解析主题。 */
   themeType: ResolvedTheme
-  /** 用户选择某个区域后给出解决后的完整文件内容；调用方负责写回与刷新。 */
-  onResolved: (resolvedContent: string) => void
+  /** 用户选择某个区域后给出读取时正文与解决后正文；调用方负责条件写回与刷新。 */
+  onResolved: (result: ConflictResolutionResult) => void
 }
 
 const RESOLUTION_OPTIONS: Array<{ resolution: MergeConflictResolution; labelKey: string }> = [
@@ -48,22 +57,22 @@ export function ConflictResolutionView({ content, fileName, themeType, onResolve
       return (
         <span className="conflict-resolution-actions">
           {RESOLUTION_OPTIONS.map(({ resolution, labelKey }) => (
-            <button
+            <TextButton
               key={resolution}
-              type="button"
-              className={`conflict-resolution-actions__button is-${resolution}`}
               onClick={() => {
                 const result = instance?.resolveConflict?.(action.conflictIndex, resolution)
-                if (result?.file) onResolved(result.file.contents)
+                if (result?.file) {
+                  onResolved({ expectedContent: content, resolvedContent: result.file.contents })
+                }
               }}
             >
               {t(labelKey as never)}
-            </button>
+            </TextButton>
           ))}
         </span>
       )
     },
-    [onResolved, t]
+    [content, onResolved, t]
   )
 
   return (
@@ -71,8 +80,8 @@ export function ConflictResolutionView({ content, fileName, themeType, onResolve
       file={file}
       options={{
         theme: {
-          dark: 'pierre-dark',
-          light: 'pierre-light'
+          dark: LORE_DIFF_DARK_THEME,
+          light: LORE_DIFF_LIGHT_THEME
         },
         themeType,
         mergeConflictActionsType: 'none'

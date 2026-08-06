@@ -81,7 +81,7 @@ Lore is included with the desktop application, so a separate Lore CLI installati
 
 ## Preview status
 
-Lore Client is still under active development. Test important workflows before using it for production repositories. Conflict handling currently supports guided sessions with inline resolution (accept current, incoming, or both sides) but does not include a free-form three-way text merge editor.
+Lore Client is still under active development. Test important workflows before using it for production repositories.
 
 ---
 

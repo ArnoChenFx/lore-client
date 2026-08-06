@@ -13,7 +13,17 @@ import {
   Search,
   TriangleAlert
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
@@ -43,10 +53,11 @@ import {
   BinaryDiffPreview,
   createBinaryDiffPreviewView,
   DiffOptionsControl,
+  loadTextDiffViewModule,
   PaneResizer,
   SelectInput,
-  TextDiffView,
-  type BinaryDiffPreviewView
+  type BinaryDiffPreviewView,
+  type TextDiffFullFileTarget
 } from '../../../shared/ui'
 import type {
   BinaryDiffPreview as BinaryDiffPreviewData,
@@ -55,6 +66,9 @@ import type {
   Revision,
   WorkingTreeDiff
 } from '../../../types'
+
+// 文本 Diff 渲染器只在“变更”页签右侧真正展示正文时按需加载。
+const TextDiffView = lazy(() => loadTextDiffViewModule().then((module) => ({ default: module.TextDiffView })))
 
 interface RevisionChangesWorkspaceProps {
   repositoryPath: string
@@ -72,6 +86,8 @@ interface RevisionChangesWorkspaceProps {
   notice?: string | null
   selectionRequest?: RevisionWorkspaceSelectionRequest | null
   onLoadBinaryPreview?: (path: string, revision?: string, metadataOnly?: boolean) => Promise<BinaryFilePreview>
+  /** 按需读取指定 Revision 文本文件的真实加载器；未提供时展开全文保持部分视图。 */
+  onLoadRevisionText?: (revision: string, path: string) => Promise<string>
   onPrimaryFileChange?: (file: ChangeFile | null) => void
   onOpenContextMenu: (files: ChangeFile[], primaryFile: ChangeFile, event: MouseEvent<HTMLElement>) => void
 }
@@ -152,6 +168,7 @@ export function RevisionChangesWorkspace({
   notice,
   selectionRequest,
   onLoadBinaryPreview,
+  onLoadRevisionText,
   onPrimaryFileChange,
   onOpenContextMenu
 }: RevisionChangesWorkspaceProps) {
@@ -220,6 +237,37 @@ export function RevisionChangesWorkspace({
   const diffLineCounts = useMemo(() => countUnifiedDiffLines(diffLines), [diffLines])
   const primaryContentKind = resolvedDiffContentKind(primaryFile, primaryDiff)
   const themeType = resolveTheme(preferences.theme)
+  /**
+   * 展开全文时按需读取真实前后 Revision 文本。
+   *
+   * 旧侧使用当前比较基线（多父 Revision 由用户显式选择），新侧使用目标 Revision；
+   * rename 以 patch 解析出的 `prevName` 读取旧路径。加载失败由 TextDiffView 显示
+   * 原因并保持部分视图，不伪造全文。
+   */
+  const loadDiffFiles = useCallback(
+    async (target: TextDiffFullFileTarget) => {
+      if (!onLoadRevisionText) throw new Error(t('runtimeProvideRealFileContent_aae6'))
+      const sourceRevision = diffSourceRevision ?? revision.parentIds[0]
+      const oldPath = target.prevName ?? target.name
+      // 新增文件的旧侧在基线 Revision 中不存在，删除文件的新侧在目标 Revision 中
+      // 不存在；两者都按空文件水合，避免对不存在的路径发起读取。
+      const isAdded = primaryFile?.status === 'added'
+      const isDeleted = primaryFile?.status === 'deleted'
+      const oldFile =
+        target.type !== 'rename-pure' && !isAdded
+          ? sourceRevision
+            ? { name: oldPath, contents: await onLoadRevisionText(sourceRevision, oldPath) }
+            : null
+          : isAdded
+            ? { name: oldPath, contents: '' }
+            : null
+      const newFile = isDeleted
+        ? { name: target.name, contents: '' }
+        : { name: target.name, contents: await onLoadRevisionText(revision.id, target.name) }
+      return oldFile ? { oldFile, newFile } : { oldFile: null, newFile }
+    },
+    [diffSourceRevision, onLoadRevisionText, primaryFile?.status, revision.id, revision.parentIds, t]
+  )
   const previewModeActive = primaryFile
     ? shouldUseRepositoryPreview(
         primaryFile,
@@ -345,6 +393,7 @@ export function RevisionChangesWorkspace({
     contentSelectionAuthorized,
     diffVisible,
     onLoadBinaryPreview,
+    onLoadRevisionText,
     preferences.binaryDiffVisible,
     previewModeActive,
     primaryContentKind,
@@ -710,7 +759,11 @@ export function RevisionChangesWorkspace({
                       : t('status.selectLeftObject', { id: revision.shortId })}
                 </small>
               </div>
-              <DiffOptionsControl />
+              <DiffOptionsControl
+                showTextLayoutOptions={Boolean(
+                  primaryFile && primaryDiff?.patch && !diffLoading && !diffError && !previewModeActive
+                )}
+              />
               {(primaryDiff && !diffLoading && !diffError && primaryContentKind !== 'binary') ||
               selectedObjectIds.length > 1 ? (
                 <em className="revision-diff-pane__summary">
@@ -775,7 +828,16 @@ export function RevisionChangesWorkspace({
                 className="revision-diff-pane__viewport"
                 aria-label={t('status.revisionDiffOf', { name: primaryFile.name })}
               >
-                <TextDiffView patch={primaryDiff.patch} filePath={changeFilePath(primaryFile)} themeType={themeType} />
+                <Suspense fallback={null}>
+                  <TextDiffView
+                    patch={primaryDiff.patch}
+                    filePath={changeFilePath(primaryFile)}
+                    themeType={themeType}
+                    diffStyle={preferences.diff.diffStyle}
+                    expandFullFile={preferences.diff.expandFullFile}
+                    loadDiffFiles={loadDiffFiles}
+                  />
+                </Suspense>
               </div>
             )}
           </section>

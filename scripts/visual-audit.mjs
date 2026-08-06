@@ -55,6 +55,17 @@ async function applicationServerIsReady() {
   }
 }
 
+/** Vite 监听端口后仍可能正在完成首轮依赖优化；在有界窗口内等待页面真正可响应。 */
+async function waitForApplicationServer() {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (await applicationServerIsReady()) {
+      return true
+    }
+    await delay(250)
+  }
+  return false
+}
+
 async function closeOwnedApplicationServer() {
   if (!applicationServer) {
     return
@@ -97,7 +108,7 @@ async function ensureApplicationServer() {
     throw error
   }
 
-  if (!(await applicationServerIsReady())) {
+  if (!(await waitForApplicationServer())) {
     await closeOwnedApplicationServer()
     throw new Error('The Lore Client visual-test server did not respond after startup')
   }

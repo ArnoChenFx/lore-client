@@ -1,5 +1,5 @@
 import { Binary, File, FileQuestion, Folder, LockKeyhole, TriangleAlert } from 'lucide-react'
-import { useMemo } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
@@ -16,12 +16,20 @@ import {
 } from '../../../shared/lib'
 import {
   BinaryDiffPreview,
-  ConflictResolutionView,
   DiffOptionsControl,
-  TextDiffView,
-  type BinaryDiffPreviewView
+  loadConflictResolutionViewModule,
+  loadTextDiffViewModule,
+  type BinaryDiffPreviewView,
+  type ConflictResolutionResult,
+  type TextDiffFullFileLoader
 } from '../../../shared/ui'
 import type { ChangeFile, LoreFileLock, WorkingTreeDiff } from '../../../types'
+
+// Diffs/Shiki 体积较大，只在右侧实际进入文本或冲突正文时加载，避免拖慢主工作区首屏。
+const TextDiffView = lazy(() => loadTextDiffViewModule().then((module) => ({ default: module.TextDiffView })))
+const ConflictResolutionView = lazy(() =>
+  loadConflictResolutionViewModule().then((module) => ({ default: module.ConflictResolutionView }))
+)
 
 interface WorkingTreeDiffProps {
   file: ChangeFile | null
@@ -38,7 +46,9 @@ interface WorkingTreeDiffProps {
   conflictContent?: string
   conflictContentLoading?: boolean
   conflictContentError?: string | null
-  onConflictResolved?: (resolvedContent: string) => void
+  onConflictResolved?: (result: ConflictResolutionResult) => void
+  /** 展开全文时读取真实前后文件内容的加载器；未提供时保持部分视图。 */
+  loadDiffFiles?: TextDiffFullFileLoader
 }
 
 /** 本地更改专用 Diff 面板，只渲染 Lore 返回的 unified patch。 */
@@ -56,7 +66,8 @@ export function WorkingTreeDiff({
   conflictContent,
   conflictContentLoading = false,
   conflictContentError = null,
-  onConflictResolved
+  onConflictResolved,
+  loadDiffFiles
 }: WorkingTreeDiffProps) {
   const { t } = useTranslation()
   const { preferences } = useClientPreferences()
@@ -66,7 +77,8 @@ export function WorkingTreeDiff({
   const previewableKind = file ? binaryPreviewKind(changeFilePath(file)) : null
   const contentKind = resolvedDiffContentKind(file, diff)
   const binary = contentKind === 'binary'
-  const showInlineConflict = Boolean(file?.conflict && file?.conflictUnresolved)
+  // 未知或二进制冲突保持只读；确认为文本时，即使后缀是 CSV/SVG 也必须优先解决冲突。
+  const showInlineConflict = Boolean(file?.conflict && file?.conflictUnresolved && contentKind === 'text')
   const previewModeActive = file
     ? shouldUseRepositoryPreview(file, changeFilePath(file), preferences.binaryDiffVisible, contentKind)
     : false
@@ -116,7 +128,11 @@ export function WorkingTreeDiff({
             {selectedCount > 1 ? t('status.selectedShowingPrimary', { count: selectedCount }) : t('workspaceDiff')}
           </span>
         </span>
-        <DiffOptionsControl />
+        <DiffOptionsControl
+          showTextLayoutOptions={Boolean(
+            file && diff?.patch && !loading && !error && !previewModeActive && !showInlineConflict
+          )}
+        />
       </header>
 
       {fileLock && (
@@ -147,20 +163,6 @@ export function WorkingTreeDiff({
           <strong>{t('unableToLoadFileDiff')}</strong>
           <span>{error}</span>
         </div>
-      ) : previewModeActive && !preferences.binaryDiffVisible && !binaryPreview && !binaryPreviewLoading ? (
-        <div className="working-diff__empty">
-          <Binary size={32} />
-          <strong>{t('binaryDiffHidden')}</strong>
-          <span>{t('enableBinaryDiffInOptions')}</span>
-        </div>
-      ) : previewModeActive ? (
-        <BinaryDiffPreview
-          fileName={file.name}
-          preview={binaryPreview}
-          loading={binaryPreviewLoading}
-          error={binaryPreviewError}
-          size={file.size ? Number(file.size) : undefined}
-        />
       ) : showInlineConflict ? (
         conflictContentError ? (
           <div className="working-diff__empty is-error">
@@ -179,14 +181,30 @@ export function WorkingTreeDiff({
             className="working-diff__viewport working-diff__conflict"
             aria-label={t('status.textDiffOf', { name: file.name })}
           >
-            <ConflictResolutionView
-              content={conflictContent}
-              fileName={file.name}
-              themeType={themeType}
-              onResolved={onConflictResolved ?? (() => undefined)}
-            />
+            <Suspense fallback={null}>
+              <ConflictResolutionView
+                content={conflictContent}
+                fileName={file.name}
+                themeType={themeType}
+                onResolved={onConflictResolved ?? (() => undefined)}
+              />
+            </Suspense>
           </div>
         )
+      ) : previewModeActive && !preferences.binaryDiffVisible && !binaryPreview && !binaryPreviewLoading ? (
+        <div className="working-diff__empty">
+          <Binary size={32} />
+          <strong>{t('binaryDiffHidden')}</strong>
+          <span>{t('enableBinaryDiffInOptions')}</span>
+        </div>
+      ) : previewModeActive ? (
+        <BinaryDiffPreview
+          fileName={file.name}
+          preview={binaryPreview}
+          loading={binaryPreviewLoading}
+          error={binaryPreviewError}
+          size={file.size ? Number(file.size) : undefined}
+        />
       ) : lines.length === 0 ? (
         <div className="working-diff__empty">
           <FileQuestion size={28} />
@@ -195,7 +213,16 @@ export function WorkingTreeDiff({
         </div>
       ) : (
         <div className="working-diff__viewport" aria-label={t('status.textDiffOf', { name: file.name })}>
-          <TextDiffView patch={diff?.patch ?? ''} filePath={changeFilePath(file)} themeType={themeType} />
+          <Suspense fallback={null}>
+            <TextDiffView
+              patch={diff?.patch ?? ''}
+              filePath={changeFilePath(file)}
+              themeType={themeType}
+              diffStyle={preferences.diff.diffStyle}
+              expandFullFile={preferences.diff.expandFullFile}
+              loadDiffFiles={loadDiffFiles}
+            />
+          </Suspense>
         </div>
       )}
     </section>

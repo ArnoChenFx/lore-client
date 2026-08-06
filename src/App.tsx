@@ -70,6 +70,7 @@ import {
   DEFAULT_SERVER_URL,
   getApplicationMode,
   loadBinaryFilePreview,
+  loadRevisionText,
   loadRepositorySnapshot,
   pushBranch,
   openExternalDiff,
@@ -78,6 +79,7 @@ import {
 } from './services/lore'
 import { changeDirectoryPathFromObjectId, changeFileObjectId, changeFilePath, readErrorMessage } from './shared/lib'
 import { PaneResizer } from './shared/ui'
+import type { ConflictResolutionResult } from './shared/ui'
 import type {
   BinaryFilePreview,
   ChangeFile,
@@ -295,6 +297,15 @@ function App() {
     (path: string, revision?: string, metadataOnly = false): Promise<BinaryFilePreview> =>
       loadBinaryFilePreview(activeRepository.path, path, revision, metadataOnly, preferences.binaryPreviewLimitMib),
     [activeRepository.path, preferences.binaryPreviewLimitMib]
+  )
+  /**
+   * 浏览器演示的 Revision 文本读取：目标 Revision 的调用返回新侧内容，其余
+   * （比较基线）返回旧侧内容，让展开全文在纯前端预览中呈现前后差异。
+   */
+  /** 展开全文时按需读取活动仓库指定 Revision 的真实文本文件。 */
+  const loadActiveRepositoryRevisionText = useCallback(
+    async (revision: string, path: string) => loadRevisionText(activeRepository.path, revision, path),
+    [activeRepository.path]
   )
   const demoRevisionFiles = useMemo(() => {
     if (!selectedRevision || !activeSnapshot) {
@@ -537,7 +548,7 @@ function App() {
    * 不乐观更新本地列表，统一交给 runRepositoryMutation 重读真实状态。
    */
   const resolveInlineConflict = useCallback(
-    async (file: ChangeFile, resolvedContent: string) => {
+    async (file: ChangeFile, result: ConflictResolutionResult) => {
       const session = activeSnapshot?.conflictSession
       if (applicationMode !== 'tauri') {
         notify(t('browserDemoMode'), t('browserDemoModeReadLocal_fca5'), 'warning')
@@ -548,10 +559,16 @@ function App() {
         return
       }
       // 在闭包外固定操作类型，避免回调内重新读取属性时丢失 unknown 收窄。
-      const operation = session.kind
       await runRepositoryMutation(
         'markConflictResolved',
-        (repository) => writeConflictResolution(repository.path, operation, changeFilePath(file), resolvedContent),
+        (repository) =>
+          writeConflictResolution(
+            repository.path,
+            session,
+            changeFilePath(file),
+            result.expectedContent,
+            result.resolvedContent
+          ),
         operationMessage('status.conflictFilesUpdated', { count: 1 }),
         'changes'
       )
@@ -1061,6 +1078,7 @@ function App() {
                     activeTab={inspectorTab}
                     onTabChange={setInspectorTab}
                     onLoadBinaryPreview={applicationMode === 'tauri' ? loadActiveRepositoryBinaryPreview : undefined}
+                    onLoadRevisionText={applicationMode === 'tauri' ? loadActiveRepositoryRevisionText : undefined}
                     onPrimaryChangeFile={selectRevisionPrimaryChange}
                     onNotify={notify}
                     onRevealFile={(file) => void revealCurrentFile(file)}

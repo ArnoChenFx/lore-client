@@ -43,6 +43,8 @@ export const DEFAULT_CLIENT_PREFERENCES: ClientPreferences = {
   revisionHistoryLaneMode: 'flat',
   diff: {
     contextLines: 3,
+    diffStyle: 'unified',
+    expandFullFile: false,
     ignoreWhitespaceEol: false,
     ignoreWhitespaceInline: false
   },
@@ -216,6 +218,16 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
         typeof diff?.contextLines === 'number' && Number.isFinite(diff.contextLines)
           ? Math.max(0, Math.min(100, Math.round(diff.contextLines)))
           : DEFAULT_CLIENT_PREFERENCES.diff.contextLines,
+      /*
+       * 旧偏好文件缺少布局字段时保持升级前的统一视图；未知值同样回退默认，
+       * 避免未来外部编辑写入无效枚举后 Diff 面板失去布局语义。
+       */
+      diffStyle: diff?.diffStyle === 'split' ? 'split' : 'unified',
+      /*
+       * 展开全文是显式偏好，旧文件缺省时不自动开启，避免升级后突然请求
+       * 完整文件内容改变既有阅读与网络开销。
+       */
+      expandFullFile: Boolean(diff?.expandFullFile),
       ignoreWhitespaceEol: Boolean(diff?.ignoreWhitespaceEol),
       ignoreWhitespaceInline: Boolean(diff?.ignoreWhitespaceInline)
     },
@@ -267,10 +279,12 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
   }
 }
 
-/** 判断两份 Diff 参数是否会产生相同的读取结果。 */
+/** 判断两份完整 Diff 偏好是否完全相同，包括读取参数与纯渲染参数。 */
 function areDiffPreferencesEqual(left: ClientPreferences['diff'], right: ClientPreferences['diff']): boolean {
   return (
     left.contextLines === right.contextLines &&
+    left.diffStyle === right.diffStyle &&
+    left.expandFullFile === right.expandFullFile &&
     left.ignoreWhitespaceEol === right.ignoreWhitespaceEol &&
     left.ignoreWhitespaceInline === right.ignoreWhitespaceInline
   )
@@ -457,9 +471,9 @@ export function updateClientPreferences(patch: Partial<ClientPreferences>): void
   const nextPreferences: ClientPreferences = {
     ...normalizedPreferences,
     /*
-     * Revision 与本地变更的 Diff 读取 effect 都依赖此对象的引用。拖动分割线等
-     * 无关布局更新会经过完整规范化；当三个读取参数均未变化时复用旧引用，避免
-     * React 把等值对象误判为新的读取条件。任一参数真实变化时仍保留新对象。
+     * Diff 订阅者会消费此对象；拖动分割线等无关布局更新经过完整规范化后仍复用
+     * 旧引用，避免等值设置制造无意义渲染。读取 effect 另行投影三个 Lore patch
+     * 参数，因此布局与全文展开的真实变化也不会误触发远程读取。
      */
     diff: areDiffPreferencesEqual(normalizedPreferences.diff, cachedPreferences.diff)
       ? cachedPreferences.diff

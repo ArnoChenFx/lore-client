@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
 import { t } from '../../../i18n'
-import { loadBinaryFilePreview, loadWorkingTreeDiff, loadWorkspaceText } from '../../../services/lore'
+import { loadBinaryFilePreview, loadRevisionText, loadWorkingTreeDiff, loadWorkspaceText } from '../../../services/lore'
 import {
   changeFilePath,
+  createDiffReadPreferences,
   createDemoWorkingTreeDiff,
   LatestTaskQueue,
   readErrorMessage,
@@ -13,7 +14,12 @@ import {
   shouldUseRepositoryPreview,
   settleTasksSequentially
 } from '../../../shared/lib'
-import { createBinaryDiffPreviewView, type BinaryDiffPreviewView } from '../../../shared/ui'
+import {
+  createBinaryDiffPreviewView,
+  type BinaryDiffPreviewView,
+  type ConflictResolutionResult,
+  type TextDiffFullFileTarget
+} from '../../../shared/ui'
 import type {
   ApplicationMode,
   BinaryDiffPreview,
@@ -22,6 +28,7 @@ import type {
   LoreFileLock,
   WorkingTreeDiff
 } from '../../../types'
+import { resolveWorkingTreeDiffFiles } from '../lib/workingTreeDiffFiles'
 import { WorkingTreeDiff as WorkingTreeDiffView } from './WorkingTreeDiff'
 
 interface WorkingTreeDiffContainerProps {
@@ -33,7 +40,7 @@ interface WorkingTreeDiffContainerProps {
   selectionLabel: string | null
   selectedCount: number
   /** 行内解决后的完整文本交回上层；上层负责串行写回与快照刷新。 */
-  onConflictResolved?: (file: ChangeFile, resolvedContent: string) => void
+  onConflictResolved?: (file: ChangeFile, result: ConflictResolutionResult) => void
 }
 
 /**
@@ -53,6 +60,12 @@ export function WorkingTreeDiffContainer({
   onConflictResolved
 }: WorkingTreeDiffContainerProps) {
   const { preferences } = useClientPreferences()
+  const { contextLines, ignoreWhitespaceEol, ignoreWhitespaceInline } = preferences.diff
+  const diffReadPreferences = useMemo(
+    () => createDiffReadPreferences(contextLines, ignoreWhitespaceEol, ignoreWhitespaceInline),
+    // 只有会改变 Lore patch 的三个读取参数才创建新对象；布局与全文展开就地渲染。
+    [contextLines, ignoreWhitespaceEol, ignoreWhitespaceInline]
+  )
   const [diff, setDiff] = useState<WorkingTreeDiff | null>(null)
   const [diffLoading, setDiffLoading] = useState(false)
   const [diffError, setDiffError] = useState<string | null>(null)
@@ -68,6 +81,7 @@ export function WorkingTreeDiffContainer({
   const diffQueue = useRef(new LatestTaskQueue())
   const binaryPreviewQueue = useRef(new LatestTaskQueue())
   const conflictQueue = useRef(new LatestTaskQueue())
+  const effectiveContentKind = resolvedDiffContentKind(file, diff)
 
   useEffect(() => {
     const queues = [diffQueue.current, binaryPreviewQueue.current, conflictQueue.current]
@@ -88,7 +102,7 @@ export function WorkingTreeDiffContainer({
     setConflictContent(undefined)
     setConflictContentError(null)
 
-    const conflict = Boolean(file?.conflict && file?.conflictUnresolved)
+    const conflict = Boolean(file?.conflict && file?.conflictUnresolved && effectiveContentKind === 'text')
     if (!conflict || applicationMode === 'browser-demo') {
       setConflictContentLoading(false)
       return
@@ -110,7 +124,7 @@ export function WorkingTreeDiffContainer({
           setConflictContentLoading(false)
         }
       })
-  }, [applicationMode, file, repositoryPath])
+  }, [applicationMode, effectiveContentKind, file, repositoryPath])
 
   /**
    * 行内解决后的完整内容交回上层串行写回。
@@ -120,9 +134,9 @@ export function WorkingTreeDiffContainer({
    * 真实快照；失败提示也由上层统一呈现，容器不再维护第二套写回状态。
    */
   const handleConflictResolved = useCallback(
-    async (content: string) => {
+    async (result: ConflictResolutionResult) => {
       if (!file) return
-      onConflictResolved?.(file, content)
+      onConflictResolved?.(file, result)
     },
     [file, onConflictResolved]
   )
@@ -132,7 +146,22 @@ export function WorkingTreeDiffContainer({
       loadBinaryFilePreview(repositoryPath, path, revision, metadataOnly, preferences.binaryPreviewLimitMib),
     [preferences.binaryPreviewLimitMib, repositoryPath]
   )
-  const effectiveContentKind = resolvedDiffContentKind(file, diff)
+  /**
+   * 展开全文时按需读取真实前后文件内容：旧侧来自当前锚点 Revision，新侧来自
+   * 工作区；rename 以 patch 解析出的 `prevName` 读取旧路径。加载失败由
+   * TextDiffView 显示原因并保持部分视图，不伪造全文。
+   */
+  const loadDiffFiles = useCallback(
+    (target: TextDiffFullFileTarget) =>
+      resolveWorkingTreeDiffFiles(target, {
+        applicationMode,
+        currentRevisionId,
+        file,
+        readRevisionText: (revision, path) => loadRevisionText(repositoryPath, revision, path),
+        readWorkspaceText: (path) => loadWorkspaceText(repositoryPath, path)
+      }),
+    [applicationMode, currentRevisionId, file, repositoryPath]
+  )
 
   /** 主要文件变化时按需读取真实文本 Diff，并丢弃来自旧选择的响应。 */
   useEffect(() => {
@@ -157,6 +186,7 @@ export function WorkingTreeDiffContainer({
       return
     }
     if (applicationMode === 'browser-demo') {
+      // 演示模式使用隔离的可解析夹具展示 Diff；它不进入任何 Lore 读写命令。
       setDiffLoading(false)
       setDiff(createDemoWorkingTreeDiff(file))
       return
@@ -164,7 +194,7 @@ export function WorkingTreeDiffContainer({
 
     setDiffLoading(true)
     void diffQueue.current
-      .run(() => loadWorkingTreeDiff(repositoryPath, [path], preferences.diff))
+      .run(() => loadWorkingTreeDiff(repositoryPath, [path], diffReadPreferences))
       .then((diffs) => {
         if (requestId !== diffRequestCounter.current) return
         setDiff(
@@ -184,7 +214,7 @@ export function WorkingTreeDiffContainer({
           setDiffLoading(false)
         }
       })
-  }, [applicationMode, file, preferences.binaryDiffVisible, preferences.diff, repositoryPath])
+  }, [applicationMode, diffReadPreferences, file, preferences.binaryDiffVisible, repositoryPath])
 
   /**
    * 预览格式只读取当前主要文件的前后版本。关闭二进制 Diff 时，真二进制与专用资产
@@ -291,6 +321,7 @@ export function WorkingTreeDiffContainer({
       conflictContentLoading={conflictContentLoading}
       conflictContentError={conflictContentError}
       onConflictResolved={handleConflictResolved}
+      loadDiffFiles={loadDiffFiles}
     />
   )
 }

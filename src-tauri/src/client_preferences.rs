@@ -23,6 +23,10 @@ pub struct WorkspaceLayoutPreference {
 #[serde(default, rename_all = "camelCase")]
 pub struct DiffPreference {
     pub context_lines: u32,
+    /// Diff 视图布局：`unified`（统一视图）或 `split`（左右分栏），与前端枚举保持一致。
+    pub diff_style: String,
+    /// unified 模式下是否展开全文：开启后按需读取完整前后文件内容并显示所有未变化行。
+    pub expand_full_file: bool,
     pub ignore_whitespace_eol: bool,
     pub ignore_whitespace_inline: bool,
 }
@@ -31,6 +35,8 @@ impl Default for DiffPreference {
     fn default() -> Self {
         Self {
             context_lines: 3,
+            diff_style: "unified".to_owned(),
+            expand_full_file: false,
             ignore_whitespace_eol: false,
             ignore_whitespace_inline: false,
         }
@@ -175,6 +181,8 @@ pub struct ClientPreferences {
     /// 界面语言使用稳定 BCP 47 标签；旧偏好缺失字段时回退简体中文，
     /// 真正的首次启动默认值由前端按操作系统语言解析后再写入。
     pub language: String,
+    /// 启动时是否自动检查更新；设置对话框可切换，必须随偏好文件往返，否则关闭选择会在重启后丢失。
+    pub automatically_check_for_updates: bool,
     /// 仓库没有配置身份时用于单次提交的客户端默认值；空字符串表示未配置。
     pub default_identity: String,
     pub workspace_layout: WorkspaceLayoutPreference,
@@ -210,6 +218,7 @@ impl Default for ClientPreferences {
             version: CLIENT_PREFERENCES_VERSION,
             theme: "system".to_owned(),
             language: "zh-CN".to_owned(),
+            automatically_check_for_updates: true,
             default_identity: String::new(),
             workspace_layout: WorkspaceLayoutPreference::default(),
             inspector_tab: "overview".to_owned(),
@@ -366,7 +375,9 @@ fn validate_preferences(preferences: &ClientPreferences) -> Result<(), LoreComma
         && preferences.workspace_layout.inspector_width >= 240.0
         && (0.15..=0.85).contains(&preferences.local_changes_stage_split)
         && preferences.revision_changes_browser_width >= 100.0;
-    let valid_diff = preferences.diff.context_lines <= 100;
+    // 布局字段枚举受 Rust 边界约束；未知值让整个偏好文件加载失败，由前端回退默认并修复。
+    let valid_diff = preferences.diff.context_lines <= 100
+        && matches!(preferences.diff.diff_style.as_str(), "unified" | "split");
     let valid_binary_preview_limit =
         binary_preview_limit_bytes(preferences.binary_preview_limit_mib).is_ok();
     let valid_external_tool = |tool: &ExternalDiffPreference| {
@@ -506,6 +517,7 @@ mod tests {
         let directory = tempfile::tempdir().expect("The temporary directory should be created");
         let path = directory.path().join(PREFERENCES_FILE_NAME);
         let preferences = ClientPreferences {
+            automatically_check_for_updates: false,
             repository_paths: vec!["E:\\A".to_owned(), "E:\\B".to_owned()],
             active_repository_path: Some("E:\\A".to_owned()),
             repository_tab_customizations: vec![RepositoryTabCustomization {
@@ -515,6 +527,11 @@ mod tests {
                 icon: Some("gamepad".to_owned()),
             }],
             binary_preview_limit_mib: 64,
+            diff: DiffPreference {
+                diff_style: "split".to_owned(),
+                expand_full_file: true,
+                ..Default::default()
+            },
             external_diff_tools: vec![ExternalDiffPreference {
                 id: "diff-custom".to_owned(),
                 kind: "custom".to_owned(),
@@ -540,9 +557,14 @@ mod tests {
             preferences.active_repository_path
         );
         assert_eq!(restored.language, "zh-CN");
+        // 关闭自动更新的选择必须随偏好文件往返，否则重启后会被前端默认值覆盖。
+        assert!(!restored.automatically_check_for_updates);
         assert_eq!(restored.external_diff_tools[0].kind, "custom");
         assert_eq!(restored.external_diff_tools[0].name, "Studio Diff");
         assert_eq!(restored.binary_preview_limit_mib, 64);
+        // 前端新增的 Diff 参数必须随偏好文件往返，否则重启后会静默丢失布局选择。
+        assert_eq!(restored.diff.diff_style, "split");
+        assert!(restored.diff.expand_full_file);
         assert_eq!(restored.repository_tab_customizations.len(), 1);
         assert_eq!(
             restored.repository_tab_customizations[0].name.as_deref(),
@@ -606,8 +628,13 @@ mod tests {
         assert!(preferences.binary_diff_visible);
         assert_eq!(preferences.binary_preview_limit_mib, 20);
         assert_eq!(preferences.revision_history_lane_mode, "flat");
-        assert_eq!(preferences.external_diff_tools.len(), 4);
-        assert_eq!(preferences.external_merge_tools.len(), 4);
+        // 旧文件缺省启动检查字段时保持既有行为，不因升级静默关闭自动更新。
+        assert!(preferences.automatically_check_for_updates);
+        // 旧文件缺少前端新增的 Diff 布局字段时按升级前行为回退统一视图，且不自动展开全文。
+        assert_eq!(preferences.diff.diff_style, "unified");
+        assert!(!preferences.diff.expand_full_file);
+        assert_eq!(preferences.external_diff_tools.len(), 5);
+        assert_eq!(preferences.external_merge_tools.len(), 5);
         assert!(preferences.repository_tab_customizations.is_empty());
     }
 
@@ -615,6 +642,20 @@ mod tests {
     fn preferences_reject_unknown_revision_history_lane_mode() {
         let preferences = ClientPreferences {
             revision_history_lane_mode: "diagonal".to_owned(),
+            ..Default::default()
+        };
+
+        let error = validate_preferences(&preferences).unwrap_err();
+        assert_eq!(error.code, "preferences_value_invalid");
+    }
+
+    #[test]
+    fn preferences_reject_unknown_diff_style() {
+        let preferences = ClientPreferences {
+            diff: DiffPreference {
+                diff_style: "side-by-side".to_owned(),
+                ..Default::default()
+            },
             ..Default::default()
         };
 

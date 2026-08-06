@@ -81,6 +81,8 @@ interface InspectorProps {
   activeTab: InspectorTab
   onTabChange: (tab: InspectorTab) => void
   onLoadBinaryPreview?: (path: string, revision?: string, metadataOnly?: boolean) => Promise<BinaryFilePreview>
+  /** 按需读取指定 Revision 文本文件的真实加载器；未提供时展开全文保持部分视图。 */
+  onLoadRevisionText?: (revision: string, path: string) => Promise<string>
   onPrimaryChangeFile?: (file: ChangeFile | null) => void
   onNotify: (title: string, detail: string, tone?: ToastMessage['tone']) => void
   onRevealFile: (file: RepositoryFileReference) => void
@@ -663,6 +665,7 @@ export function Inspector({
   activeTab,
   onTabChange,
   onLoadBinaryPreview,
+  onLoadRevisionText,
   onPrimaryChangeFile,
   onNotify,
   onRevealFile,
@@ -937,6 +940,7 @@ export function Inspector({
               diffError={diffError}
               notice={diffNotice}
               onLoadBinaryPreview={onLoadBinaryPreview}
+              onLoadRevisionText={onLoadRevisionText}
               onPrimaryFileChange={onPrimaryChangeFile}
               selectionRequest={selectionRequest}
               onOpenContextMenu={openBatchContextMenu}

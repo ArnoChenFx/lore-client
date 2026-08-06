@@ -564,59 +564,119 @@ pub async fn lore_read_workspace_text(
     relative_path: String,
     max_bytes: Option<u64>,
 ) -> Result<String, LoreCommandError> {
-    let target_path = validate_existing_workspace_file(&repository_path, &relative_path)?;
-    let classification = classify_file_content(&target_path).map_err(|error| {
-        LoreCommandError::new(
-            "workspace_text_classification_failed",
-            format!(
-                "Failed to classify workspace file {}: {error}",
-                target_path.display()
-            ),
-        )
-    })?;
-    if classification.kind != FileContentKind::Text {
-        return Err(LoreCommandError::new(
-            "workspace_text_unavailable",
-            format!(
-                "File {} is not classified as text and cannot be read for inline resolution",
-                target_path.display()
-            ),
-        ));
-    }
-
-    let limit = max_bytes.unwrap_or(DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES);
-    let size = std::fs::metadata(&target_path)
-        .map_err(|error| {
+    let limit = max_bytes
+        .unwrap_or(DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES)
+        .min(DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES);
+    run_heavy_lore_task(&WORKSPACE_TEXT_READ_LANE, move || {
+        let target_path = validate_existing_workspace_file(&repository_path, &relative_path)?;
+        let classification = classify_file_content(&target_path).map_err(|error| {
             LoreCommandError::new(
-                "workspace_text_metadata_failed",
+                "workspace_text_classification_failed",
                 format!(
-                    "Failed to read workspace file size {}: {error}",
+                    "Failed to classify workspace file {}: {error}",
                     target_path.display()
                 ),
             )
-        })?
-        .len();
-    if size > limit {
-        return Err(LoreCommandError::new(
-            "workspace_text_too_large",
-            format!(
-                "File {} is {size} bytes, exceeding the inline text limit of {limit} bytes",
-                target_path.display()
-            ),
-        ));
-    }
+        })?;
+        if classification.kind != FileContentKind::Text {
+            return Err(LoreCommandError::new(
+                "workspace_text_unavailable",
+                format!(
+                    "File {} is not classified as text and cannot be read for inline resolution",
+                    target_path.display()
+                ),
+            ));
+        }
 
-    std::fs::read_to_string(&target_path).map_err(|error| {
-        LoreCommandError::new(
-            "workspace_text_decode_failed",
-            format!(
-                "Failed to decode workspace file {} as UTF-8: {error}",
-                target_path.display()
-            ),
-        )
+        let size = std::fs::metadata(&target_path)
+            .map_err(|error| {
+                LoreCommandError::new(
+                    "workspace_text_metadata_failed",
+                    format!(
+                        "Failed to read workspace file size {}: {error}",
+                        target_path.display()
+                    ),
+                )
+            })?
+            .len();
+        if size > limit {
+            return Err(LoreCommandError::new(
+                "workspace_text_too_large",
+                format!(
+                    "File {} is {size} bytes, exceeding the inline text limit of {limit} bytes",
+                    target_path.display()
+                ),
+            ));
+        }
+
+        std::fs::read_to_string(&target_path).map_err(|error| {
+            LoreCommandError::new(
+                "workspace_text_decode_failed",
+                format!(
+                    "Failed to decode workspace file {} as UTF-8: {error}",
+                    target_path.display()
+                ),
+            )
+        })
     })
+    .await
 }
 
+/// 有界读取指定不可变 Revision 中的文本文件内容，供 Diff 展开全文使用。
+///
+/// 与工作区版本不同，固定 Lore Storage 只能返回完整对象，无法做前缀采样，因此
+/// 先按文件树元数据校验大小上限，再读取完整对象并做 UTF-8 解码；超过上限或解码
+/// 失败都返回结构化错误，绝不把截断内容或二进制当成文本交给 Diff 视图。
+#[tauri::command]
+pub async fn lore_read_revision_text(
+    repository_path: String,
+    revision: String,
+    relative_path: String,
+    max_bytes: Option<u64>,
+) -> Result<String, LoreCommandError> {
+    let revision = validate_revision(&revision)?;
+    let relative_path = validate_repository_relative_paths(vec![relative_path])?
+        .into_iter()
+        .next()
+        .expect("validated single path always yields one entry");
+    let limit = max_bytes
+        .unwrap_or(DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES)
+        .min(DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES);
+    run_heavy_lore_task(&REVISION_FILES_READ_LANE, move || {
+        // 沿目标路径的祖先目录遍历不可变树，只返回精确匹配的文件，不做越界读取。
+        let files = collect_revision_tree_files_at_paths(
+            &repository_path,
+            &revision,
+            std::slice::from_ref(&relative_path),
+        )?;
+        let file = files
+            .iter()
+            .find(|file| file.path == relative_path)
+            .ok_or_else(|| {
+                LoreCommandError::new(
+                    "revision_text_file_missing",
+                    format!("The file {relative_path} does not exist in revision {revision}"),
+                )
+            })?;
+        if file.size > limit {
+            return Err(LoreCommandError::new(
+                "revision_text_too_large",
+                format!(
+                    "File {relative_path} in revision {revision} is {} bytes, exceeding the text limit of {limit} bytes",
+                    file.size
+                ),
+            ));
+        }
+        let content = read_revision_file_content(&repository_path, file)?;
+        String::from_utf8(content).map_err(|_| {
+            LoreCommandError::new(
+                "revision_text_decode_failed",
+                format!("File {relative_path} in revision {revision} is not valid UTF-8 text"),
+            )
+        })
+    })
+    .await
+}
 /// 使用用户配置的本地工具比较两个真实文件版本。
 ///
 /// 工作区存在的文件直接传递真实绝对路径；空树和不可变 Revision 内容只在 Rust

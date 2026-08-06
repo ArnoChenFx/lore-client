@@ -2,16 +2,17 @@ import type { ChangeFile, WorkingTreeDiff } from '../../types'
 import { changeFilePath } from './changeTreeModel'
 
 /**
- * 浏览器演示只用于验证 Diff 布局；真实模式始终通过 Lore 服务读取文件差异。
+ * 为浏览器演示模式生成可由 Diffs 库解析的示例补丁。
  *
- * 该夹具同时服务本地更改与 Revision Inspector，集中后可避免两个领域生成不同的
- * 演示补丁语义。
+ * 该数据只用于展示本地更改与 Revision Inspector 的布局、主题和补丁导出预览；
+ * Tauri 模式仍只消费 Lore 返回的真实 Diff，演示模式也不会借此执行任何仓库写操作。
  */
 export function createDemoWorkingTreeDiff(file: ChangeFile): WorkingTreeDiff {
   const path = changeFilePath(file)
   if (file.binary) {
     return { path, patch: '', action: file.status }
   }
+
   const previous =
     file.status === 'added'
       ? []
@@ -20,15 +21,14 @@ export function createDemoWorkingTreeDiff(file: ChangeFile): WorkingTreeDiff {
     file.status === 'deleted'
       ? []
       : ['  "streamingBudget": 896,', '  "lightingProfile": "GoldenHourReview",', '  "enableReflections": true']
-  const oldCount = Math.max(1, previous.length)
-  const newCount = Math.max(1, current.length)
+
   return {
     path,
     action: file.status,
     patch: [
       `--- a/${path}`,
       `+++ b/${path}`,
-      `@@ -1,${oldCount} +1,${newCount} @@`,
+      `@@ -${previous.length === 0 ? 0 : 1},${previous.length} +${current.length === 0 ? 0 : 1},${current.length} @@`,
       ...previous.map((line) => `-${line}`),
       ...current.map((line) => `+${line}`)
     ].join('\n')

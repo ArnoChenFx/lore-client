@@ -1,8 +1,10 @@
 /** 与具体页面无关的纯函数和共享状态投影入口。 */
 export * from './binaryPreview'
 export * from './changeTreeModel'
-export * from './createDemoWorkingTreeDiff'
 export * from './csvPreview'
+export * from './createDemoWorkingTreeDiff'
+export * from './diffThemes'
+export * from './diffPreferences'
 export * from './errorMessage'
 export * from './externalTools'
 export * from './fileLocks'

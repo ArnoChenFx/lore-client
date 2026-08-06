@@ -76,6 +76,12 @@ const ZERO_HASH_PATTERN = /^0+$/
 /** 行内文本读取与冲突解决写回的默认大小上限（与 Rust 适配层保持一致）。 */
 const DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES = 2 * 1024 * 1024
 
+/** 前端可下调文本预算，但不能绕过 Rust 与 IPC 共同采用的 2 MiB 硬上限。 */
+function normalizeWorkspaceTextLimit(maxBytes: number): number {
+  if (!Number.isFinite(maxBytes) || maxBytes <= 0) return DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES
+  return Math.min(Math.trunc(maxBytes), DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES)
+}
+
 /** 产品内置的本机 Lore 服务地址；测试它时不能依赖开发者机器上的 `.env`。 */
 const BUILT_IN_SERVER_URL = 'lore://127.0.0.1:41337'
 
@@ -1898,7 +1904,30 @@ export async function loadWorkspaceText(
   return invokeCommand<string>('lore_read_workspace_text', {
     repositoryPath,
     relativePath: path,
-    maxBytes
+    maxBytes: normalizeWorkspaceTextLimit(maxBytes)
+  })
+}
+
+/**
+ * 有界读取指定不可变 Revision 中的文本文件内容，供 Diff 展开全文使用。
+ *
+ * 只接受 Rust 已确认为文本的 Revision 普通文件；超过大小上限或非 UTF-8 时返回
+ * 结构化错误，前端据此显示原因而不是把截断内容交给 Diff 库。
+ */
+export async function loadRevisionText(
+  repositoryPath: string,
+  revision: string,
+  path: string,
+  maxBytes = DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES
+): Promise<string> {
+  if (!isTauri()) {
+    throw new Error(t('browserDemoMode'))
+  }
+  return invokeCommand<string>('lore_read_revision_text', {
+    repositoryPath,
+    revision,
+    relativePath: path,
+    maxBytes: normalizeWorkspaceTextLimit(maxBytes)
   })
 }
 
@@ -1916,14 +1945,16 @@ export interface ConflictResolutionWriteResult {
  */
 export async function writeConflictResolution(
   repositoryPath: string,
-  operation: Exclude<ConflictOperationKind, 'unknown'>,
+  expectedSession: ConflictSession,
   path: string,
+  expectedContent: string,
   content: string
 ): Promise<ConflictResolutionWriteResult> {
   return invokeCommand<ConflictResolutionWriteResult>('lore_write_conflict_resolution', {
     repositoryPath,
-    operation,
+    expectedSession,
     path,
+    expectedContent,
     content
   })
 }
@@ -2360,6 +2391,12 @@ function localizeCommandError(error: Partial<LoreCommandError>, command: string)
   if (error.code === 'workspace_text_unavailable') {
     return t('workspaceTextUnavailable')
   }
+  if (error.code === 'workspace_text_classification_failed') {
+    return t('workspaceTextClassificationFailed')
+  }
+  if (error.code === 'workspace_text_metadata_failed') {
+    return t('workspaceTextMetadataFailed')
+  }
   if (error.code === 'workspace_text_too_large') {
     return t('workspaceTextTooLarge')
   }
@@ -2369,8 +2406,23 @@ function localizeCommandError(error: Partial<LoreCommandError>, command: string)
   if (error.code === 'conflict_path_not_in_conflict') {
     return t('conflictPathNotInConflict')
   }
+  if (error.code === 'conflict_content_changed') {
+    return t('conflictContentChanged')
+  }
+  if (error.code === 'conflict_session_changed') {
+    return t('conflictSessionChanged')
+  }
   if (error.code === 'workspace_text_write_failed') {
     return t('workspaceTextWriteFailed')
+  }
+  if (error.code === 'revision_text_file_missing') {
+    return t('revisionTextFileMissing')
+  }
+  if (error.code === 'revision_text_too_large') {
+    return t('revisionTextTooLarge')
+  }
+  if (error.code === 'revision_text_decode_failed') {
+    return t('revisionTextDecodeFailed')
   }
   if (error.code === 'repository_view_workspace_dirty') {
     return t('cleanWorkspaceBeforeApplyingView')

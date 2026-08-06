@@ -84,9 +84,8 @@ describe('working-tree binary Diff visibility', () => {
       />
     )
 
-    // Diffs 库渲染为 Shadow DOM 自定义元素，SSR 阶段只有容器外壳；正文由客户端挂载。
+    // 按需组件在 SSR 阶段回退为空，但文本分支的视口仍必须存在且不能误入二进制预览。
     expect(html).toContain('working-diff__viewport')
-    expect(html).toContain('diffs-container')
     expect(html).not.toContain('二进制 Diff 已隐藏')
     expect(html).not.toContain('binary-diff-preview__csv')
   })
@@ -117,6 +116,35 @@ describe('working-tree binary Diff visibility', () => {
 
     expect(html).toContain('binary-diff-preview__csv')
     expect(html).not.toContain('diffs-container')
+  })
+
+  it('renders an unresolved text CSV conflict before the CSV preview', () => {
+    const html = renderToStaticMarkup(
+      <WorkingTreeDiff
+        file={{ ...csvFile, conflict: true, conflictUnresolved: true }}
+        selectionLabel={null}
+        selectedCount={1}
+        diff={null}
+        loading={false}
+        error={null}
+        binaryPreview={{
+          after: {
+            path: 'data/market.csv',
+            kind: 'csv',
+            mimeType: 'text/csv',
+            data: new TextEncoder().encode('symbol,price\nBTC,101'),
+            size: 20,
+            contentState: 'available'
+          }
+        }}
+        binaryPreviewLoading={false}
+        binaryPreviewError={null}
+        conflictContent={'<<<<<<< current\nBTC,100\n=======\nBTC,101\n>>>>>>> incoming'}
+      />
+    )
+
+    expect(html).toContain('working-diff__conflict')
+    expect(html).not.toContain('binary-diff-preview__csv')
   })
 
   it('keeps the Diff body empty while loading', () => {

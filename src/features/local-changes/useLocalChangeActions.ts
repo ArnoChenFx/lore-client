@@ -337,6 +337,7 @@ export function useLocalChangeActions({
 
   const readChangePatches = useCallback(
     async (files: ChangeFile[]) => {
+      // 演示模式只生成用于预览/计算导出长度的夹具；后续分支仍会阻止真实保存。
       if (applicationMode === 'browser-demo') return files.map(createDemoWorkingTreeDiff)
       return loadWorkingTreeDiff(activeRepository.path, files.map(changeFilePath), diffPreferences)
     },

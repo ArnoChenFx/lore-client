@@ -38,13 +38,16 @@ const {
   loadRevisionChanges,
   loadRevisionDiff,
   loadRevisionHistory,
+  loadRevisionText,
+  loadWorkspaceText,
   listAuthIdentities,
   listRemoteRepositories,
   loreEventParsers,
   publishRepository,
   runConflictAction,
   stageMove,
-  switchBranch
+  switchBranch,
+  writeConflictResolution
 } = await import('./lore')
 
 describe('repository snapshot branch loading', () => {
@@ -1118,6 +1121,35 @@ describe('repository snapshot branch loading', () => {
     })
   })
 
+  it('passes the read-time conflict session and source content to the native write boundary', async () => {
+    const session = {
+      kind: 'merge' as const,
+      currentRevision: 'current-revision',
+      stagedRevision: 'staged-revision',
+      incomingRevision: 'incoming-revision'
+    }
+    invokeMock.mockResolvedValueOnce({
+      resolved: true,
+      operation: { operation: 'branch.merge-resolve', status: 0, durationMs: 1, events: [] }
+    })
+
+    await writeConflictResolution(
+      'E:\\Worlds\\RealLore',
+      session,
+      'Content/Conflict.txt',
+      '<<<<<<< current\nold\n=======\nnew\n>>>>>>> incoming',
+      'resolved content'
+    )
+
+    expect(invokeMock).toHaveBeenCalledWith('lore_write_conflict_resolution', {
+      repositoryPath: 'E:\\Worlds\\RealLore',
+      expectedSession: session,
+      path: 'Content/Conflict.txt',
+      expectedContent: '<<<<<<< current\nold\n=======\nnew\n>>>>>>> incoming',
+      content: 'resolved content'
+    })
+  })
+
   it('passes an atomic move relation to the native stage command', async () => {
     invokeMock.mockResolvedValueOnce({
       operation: 'file.stage-move',
@@ -1175,5 +1207,89 @@ describe('repository snapshot branch loading', () => {
     await expect(runConflictAction('E:\\Worlds\\RealLore', 'merge', 'mine', ['Content/Conflict.txt'])).rejects.toThrow(
       'The current conflict operation could not be identified. Refresh the repository and try again.'
     )
+  })
+
+  it('maps every workspace and revision text error to the active locale', async () => {
+    const cases: Array<{
+      code: string
+      expected: string
+      call: () => Promise<string>
+    }> = [
+      {
+        code: 'workspace_text_classification_failed',
+        expected: 'The file type could not be determined. Refresh and try again.',
+        call: () => loadWorkspaceText('E:\\Worlds\\RealLore', 'Content/Conflict.txt')
+      },
+      {
+        code: 'workspace_text_metadata_failed',
+        expected: 'The file size could not be read. Check its permissions and try again.',
+        call: () => loadWorkspaceText('E:\\Worlds\\RealLore', 'Content/Conflict.txt')
+      },
+      {
+        code: 'revision_text_file_missing',
+        expected: 'This file no longer exists in the selected revision. Refresh the revision changes.',
+        call: () => loadRevisionText('E:\\Worlds\\RealLore', 'revision', 'Content/World.txt')
+      },
+      {
+        code: 'revision_text_too_large',
+        expected: 'This file exceeds the full-file expansion size limit.',
+        call: () => loadRevisionText('E:\\Worlds\\RealLore', 'revision', 'Content/World.txt')
+      },
+      {
+        code: 'revision_text_decode_failed',
+        expected: 'This revision file is not valid UTF-8 text and cannot be expanded.',
+        call: () => loadRevisionText('E:\\Worlds\\RealLore', 'revision', 'Content/World.txt')
+      }
+    ]
+
+    for (const testCase of cases) {
+      invokeMock.mockRejectedValueOnce({ code: testCase.code, message: 'Raw Rust diagnostic' })
+      await expect(testCase.call()).rejects.toThrow(testCase.expected)
+    }
+  })
+
+  it('maps stale inline conflict writes without exposing Rust diagnostics', async () => {
+    const session = {
+      kind: 'merge' as const,
+      currentRevision: 'current-revision',
+      stagedRevision: 'staged-revision',
+      incomingRevision: 'incoming-revision'
+    }
+    const cases = [
+      [
+        'conflict_content_changed',
+        'The file changed after it was loaded. Refresh the conflict view before applying a resolution.'
+      ],
+      [
+        'conflict_session_changed',
+        'The conflict session changed after it was loaded. Refresh local changes before applying a resolution.'
+      ]
+    ] as const
+
+    for (const [code, expected] of cases) {
+      invokeMock.mockRejectedValueOnce({ code, message: 'Raw Rust diagnostic' })
+      await expect(
+        writeConflictResolution('E:\\Worlds\\RealLore', session, 'Content/Conflict.txt', 'old', 'new')
+      ).rejects.toThrow(expected)
+    }
+  })
+
+  it('clamps caller-supplied text limits to the shared two MiB hard cap', async () => {
+    invokeMock.mockResolvedValueOnce('content').mockResolvedValueOnce('content')
+
+    await loadWorkspaceText('E:\\Worlds\\RealLore', 'Content/Conflict.txt', 64 * 1024 * 1024)
+    await loadRevisionText('E:\\Worlds\\RealLore', 'revision', 'Content/World.txt', 64 * 1024 * 1024)
+
+    expect(invokeMock).toHaveBeenNthCalledWith(1, 'lore_read_workspace_text', {
+      repositoryPath: 'E:\\Worlds\\RealLore',
+      relativePath: 'Content/Conflict.txt',
+      maxBytes: 2 * 1024 * 1024
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(2, 'lore_read_revision_text', {
+      repositoryPath: 'E:\\Worlds\\RealLore',
+      revision: 'revision',
+      relativePath: 'Content/World.txt',
+      maxBytes: 2 * 1024 * 1024
+    })
   })
 })
