@@ -97,13 +97,14 @@ impl Default for ExternalDiffPreference {
 }
 
 fn default_external_tools(mode: &str) -> Vec<ExternalDiffPreference> {
-    ["beyondCompare", "cursor", "p4merge", "vscode"]
+    ["beyondCompare", "cursor", "p4merge", "vscode", "meld"]
         .into_iter()
         .map(|kind| {
             let (name, executable) = match kind {
                 "beyondCompare" => ("Beyond Compare", "BCompare"),
                 "cursor" => ("Cursor", "cursor"),
                 "p4merge" => ("P4Merge", "p4merge"),
+                "meld" => ("Meld", "meld"),
                 _ => ("Visual Studio Code", "code"),
             };
             let arguments = if mode == "diff" {
@@ -113,6 +114,12 @@ fn default_external_tools(mode: &str) -> Vec<ExternalDiffPreference> {
                         "/lefttitle={beforeLabel}",
                         "/righttitle={afterLabel}",
                         "{before}",
+                        "{after}",
+                    ],
+                    "meld" => vec![
+                        "--label={beforeLabel}",
+                        "{before}",
+                        "--label={afterLabel}",
                         "{after}",
                     ],
                     _ => vec![
@@ -132,6 +139,7 @@ fn default_external_tools(mode: &str) -> Vec<ExternalDiffPreference> {
                         ]
                     }
                     "p4merge" => vec!["{base}", "{remote}", "{local}", "{merged}"],
+                    "meld" => vec!["{local}", "{base}", "{remote}", "--output={merged}"],
                     _ => vec!["{remote}", "{local}", "{base}", "{merged}"],
                 }
             };
@@ -364,7 +372,7 @@ fn validate_preferences(preferences: &ClientPreferences) -> Result<(), LoreComma
     let valid_external_tool = |tool: &ExternalDiffPreference| {
         matches!(
             tool.kind.as_str(),
-            "none" | "vscode" | "cursor" | "beyondCompare" | "p4merge" | "custom"
+            "none" | "vscode" | "cursor" | "beyondCompare" | "p4merge" | "meld" | "custom"
         ) && !tool.id.is_empty()
             && tool.id.len() <= 128
             && tool.name.len() <= 128

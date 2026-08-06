@@ -45,7 +45,8 @@ describe('external diff configuration', () => {
       'vscode',
       'beyondCompare',
       'cursor',
-      'p4merge'
+      'p4merge',
+      'meld'
     ])
   })
 

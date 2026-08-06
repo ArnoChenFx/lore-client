@@ -183,7 +183,7 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
         typeof tool?.id === 'string' && tool.id.trim()
           ? tool.id.trim().slice(0, 128)
           : `${mode}-${tool?.kind ?? 'custom'}-${index}`,
-      kind: ['vscode', 'cursor', 'beyondCompare', 'p4merge', 'custom'].includes(tool?.kind ?? '')
+      kind: ['vscode', 'cursor', 'beyondCompare', 'p4merge', 'meld', 'custom'].includes(tool?.kind ?? '')
         ? tool.kind
         : ('custom' as const),
       name: typeof tool?.name === 'string' ? tool.name.slice(0, 128) : '',

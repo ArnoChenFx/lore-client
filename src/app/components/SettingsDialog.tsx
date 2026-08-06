@@ -310,6 +310,7 @@ export function SettingsDialog({
               <option value="cursor">Cursor</option>
               <option value="beyondCompare">Beyond Compare</option>
               <option value="p4merge">P4Merge</option>
+              <option value="meld">Meld</option>
               <option value="custom">{t('customExternalDiffTool')}</option>
             </SelectInput>
           </div>

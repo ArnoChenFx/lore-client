@@ -65,6 +65,14 @@ export function externalToolPreset(
         arguments: ['/lefttitle={beforeLabel}', '/righttitle={afterLabel}', '{before}', '{after}']
       }
     }
+    if (kind === 'meld') {
+      return {
+        ...shared,
+        name: 'Meld',
+        executable: 'meld',
+        arguments: ['--label={beforeLabel}', '{before}', '--label={afterLabel}', '{after}']
+      }
+    }
     return {
       ...shared,
       name: 'P4Merge',
@@ -97,6 +105,14 @@ export function externalToolPreset(
       arguments: ['{remote}', '{local}', '{base}', '{merged}']
     }
   }
+  if (kind === 'meld') {
+    return {
+      ...shared,
+      name: 'Meld',
+      executable: 'meld',
+      arguments: ['{local}', '{base}', '{remote}', '--output={merged}']
+    }
+  }
   return {
     ...shared,
     name: 'P4Merge',
@@ -106,11 +122,11 @@ export function externalToolPreset(
 }
 
 export const DEFAULT_EXTERNAL_DIFF_TOOLS: ExternalDiffToolPreference[] = (
-  ['beyondCompare', 'cursor', 'p4merge', 'vscode'] as const
+  ['beyondCompare', 'cursor', 'p4merge', 'vscode', 'meld'] as const
 ).map((kind) => externalToolPreset('diff', kind))
 
 export const DEFAULT_EXTERNAL_MERGE_TOOLS: ExternalMergeToolPreference[] = (
-  ['beyondCompare', 'cursor', 'p4merge', 'vscode'] as const
+  ['beyondCompare', 'cursor', 'p4merge', 'vscode', 'meld'] as const
 ).map((kind) => externalToolPreset('merge', kind))
 
 /** 返回单个 Diff 工具预设，供配置测试与编辑器复用。 */

@@ -31,7 +31,7 @@ requested transiently from email; text and local initials remain when unavailabl
 ## 3. Integrations
 
 Configure separate **External Merge Tools** and **External Diff Tools**. Add Visual Studio
-Code, Cursor, Beyond Compare, P4Merge, or Custom. Each group supports several tools.
+Code, Cursor, Beyond Compare, P4Merge, Meld, or Custom. Each group supports several tools.
 
 ### List actions
 

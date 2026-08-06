@@ -426,7 +426,7 @@ export interface DiffPreferences {
 }
 
 /** 外部 Diff 设置页提供的工具预设；`custom` 允许接入任意本地可执行文件。 */
-export type ExternalDiffToolKind = 'none' | 'vscode' | 'cursor' | 'beyondCompare' | 'p4merge' | 'custom'
+export type ExternalDiffToolKind = 'none' | 'vscode' | 'cursor' | 'beyondCompare' | 'p4merge' | 'meld' | 'custom'
 
 /**
  * 单个外部 Diff 工具配置。
