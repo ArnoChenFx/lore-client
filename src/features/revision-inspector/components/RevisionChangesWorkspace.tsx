@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { useTranslation } from 'react-i18next'
 
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
+import { resolveTheme } from '../../../hooks/useTheme'
 import { t } from '../../../i18n'
 import {
   buildChangeTreeRows,
@@ -44,6 +45,7 @@ import {
   DiffOptionsControl,
   PaneResizer,
   SelectInput,
+  TextDiffView,
   type BinaryDiffPreviewView
 } from '../../../shared/ui'
 import type {
@@ -217,6 +219,7 @@ export function RevisionChangesWorkspace({
   const diffLines = useMemo(() => (primaryDiff?.patch ? parseUnifiedDiff(primaryDiff.patch) : []), [primaryDiff?.patch])
   const diffLineCounts = useMemo(() => countUnifiedDiffLines(diffLines), [diffLines])
   const primaryContentKind = resolvedDiffContentKind(primaryFile, primaryDiff)
+  const themeType = resolveTheme(preferences.theme)
   const previewModeActive = primaryFile
     ? shouldUseRepositoryPreview(
         primaryFile,
@@ -772,21 +775,7 @@ export function RevisionChangesWorkspace({
                 className="revision-diff-pane__viewport"
                 aria-label={t('status.revisionDiffOf', { name: primaryFile.name })}
               >
-                <div className="revision-diff-pane__columns" aria-hidden="true">
-                  <span>{t('oldLines')}</span>
-                  <span>{t('newLines')}</span>
-                  <span>{t('content')}</span>
-                </div>
-                <code className="revision-diff-pane__code">
-                  {diffLines.map((line) => (
-                    <span key={line.id} className={`revision-diff-pane__line is-${line.kind}`}>
-                      <i>{line.oldLine ?? ''}</i>
-                      <i>{line.newLine ?? ''}</i>
-                      <b aria-hidden="true">{line.kind === 'addition' ? '+' : line.kind === 'deletion' ? '−' : ' '}</b>
-                      <span>{line.content || ' '}</span>
-                    </span>
-                  ))}
-                </code>
+                <TextDiffView patch={primaryDiff.patch} filePath={changeFilePath(primaryFile)} themeType={themeType} />
               </div>
             )}
           </section>

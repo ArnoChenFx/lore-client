@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
+import { resolveTheme } from '../../../hooks/useTheme'
 import { fileLockOwnerLabel } from '../../../shared/lib'
 import {
   binaryPreviewKind,
@@ -13,7 +14,13 @@ import {
   resolvedDiffContentKind,
   shouldUseRepositoryPreview
 } from '../../../shared/lib'
-import { BinaryDiffPreview, DiffOptionsControl, type BinaryDiffPreviewView } from '../../../shared/ui'
+import {
+  BinaryDiffPreview,
+  ConflictResolutionView,
+  DiffOptionsControl,
+  TextDiffView,
+  type BinaryDiffPreviewView
+} from '../../../shared/ui'
 import type { ChangeFile, LoreFileLock, WorkingTreeDiff } from '../../../types'
 
 interface WorkingTreeDiffProps {
@@ -27,6 +34,11 @@ interface WorkingTreeDiffProps {
   binaryPreview: BinaryDiffPreviewView | null
   binaryPreviewLoading: boolean
   binaryPreviewError: string | null
+  /** 未解决冲突文件的行内解决内容；存在时优先渲染行内冲突解决视图。 */
+  conflictContent?: string
+  conflictContentLoading?: boolean
+  conflictContentError?: string | null
+  onConflictResolved?: (resolvedContent: string) => void
 }
 
 /** 本地更改专用 Diff 面板，只渲染 Lore 返回的 unified patch。 */
@@ -40,15 +52,21 @@ export function WorkingTreeDiff({
   error,
   binaryPreview,
   binaryPreviewLoading,
-  binaryPreviewError
+  binaryPreviewError,
+  conflictContent,
+  conflictContentLoading = false,
+  conflictContentError = null,
+  onConflictResolved
 }: WorkingTreeDiffProps) {
   const { t } = useTranslation()
   const { preferences } = useClientPreferences()
   const lines = useMemo(() => (diff?.patch ? parseUnifiedDiff(diff.patch) : []), [diff?.patch])
   const lineCounts = useMemo(() => countUnifiedDiffLines(lines), [lines])
+  const themeType = resolveTheme(preferences.theme)
   const previewableKind = file ? binaryPreviewKind(changeFilePath(file)) : null
   const contentKind = resolvedDiffContentKind(file, diff)
   const binary = contentKind === 'binary'
+  const showInlineConflict = Boolean(file?.conflict && file?.conflictUnresolved)
   const previewModeActive = file
     ? shouldUseRepositoryPreview(file, changeFilePath(file), preferences.binaryDiffVisible, contentKind)
     : false
@@ -143,6 +161,32 @@ export function WorkingTreeDiff({
           error={binaryPreviewError}
           size={file.size ? Number(file.size) : undefined}
         />
+      ) : showInlineConflict ? (
+        conflictContentError ? (
+          <div className="working-diff__empty is-error">
+            <TriangleAlert size={27} />
+            <strong>{t('unableToLoadFileDiff')}</strong>
+            <span>{conflictContentError}</span>
+          </div>
+        ) : conflictContent === undefined && conflictContentLoading ? null : conflictContent === undefined ? (
+          <div className="working-diff__empty">
+            <FileQuestion size={28} />
+            <strong>{t('conflictContentUnavailable')}</strong>
+            <span>{t('conflictContentUnavailableHint')}</span>
+          </div>
+        ) : (
+          <div
+            className="working-diff__viewport working-diff__conflict"
+            aria-label={t('status.textDiffOf', { name: file.name })}
+          >
+            <ConflictResolutionView
+              content={conflictContent}
+              fileName={file.name}
+              themeType={themeType}
+              onResolved={onConflictResolved ?? (() => undefined)}
+            />
+          </div>
+        )
       ) : lines.length === 0 ? (
         <div className="working-diff__empty">
           <FileQuestion size={28} />
@@ -151,21 +195,7 @@ export function WorkingTreeDiff({
         </div>
       ) : (
         <div className="working-diff__viewport" aria-label={t('status.textDiffOf', { name: file.name })}>
-          <div className="working-diff__columns" aria-hidden="true">
-            <span>{t('oldLines')}</span>
-            <span>{t('newLines')}</span>
-            <span>{t('content')}</span>
-          </div>
-          <code className="working-diff__code">
-            {lines.map((line) => (
-              <span key={line.id} className={`working-diff__line is-${line.kind}`}>
-                <i>{line.oldLine ?? ''}</i>
-                <i>{line.newLine ?? ''}</i>
-                <b aria-hidden="true">{line.kind === 'addition' ? '+' : line.kind === 'deletion' ? '−' : ' '}</b>
-                <span>{line.content || ' '}</span>
-              </span>
-            ))}
-          </code>
+          <TextDiffView patch={diff?.patch ?? ''} filePath={changeFilePath(file)} themeType={themeType} />
         </div>
       )}
     </section>

@@ -306,6 +306,20 @@ kbd {
   user-select: text;
 }
 
+/*
+ * Diffs 库把正文渲染进 diffs-container 自定义元素的 Shadow DOM；user-select
+ * 会跨 shadow 边界继承，必须在这里显式恢复文本选择，否则 Diff 正文无法复制。
+ */
+.app-shell diffs-container {
+  -webkit-user-select: text;
+  user-select: text;
+  --diffs-bg: var(--bg-panel);
+  --diffs-bg-buffer-override: var(--bg-panel);
+  --diffs-bg-context-override: var(--line);
+  --diffs-bg-context-gutter-override: var(--bg-panel);
+  --diffs-bg-separator-override: var(--line);
+}
+
 /* ==========================================================================
    标题栏与全局工具带
    ========================================================================== */
@@ -4555,6 +4569,48 @@ button.sidebar__repo-mark:focus-visible {
   display: block;
   padding: 1px 9px;
   color: var(--muted);
+}
+
+/*
+ * 行内冲突解决按钮由 renderMergeConflictUtility 渲染进库的 slot（light DOM），
+ * 视觉上投影到 Shadow DOM 内，但样式仍使用宿主文档作用域，因此这里可以直接
+ * 复用主题令牌。按钮保持中性表面，focus-visible 使用主题蓝实体边框与 outline。
+ */
+.conflict-resolution-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.conflict-resolution-actions__button {
+  min-height: 24px;
+  padding: 2px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--bg-panel-solid, var(--bg-panel));
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.conflict-resolution-actions__button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.conflict-resolution-actions__button:active:not(:disabled) {
+  border-color: var(--accent-solid);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-panel-solid, var(--bg-panel)));
+}
+
+.conflict-resolution-actions__button:focus-visible {
+  border-color: var(--accent-solid);
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  outline-offset: 1px;
+}
+
+.conflict-resolution-actions__button:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
 }
 
 /* 本地更改批量菜单与二级菜单 */

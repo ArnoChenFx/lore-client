@@ -1035,6 +1035,9 @@ const enUSStatic = {
     'The current conflict operation could not be identified. Refresh the repository and try again.',
   conflictOperationUnknown: 'Unknown conflict operation',
   conflictResolution: 'Conflict resolution',
+  conflictAcceptCurrentChange: 'Accept current change',
+  conflictAcceptIncomingChange: 'Accept incoming change',
+  conflictAcceptBothChanges: 'Accept both',
   conflictResolved: 'Resolved conflict',
   conflictsResolvedReadyToCreateRevision: 'All conflicts resolved — ready to commit',
   createRevisionToFinishConflictOperation:
@@ -1044,11 +1047,20 @@ const enUSStatic = {
   conflictRevertOperation: 'Revert conflict',
   conflictStateUnavailable:
     'The current conflict state could not be read. Refresh the repository and check the Lore event log.',
+  conflictContentUnavailable: 'Conflict file contents unavailable',
+  conflictContentUnavailableHint:
+    'Inline resolution requires reading the real workspace text. If this keeps failing, use an external merge tool.',
   conflictUnresolved: 'Unresolved conflict',
   markConflictResolved: 'Mark resolved',
   markConflictUnresolved: 'Mark unresolved again',
   restartSelectedConflict: 'Regenerate selected conflicts',
   selectConflictFilesToContinue: 'Select conflict files before running a file-level resolution action.',
+  workspaceTextUnavailable: 'This file is not readable text and cannot be resolved inline.',
+  workspaceTextTooLarge: 'This file exceeds the inline resolution size limit. Use an external merge tool instead.',
+  workspaceTextDecodeFailed: 'This file could not be decoded as UTF-8, so inline resolution is unavailable.',
+  workspaceTextWriteFailed:
+    'Failed to write the resolved content back. Check the workspace file permissions and retry.',
+  conflictPathNotInConflict: 'This file is no longer in conflict. Refresh local changes and try again.',
   useCurrentVersion: 'Use current version',
   useIncomingVersion: 'Use incoming version',
   abortConflictOperation: 'Abort conflict operation',

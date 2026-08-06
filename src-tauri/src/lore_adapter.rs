@@ -105,6 +105,7 @@ pub(crate) mod workspace;
 
 use file_content::{
     classify_file_content, FileContentClassification, FileContentClassificationSource,
+    FileContentKind,
 };
 
 // 私有导入让兄弟模块可以通过父模块复用 `pub(super)` 支撑项，同时不扩大 crate API。

@@ -49,7 +49,7 @@ describe('working-tree binary Diff visibility', () => {
     const diff: WorkingTreeDiffData = {
       path: 'data/market.csv',
       action: 'modify',
-      patch: '@@ -1 +1 @@\n-symbol,price\n-BTC,100\n+BTC,101',
+      patch: '--- a/data/market.csv\n+++ b/data/market.csv\n@@ -1 +1 @@\n-symbol,price\n-BTC,100\n+BTC,101',
       contentClassification: { kind: 'text', source: 'loreDiff' }
     }
 
@@ -84,9 +84,9 @@ describe('working-tree binary Diff visibility', () => {
       />
     )
 
-    expect(html).toContain('working-diff__code')
-    expect(html).toContain('BTC,100')
-    expect(html).toContain('BTC,101')
+    // Diffs 库渲染为 Shadow DOM 自定义元素，SSR 阶段只有容器外壳；正文由客户端挂载。
+    expect(html).toContain('working-diff__viewport')
+    expect(html).toContain('diffs-container')
     expect(html).not.toContain('二进制 Diff 已隐藏')
     expect(html).not.toContain('binary-diff-preview__csv')
   })
@@ -116,7 +116,7 @@ describe('working-tree binary Diff visibility', () => {
     )
 
     expect(html).toContain('binary-diff-preview__csv')
-    expect(html).not.toContain('working-diff__code')
+    expect(html).not.toContain('diffs-container')
   })
 
   it('keeps the Diff body empty while loading', () => {

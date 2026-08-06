@@ -10,6 +10,12 @@ use super::*;
 /// 同时把每次主线程工作限制在可交互的时间片内。
 const FILE_PREVIEW_STREAM_CHUNK_BYTES: usize = 256 * 1024;
 
+/// 行内文本读取（冲突解决等）的默认大小上限。
+///
+/// 该预算只约束单个文件的工作区文本读取；超过上限返回结构化错误而不是截断正文，
+/// 避免把大型文件的一部分误当成完整冲突内容写回。
+pub(super) const DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES: u64 = 2 * 1024 * 1024;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LoreFilePreviewStreamHeader {
@@ -545,6 +551,66 @@ pub fn lore_open_workspace_file(
             "workspace_file_open_failed",
             format!(
                 "Failed to open {} with the associated system application: {error}",
+                target_path.display()
+            ),
+        )
+    })
+}
+
+/// 有界读取工作区文本文件内容，供行内冲突解决等真实内容预览使用。
+#[tauri::command]
+pub async fn lore_read_workspace_text(
+    repository_path: String,
+    relative_path: String,
+    max_bytes: Option<u64>,
+) -> Result<String, LoreCommandError> {
+    let target_path = validate_existing_workspace_file(&repository_path, &relative_path)?;
+    let classification = classify_file_content(&target_path).map_err(|error| {
+        LoreCommandError::new(
+            "workspace_text_classification_failed",
+            format!(
+                "Failed to classify workspace file {}: {error}",
+                target_path.display()
+            ),
+        )
+    })?;
+    if classification.kind != FileContentKind::Text {
+        return Err(LoreCommandError::new(
+            "workspace_text_unavailable",
+            format!(
+                "File {} is not classified as text and cannot be read for inline resolution",
+                target_path.display()
+            ),
+        ));
+    }
+
+    let limit = max_bytes.unwrap_or(DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES);
+    let size = std::fs::metadata(&target_path)
+        .map_err(|error| {
+            LoreCommandError::new(
+                "workspace_text_metadata_failed",
+                format!(
+                    "Failed to read workspace file size {}: {error}",
+                    target_path.display()
+                ),
+            )
+        })?
+        .len();
+    if size > limit {
+        return Err(LoreCommandError::new(
+            "workspace_text_too_large",
+            format!(
+                "File {} is {size} bytes, exceeding the inline text limit of {limit} bytes",
+                target_path.display()
+            ),
+        ));
+    }
+
+    std::fs::read_to_string(&target_path).map_err(|error| {
+        LoreCommandError::new(
+            "workspace_text_decode_failed",
+            format!(
+                "Failed to decode workspace file {} as UTF-8: {error}",
                 target_path.display()
             ),
         )

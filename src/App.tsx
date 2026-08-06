@@ -73,11 +73,19 @@ import {
   loadRepositorySnapshot,
   pushBranch,
   openExternalDiff,
-  selectExternalDiffExecutable
+  selectExternalDiffExecutable,
+  writeConflictResolution
 } from './services/lore'
 import { changeDirectoryPathFromObjectId, changeFileObjectId, changeFilePath, readErrorMessage } from './shared/lib'
 import { PaneResizer } from './shared/ui'
-import type { BinaryFilePreview, NavigationView, OperationDetail, Repository, RepositorySnapshot } from './types'
+import type {
+  BinaryFilePreview,
+  ChangeFile,
+  NavigationView,
+  OperationDetail,
+  Repository,
+  RepositorySnapshot
+} from './types'
 
 const applicationMode = getApplicationMode()
 const dependencyGraphFixtureEnabled = shouldUseBrowserDependencyGraphFixture(applicationMode)
@@ -522,6 +530,34 @@ function App() {
     runRepositoryMutation,
     upsertSnapshot
   })
+
+  /**
+   * 行内冲突解决写回：内容由 Diffs 库在浏览器内组装，但写回必须进入 Repository
+   * 串行门闩，成功后按 Lore 最终快照收口；当前文件可能已被其他进程改动，因此
+   * 不乐观更新本地列表，统一交给 runRepositoryMutation 重读真实状态。
+   */
+  const resolveInlineConflict = useCallback(
+    async (file: ChangeFile, resolvedContent: string) => {
+      const session = activeSnapshot?.conflictSession
+      if (applicationMode !== 'tauri') {
+        notify(t('browserDemoMode'), t('browserDemoModeReadLocal_fca5'), 'warning')
+        return
+      }
+      if (!session || session.kind === 'unknown') {
+        notify(t('conflictResolution'), t('conflictOperationCouldNotBeIdentified'), 'warning')
+        return
+      }
+      // 在闭包外固定操作类型，避免回调内重新读取属性时丢失 unknown 收窄。
+      const operation = session.kind
+      await runRepositoryMutation(
+        'markConflictResolved',
+        (repository) => writeConflictResolution(repository.path, operation, changeFilePath(file), resolvedContent),
+        operationMessage('status.conflictFilesUpdated', { count: 1 }),
+        'changes'
+      )
+    },
+    [activeSnapshot?.conflictSession, notify, runRepositoryMutation]
+  )
 
   /** 从配置页直接 Push 当前分支；远端地址必须已经落盘，不能使用未保存草稿。 */
   const pushCurrentRepository = useCallback(async () => {
@@ -999,6 +1035,7 @@ function App() {
                     fileLock={selectedFileLock ?? undefined}
                     selectionLabel={selectedChangeFolder}
                     selectedCount={selectedChangeIds.length}
+                    onConflictResolved={(file, content) => void resolveInlineConflict(file, content)}
                   />
                 ) : (
                   <Inspector

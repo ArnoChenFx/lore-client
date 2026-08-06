@@ -545,6 +545,162 @@ pub async fn lore_conflict_action(
     .await
 }
 
+/// 行内冲突解决的结果：内容是否已不含冲突标记，以及本次 Lore 操作结果。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoreConflictResolutionWriteResult {
+    /// 内容已不含任何冲突标记时为 true，此时 Lore 会把该路径标记为已解决。
+    pub resolved: bool,
+    /// 写回与（可能发生的）resolve 的完整事件流；仍含标记时只包含写回事件。
+    pub operation: LoreOperationResult,
+}
+
+/// 把行内解决后的完整文本写回工作区，并在内容干净时标记为已解决。
+///
+/// 这是 Diffs 库行内冲突解决（Accept current / incoming / both）的 Rust 写入口：
+/// 前端只提交单条仓库相对路径与解决后的 UTF-8 正文，Rust 在写入前重新确认该文件
+/// 仍处于真实冲突会话，避免旧 UI 快照把任意内容写回非冲突文件；内容仍包含冲突
+/// 标记时只写回不标记，全部区域解决后 Lore 才把该路径标记为 resolved。
+#[tauri::command]
+pub async fn lore_write_conflict_resolution(
+    repository_path: String,
+    operation: LoreConflictOperationKind,
+    path: String,
+    content: String,
+) -> Result<LoreConflictResolutionWriteResult, LoreCommandError> {
+    if operation == LoreConflictOperationKind::Unknown {
+        return Err(LoreCommandError::new(
+            "unknown_conflict_operation",
+            "The current Lore conflict operation type is unknown; refresh the repository state or verify the repository",
+        ));
+    }
+    if content.len() > crate::lore_adapter::workspace::DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES as usize {
+        return Err(LoreCommandError::new(
+            "workspace_text_too_large",
+            "The resolved content exceeds the inline text limit; resolve large files with an external merge tool",
+        ));
+    }
+
+    run_lore_task(move || {
+        let status_globals = global_args(&repository_path)?;
+        let status = run_operation("conflict.resolve-write.status", move |callback| {
+            lore::runtime().block_on(lore::repository::status(
+                status_globals,
+                LoreRepositoryStatusArgs {
+                    staged: 1,
+                    scan: 0,
+                    check_dirty: 0,
+                    reset: 0,
+                    sync_point: 0,
+                    revision_only: 0,
+                    count: 0,
+                    paths: LoreArray::default(),
+                },
+                callback,
+            ))
+        })?;
+        ensure_conflict_read_succeeded(&status, "Read conflict status before writing resolution")?;
+        let normalized_path = validate_repository_relative_paths(vec![path.clone()])?
+            .into_iter()
+            .next()
+            .expect("validated single path always yields one entry");
+        let is_conflict_file = status.events.iter().any(|event| {
+            event.get("tagName").and_then(Value::as_str) == Some("repositoryStatusFile")
+                && event.pointer("/data/path").and_then(Value::as_str)
+                    == Some(normalized_path.as_str())
+                && event.pointer("/data/flagConflict").is_some_and(|value| {
+                    value.as_bool().unwrap_or(false) || value.as_u64().is_some_and(|flag| flag != 0)
+                })
+        });
+        if !is_conflict_file {
+            return Err(LoreCommandError::new(
+                "conflict_path_not_in_conflict",
+                format!("File {normalized_path} is not currently in conflict"),
+            ));
+        }
+
+        let target_path = validate_existing_workspace_file(&repository_path, &normalized_path)?;
+        std::fs::write(&target_path, &content).map_err(|error| {
+            LoreCommandError::new(
+                "workspace_text_write_failed",
+                format!(
+                    "Failed to write resolved content to {}: {error}",
+                    target_path.display()
+                ),
+            )
+        })?;
+
+        let resolved = !contains_conflict_markers(&content);
+        let operation_result = if resolved {
+            let globals = global_args(&repository_path)?;
+            let lore_paths = || LoreArray::from_vec(vec![normalized_path.clone().into()]);
+            match operation {
+                LoreConflictOperationKind::Merge => {
+                    run_operation("branch.merge-resolve", move |callback| {
+                        lore::runtime().block_on(lore::branch::merge_resolve(
+                            globals,
+                            LoreBranchMergeResolveArgs {
+                                paths: lore_paths(),
+                            },
+                            callback,
+                        ))
+                    })
+                }
+                LoreConflictOperationKind::CherryPick => {
+                    run_operation("revision.cherry-pick-resolve", move |callback| {
+                        lore::runtime().block_on(lore::revision::cherry_pick_resolve(
+                            globals,
+                            LoreRevisionCherryPickResolveArgs {
+                                paths: lore_paths(),
+                            },
+                            callback,
+                        ))
+                    })
+                }
+                LoreConflictOperationKind::Revert => {
+                    run_operation("revision.revert-resolve", move |callback| {
+                        lore::runtime().block_on(lore::revision::revert_resolve(
+                            globals,
+                            LoreRevisionRevertResolveArgs {
+                                paths: lore_paths(),
+                            },
+                            callback,
+                        ))
+                    })
+                }
+                LoreConflictOperationKind::Unknown => {
+                    unreachable!("Unknown operation types are rejected before the task starts")
+                }
+            }?
+        } else {
+            LoreOperationResult {
+                operation: "conflict.resolve-write",
+                status: 0,
+                duration_ms: 0,
+                events: Vec::new(),
+            }
+        };
+
+        Ok(LoreConflictResolutionWriteResult {
+            resolved,
+            operation: operation_result,
+        })
+    })
+    .await
+}
+
+/// 检测正文是否仍包含标准冲突标记行（`<<<<<<<` / `|||||||` / `=======` / `>>>>>>>`）。
+pub(super) fn contains_conflict_markers(content: &str) -> bool {
+    content.lines().any(|line| {
+        let trimmed = line.trim_start();
+        trimmed.starts_with("<<<<<<<")
+            || trimmed.starts_with(">>>>>>>")
+            || trimmed.starts_with("|||||||")
+            || trimmed == "======="
+            || trimmed.starts_with("======= ")
+    })
+}
+
 /// 归档指定本地 Branch；联网模式下 Lore Core 同步归档其远端指针。
 #[tauri::command]
 pub async fn lore_branch_archive(

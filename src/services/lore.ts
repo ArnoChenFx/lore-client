@@ -73,6 +73,9 @@ import { invokeLogged } from './logging'
 
 const ZERO_HASH_PATTERN = /^0+$/
 
+/** 行内文本读取与冲突解决写回的默认大小上限（与 Rust 适配层保持一致）。 */
+const DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES = 2 * 1024 * 1024
+
 /** 产品内置的本机 Lore 服务地址；测试它时不能依赖开发者机器上的 `.env`。 */
 const BUILT_IN_SERVER_URL = 'lore://127.0.0.1:41337'
 
@@ -1878,6 +1881,53 @@ export async function runConflictAction(
   })
 }
 
+/**
+ * 有界读取工作区文本文件内容，供行内冲突解决等真实内容预览使用。
+ *
+ * 只接受 Rust 已确认为文本的工作区普通文件；超过大小上限时返回结构化错误，
+ * 前端据此显示原因而不是把截断内容交给 Diff 库。
+ */
+export async function loadWorkspaceText(
+  repositoryPath: string,
+  path: string,
+  maxBytes = DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES
+): Promise<string> {
+  if (!isTauri()) {
+    throw new Error(t('browserDemoMode'))
+  }
+  return invokeCommand<string>('lore_read_workspace_text', {
+    repositoryPath,
+    relativePath: path,
+    maxBytes
+  })
+}
+
+/** 行内冲突解决写回结果：内容是否已完全解决，以及本次 Lore 操作的事件流。 */
+export interface ConflictResolutionWriteResult {
+  resolved: boolean
+  operation: LoreOperationResult
+}
+
+/**
+ * 把行内解决后的完整文本写回工作区，并在内容干净时标记为已解决。
+ *
+ * 只接受单条仓库相对路径；Rust 会重新确认该文件仍处于真实冲突会话，并拒绝
+ * 仍包含冲突标记的内容标记完成，避免把未完成的中间状态伪装成 resolved。
+ */
+export async function writeConflictResolution(
+  repositoryPath: string,
+  operation: Exclude<ConflictOperationKind, 'unknown'>,
+  path: string,
+  content: string
+): Promise<ConflictResolutionWriteResult> {
+  return invokeCommand<ConflictResolutionWriteResult>('lore_write_conflict_resolution', {
+    repositoryPath,
+    operation,
+    path,
+    content
+  })
+}
+
 /** 归档本地 Branch；联网模式下 Lore 会同步归档远端指针。 */
 export async function archiveBranch(repositoryPath: string, branch: string): Promise<LoreOperationResult> {
   return runOperation('lore_branch_archive', { repositoryPath, branch })
@@ -2306,6 +2356,21 @@ function localizeCommandError(error: Partial<LoreCommandError>, command: string)
   }
   if (error.code === 'conflict_paths_required') {
     return t('selectConflictFilesToContinue')
+  }
+  if (error.code === 'workspace_text_unavailable') {
+    return t('workspaceTextUnavailable')
+  }
+  if (error.code === 'workspace_text_too_large') {
+    return t('workspaceTextTooLarge')
+  }
+  if (error.code === 'workspace_text_decode_failed') {
+    return t('workspaceTextDecodeFailed')
+  }
+  if (error.code === 'conflict_path_not_in_conflict') {
+    return t('conflictPathNotInConflict')
+  }
+  if (error.code === 'workspace_text_write_failed') {
+    return t('workspaceTextWriteFailed')
   }
   if (error.code === 'repository_view_workspace_dirty') {
     return t('cleanWorkspaceBeforeApplyingView')

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
 import { t } from '../../../i18n'
-import { loadBinaryFilePreview, loadWorkingTreeDiff } from '../../../services/lore'
+import { loadBinaryFilePreview, loadWorkingTreeDiff, loadWorkspaceText } from '../../../services/lore'
 import {
   changeFilePath,
   createDemoWorkingTreeDiff,
@@ -32,6 +32,8 @@ interface WorkingTreeDiffContainerProps {
   fileLock?: LoreFileLock
   selectionLabel: string | null
   selectedCount: number
+  /** 行内解决后的完整文本交回上层；上层负责串行写回与快照刷新。 */
+  onConflictResolved?: (file: ChangeFile, resolvedContent: string) => void
 }
 
 /**
@@ -47,29 +49,83 @@ export function WorkingTreeDiffContainer({
   file,
   fileLock,
   selectionLabel,
-  selectedCount
+  selectedCount,
+  onConflictResolved
 }: WorkingTreeDiffContainerProps) {
   const { preferences } = useClientPreferences()
   const [diff, setDiff] = useState<WorkingTreeDiff | null>(null)
   const [diffLoading, setDiffLoading] = useState(false)
   const [diffError, setDiffError] = useState<string | null>(null)
+  const [conflictContent, setConflictContent] = useState<string | undefined>(undefined)
+  const [conflictContentLoading, setConflictContentLoading] = useState(false)
+  const [conflictContentError, setConflictContentError] = useState<string | null>(null)
   const [binaryPreview, setBinaryPreview] = useState<BinaryDiffPreviewView | null>(null)
   const [binaryPreviewLoading, setBinaryPreviewLoading] = useState(false)
   const [binaryPreviewError, setBinaryPreviewError] = useState<string | null>(null)
   const diffRequestCounter = useRef(0)
   const binaryPreviewRequestCounter = useRef(0)
+  const conflictRequestCounter = useRef(0)
   const diffQueue = useRef(new LatestTaskQueue())
   const binaryPreviewQueue = useRef(new LatestTaskQueue())
+  const conflictQueue = useRef(new LatestTaskQueue())
 
   useEffect(() => {
-    const queues = [diffQueue.current, binaryPreviewQueue.current]
+    const queues = [diffQueue.current, binaryPreviewQueue.current, conflictQueue.current]
     queues.forEach((queue) => queue.activate())
     return () => {
       diffRequestCounter.current += 1
       binaryPreviewRequestCounter.current += 1
+      conflictRequestCounter.current += 1
       queues.forEach((queue) => queue.dispose())
     }
   }, [])
+
+  /** 未解决冲突文件按主选择读取真实工作区文本，供行内解决视图渲染。 */
+  useEffect(() => {
+    conflictRequestCounter.current += 1
+    const requestId = conflictRequestCounter.current
+    conflictQueue.current.cancelPending()
+    setConflictContent(undefined)
+    setConflictContentError(null)
+
+    const conflict = Boolean(file?.conflict && file?.conflictUnresolved)
+    if (!conflict || applicationMode === 'browser-demo') {
+      setConflictContentLoading(false)
+      return
+    }
+    const path = changeFilePath(file!)
+    setConflictContentLoading(true)
+    void conflictQueue.current
+      .run(() => loadWorkspaceText(repositoryPath, path))
+      .then((content) => {
+        if (requestId !== conflictRequestCounter.current) return
+        setConflictContent(content)
+      })
+      .catch((error) => {
+        if (requestId !== conflictRequestCounter.current) return
+        setConflictContentError(readErrorMessage(error))
+      })
+      .finally(() => {
+        if (requestId === conflictRequestCounter.current) {
+          setConflictContentLoading(false)
+        }
+      })
+  }, [applicationMode, file, repositoryPath])
+
+  /**
+   * 行内解决后的完整内容交回上层串行写回。
+   *
+   * 写操作必须按 Repository 串行执行，因此容器不直接调用 Lore 写命令，而是把
+   * 文件与解决后内容一起交给 App 层，由 runRepositoryMutation 门闩、写回并重读
+   * 真实快照；失败提示也由上层统一呈现，容器不再维护第二套写回状态。
+   */
+  const handleConflictResolved = useCallback(
+    async (content: string) => {
+      if (!file) return
+      onConflictResolved?.(file, content)
+    },
+    [file, onConflictResolved]
+  )
 
   const loadRepositoryBinaryPreview = useCallback(
     (path: string, revision?: string, metadataOnly = false): Promise<BinaryFilePreview> =>
@@ -231,6 +287,10 @@ export function WorkingTreeDiffContainer({
       binaryPreview={binaryPreview}
       binaryPreviewLoading={binaryPreviewLoading}
       binaryPreviewError={binaryPreviewError}
+      conflictContent={conflictContent}
+      conflictContentLoading={conflictContentLoading}
+      conflictContentError={conflictContentError}
+      onConflictResolved={handleConflictResolved}
     />
   )
 }

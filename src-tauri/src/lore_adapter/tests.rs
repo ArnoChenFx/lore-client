@@ -9,7 +9,7 @@ use super::{
     composition::{
         build_layer_add_args, build_layer_remove_args, build_link_add_args, build_link_update_args,
     },
-    operations::lore_commit,
+    operations::{contains_conflict_markers, lore_commit},
     workspace::{
         lore_revision_changes, lore_stage, lore_stage_move, lore_unstage, lore_write_patch_file,
     },
@@ -650,6 +650,38 @@ fn successful_auth_mutation_invalidates_cached_transport_connections() {
     assert_eq!(
         invalidation_count, 1,
         "A successful auth mutation must invalidate cached transport connections",
+    );
+}
+
+#[test]
+fn conflict_marker_detection_covers_all_standard_marker_lines() {
+    assert!(
+        contains_conflict_markers("line\n<<<<<<< HEAD\nside\n=======\nother\n>>>>>>> feature\n"),
+        "A standard three-way conflict must be detected"
+    );
+    assert!(
+        contains_conflict_markers("<<<<<<< HEAD\nbase\n||||||| merged common ancestors\nside\n"),
+        "A conflict with a base marker must be detected"
+    );
+    assert!(
+        contains_conflict_markers("=======\nother\n>>>>>>> branch\n"),
+        "A conflict fragment without a start marker must still be detected"
+    );
+}
+
+#[test]
+fn conflict_marker_detection_accepts_clean_content() {
+    assert!(
+        !contains_conflict_markers("const data = {\n  provider: 'password',\n}\n"),
+        "Clean content must not be treated as an unresolved conflict"
+    );
+    assert!(
+        !contains_conflict_markers("a < b && c > d\n===== header ====\n"),
+        "Non-marker lines that only look similar must stay clean"
+    );
+    assert!(
+        !contains_conflict_markers(""),
+        "Empty content must stay clean"
     );
 }
 
