@@ -20,6 +20,8 @@ const enUSDynamic = {
     textureDimensions: '{{width}} × {{height}} pixels',
     textureMipLevels_one: '{{count}} mip level',
     textureMipLevels_other: '{{count}} mip levels',
+    diffUnmodifiedLines_one: '{{count}} unmodified line',
+    diffUnmodifiedLines_other: '{{count}} unmodified lines',
     staleInstancesPruned: 'Pruned stale repository instances',
     instancePathUpdated: 'Updated the current instance path',
     instanceTooltip: 'Current Lore workspace instance: {{value}}',

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { ResolvedTheme } from '../../types'
-import { LORE_DIFF_DARK_THEME, LORE_DIFF_LIGHT_THEME, readErrorMessage } from '../lib'
+import { createDiffsLocalization, LORE_DIFF_DARK_THEME, LORE_DIFF_LIGHT_THEME, readErrorMessage } from '../lib'
 
 /**
  * 全文加载器所需的最小目标描述，来自 Diffs 库解析后的当前 diff。
@@ -98,7 +98,24 @@ export function TextDiffView({
   expandFullFile = false,
   loadDiffFiles
 }: TextDiffViewProps) {
-  const { t } = useTranslation()
+  const { i18n, t } = useTranslation()
+  const language = i18n.resolvedLanguage
+  const diffsLocalization = useMemo(
+    () =>
+      createDiffsLocalization({
+        // 显式绑定本次渲染语言，避免 Diffs 的长生命周期回调在切换语言后保留旧文案。
+        unmodifiedLines: (count) => t('status.diffUnmodifiedLines', { count, lng: language }),
+        moreUnchangedContext: t('diffMoreUnchangedContext', { lng: language }),
+        expandAll: t('diffExpandAll', { lng: language }),
+        noNewlineAtEnd: t('diffNoNewlineAtEnd', { lng: language }),
+        currentChangeMarker: t('diffCurrentChangeMarker', { lng: language }),
+        incomingChangeMarker: t('diffIncomingChangeMarker', { lng: language }),
+        acceptCurrentChange: t('conflictAcceptCurrentChange', { lng: language }),
+        acceptIncomingChange: t('conflictAcceptIncomingChange', { lng: language }),
+        acceptBothChanges: t('conflictAcceptBothChanges', { lng: language })
+      }),
+    [language, t]
+  )
   // 只用对象引用表达当前视图身份，避免错误状态额外持有整份 patch 文本副本。
   const fullFileIdentity = useMemo<object>(
     () => ({ filePath, expandFullFile, patchLength: patch.length }),
@@ -167,6 +184,7 @@ export function TextDiffView({
       <FileDiff
         fileDiff={fileDiff}
         options={{
+          ...diffsLocalization,
           theme: {
             dark: LORE_DIFF_DARK_THEME,
             light: LORE_DIFF_LIGHT_THEME

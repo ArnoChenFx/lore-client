@@ -20,6 +20,8 @@ const zhCNDynamic = {
     textureDimensions: '{{width}} × {{height}} 像素',
     textureMipLevels_one: '{{count}} 个 Mip 层级',
     textureMipLevels_other: '{{count}} 个 Mip 层级',
+    diffUnmodifiedLines_one: '{{count}} 行未修改',
+    diffUnmodifiedLines_other: '{{count}} 行未修改',
     staleInstancesPruned: '已清理失效的仓库 Instance',
     instancePathUpdated: '已更新当前 Instance 路径',
     instanceTooltip: '当前 Lore 工作区实例：{{value}}',

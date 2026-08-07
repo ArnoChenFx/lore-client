@@ -1060,6 +1060,15 @@ const enUSStatic = {
   conflictContentUnavailable: 'Conflict file contents unavailable',
   conflictContentUnavailableHint:
     'Inline resolution requires reading the real workspace text. If this keeps failing, use an external merge tool.',
+  conflictContentChecking: 'Validating conflict file contents…',
+  conflictContentInvalid: 'Unable to parse conflict markers',
+  conflictContentInvalidHint:
+    'The file may be incomplete or may have changed after it was read. Refresh local changes or use an external merge tool.',
+  diffMoreUnchangedContext: 'More unchanged context may be available',
+  diffExpandAll: 'Expand all',
+  diffNoNewlineAtEnd: 'No newline at end of file',
+  diffCurrentChangeMarker: '(Current Change)',
+  diffIncomingChangeMarker: '(Incoming Change)',
   conflictUnresolved: 'Unresolved conflict',
   markConflictResolved: 'Mark resolved',
   markConflictUnresolved: 'Mark unresolved again',
