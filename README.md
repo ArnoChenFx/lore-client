@@ -1,3 +1,5 @@
+
+
 <div align="center">
   <img src="assets/app-icon.svg" alt="Lore Client app icon" width="112" height="112">
   <h1>Lore Client</h1>
@@ -72,7 +74,7 @@ For troubleshooting, bounded application logs collect command timing and errors 
 ## Get started
 
 1. Download the build for Windows x64, Linux x64, or macOS Universal from this repository's Releases page.
-2. Launch Lore Client and open an existing Lore repository, initialize a regular folder, or connect to a Lore server and clone a repository.
+2. Launch Lore Client. The Welcome Page lets you open an existing Lore repository, initialize a regular folder, or browse a Lore server to clone a repository.
 3. Start with Revision History to understand the project, Local Changes to prepare the next revision, and Branch Overview to manage lines of work.
 
 Lore is included with the desktop application, so a separate Lore CLI installation is not required. Server browsing, Clone, Publish, Push, and other online features require access to a Lore service.
