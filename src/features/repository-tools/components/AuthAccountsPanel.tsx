@@ -102,11 +102,9 @@ export function AuthAccountsPanel({
   const sortedRepositories = useMemo(() => sortRepositoriesForAccountBinding(repositories), [repositories])
   const selectedAccount = accounts.find((identity) => authIdentityKey(identity) === selectedKey) ?? accounts[0]
 
-  // 远端地址变化或用户清空草稿时水合；渲染期跟随（官方 adjusting state during
-  // render 模式），避免 effect 同步 setState（react-compiler EffectSetState）。
-  // key 覆盖 remoteUrl 与 remoteDraft 两路变化，行为与原 effect 完全等价。
-  // 注意：这是"key 变化后还要按草稿状态条件水合"的模式，与 useAdjustFromProps 的
-  // "key 变化即调整"语义不同（后者会无条件覆盖已输入的草稿），因此保留手写样板。
+  // 远端地址变化或用户清空草稿时水合；key 覆盖 remoteUrl 与 remoteDraft 两路变化。
+  // 注意：水合只在用户尚未输入时写入（条件判断），与"key 变化即重置"的通用调整
+  // 不同，因此保留手写样板。
   const hydrationKey = `${remoteUrl}|${remoteDraft}`
   const [lastHydrationKey, setLastHydrationKey] = useState(hydrationKey)
   if (lastHydrationKey !== hydrationKey) {
@@ -132,17 +130,15 @@ export function AuthAccountsPanel({
     }
   }
 
-  // latest-ref 维护“最新 refresh”：refresh 闭包当前选择，不能进入 effect 依赖，
-  // 但渲染期写 ref 会触发 react-compiler 的 Refs 告警，改为 effect 内同步（合规）。
+  // 维护“最新 refresh”引用：refresh 闭包当前选择，不能进入 effect 依赖。
   const refreshRef = useRef(refresh)
   useEffect(() => {
     refreshRef.current = refresh
   })
 
   useEffect(() => {
-    // 外部认证入口通过版本号触发重读。refresh 的同步段会写状态；微任务调度让调用
-    // 脱离 effect 同步调用链（react-compiler EffectSetState），并保持只跟随
-    // refreshVersion，而不是每次渲染都因 refresh 引用变化重读。
+    // 外部认证入口通过版本号触发重读；只跟随 refreshVersion，而不是每次渲染都因
+    // refresh 引用变化重读。
     queueMicrotask(() => void refreshRef.current())
   }, [refreshVersion])
 

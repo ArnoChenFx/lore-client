@@ -156,9 +156,7 @@ export function useAppUpdater(enabled: boolean, automaticallyCheck = true) {
     }
   }, [enabled])
 
-  // enabled 是 Tauri 能力探测后的渐进值；相位切换改为渲染期跟随（官方
-  // "adjusting state when a prop changes" 模式，useAdjustFromProps），避免 effect
-  // 同步 setState（react-compiler EffectSetState）；资源释放与调度副作用仍留在 effect。
+  // enabled 是 Tauri 能力探测后的渐进值；相位切换跟随能力变化，资源释放与调度副作用仍留在 effect。
   useAdjustFromProps(`${enabled}`, () => {
     setState((current) => ({
       ...current,

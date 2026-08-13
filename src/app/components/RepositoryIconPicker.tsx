@@ -124,8 +124,7 @@ export function RepositoryIconPicker({ repositoryName, icon, onChange }: Reposit
       return
     }
 
-    // 方向键增量表：event.key 是任意字符串，interface 的索引签名保持 open 字典
-    // 语义，同时作为 named owner contract 通过 anti-slop no-known-value-widening。
+    // 方向键增量表：event.key 是任意字符串，interface 的索引签名保持 open 字典语义。
     interface ArrowKeyDeltas {
       [key: string]: number | undefined
     }

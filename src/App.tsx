@@ -221,8 +221,7 @@ function App() {
   const { availableExternalToolIds, availableExternalDiffTools, availableExternalMergeTools } =
     useAvailableExternalTools(preferences)
   // 渲染期可读的 workspace 节点镜像。PaneResizer 在事件处理器里读取 container，
-  // 直接传 ref.current 会触发 react-compiler 的渲染期 ref 访问告警；用 callback ref
-  // 把节点同步进 state，渲染期读取 state 是安全的，DOM 挂载语义不变。
+  // 用 callback ref 把节点同步进 state，DOM 挂载语义不变。
   const [workspaceNode, setWorkspaceNode] = useState<HTMLElement | null>(null)
   const attachWorkspaceNode = useCallback((node: HTMLElement | null) => {
     setWorkspaceNode(node)

@@ -104,8 +104,7 @@ function installWorkerImageStub() {
         set src(value: string) {
           source = value
           queueMicrotask(() => {
-            // Worker 环境没有真实 DOM 事件；构造最小 load 事件并指向图片对象，
-            // 避免用类型断言伪造事件形状（anti-slop no-chained-type-assertions）。
+            // Worker 环境没有真实 DOM 事件；构造最小 load 事件并指向图片对象。
             const event = new Event('load')
             Object.defineProperty(event, 'target', { configurable: true, value: image })
             listeners.get('load')?.forEach((listener) => listener.call(image, event))

@@ -168,17 +168,14 @@ export function BranchCollaborationPanel({
     }
   }
 
-  // latest-ref 维护“最新 refreshBranch”：回调由 App 包装且闭包当前上下文，不能
-  // 进入 effect 依赖；渲染期写 ref 会触发 react-compiler 的 Refs 告警，改为
-  // effect 内同步（合规）。
+  // 维护“最新 refreshBranch”引用：回调由 App 包装且闭包当前上下文，不能进入 effect 依赖。
   const refreshBranchRef = useRef(refreshBranch)
   useEffect(() => {
     refreshBranchRef.current = refreshBranch
   })
 
   useEffect(() => {
-    // 只跟随明确的 Branch 选择。refreshBranch 的同步段会写状态；微任务调度让调用
-    // 脱离 effect 同步调用链（react-compiler EffectSetState）。
+    // 只跟随明确的 Branch 选择。
     queueMicrotask(() => void refreshBranchRef.current(selectedBranch))
   }, [selectedBranch])
 

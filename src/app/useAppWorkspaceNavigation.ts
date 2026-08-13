@@ -66,10 +66,7 @@ export function useAppWorkspaceNavigation({
     [onInspectorTabPreferenceChange]
   )
 
-  // 偏好就绪后把持久化 Inspector 标签灌入本地状态；改用渲染期跟随（官方
-  // "adjusting state when a prop changes" 模式，useAdjustFromProps），避免 effect
-  // 同步 setState（react-compiler EffectSetState）。值相同时不会重复调整，用户手动
-  // 切换不受影响。
+  // 偏好就绪后把持久化 Inspector 标签灌入本地状态；值相同时不会重复调整，用户手动切换不受影响。
   useAdjustFromProps(`${preferencesReady}:${preferredInspectorTab}`, () => {
     setInspectorTabState(preferredInspectorTab)
   })

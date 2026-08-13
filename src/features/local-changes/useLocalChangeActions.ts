@@ -121,9 +121,8 @@ export function useLocalChangeSelection(files?: ChangeFile[]) {
 
   useEffect(() => {
     const currentFiles = files ?? []
-    // 仓库快照切换后协调选区。写入放到微任务：files 引用抖动时不会像渲染期调整
-    // 那样触发无限重渲染，值未变的写入由 React bail out；微任务 FIFO 保证同一
-    // effect 的多次重跑按顺序收敛到最终选区。
+    // 仓库快照切换后协调选区。写入放到微任务：值未变的写入由 React bail out，
+    // 微任务 FIFO 保证同一 effect 的多次重跑按顺序收敛到最终选区。
     queueMicrotask(() => {
       setSelectedChangeIds((current) => {
         const next = reconcileChangeSelection(currentFiles, current, primaryChangeId).selectedIds

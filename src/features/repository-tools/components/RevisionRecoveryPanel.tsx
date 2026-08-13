@@ -72,26 +72,21 @@ export function RevisionRecoveryPanel({
     [onLoadInfo]
   )
 
-  // 当前 Revision 变化时重置已选修订；渲染期跟随（官方 adjusting state during
-  // render 模式，useAdjustFromProps），避免 effect 同步 setState（react-compiler
-  // EffectSetState）。
+  // 当前 Revision 变化时重置已选修订。
   useAdjustFromProps(currentRevision, () => {
     setSelectedRevision(currentRevision)
   })
 
-  // latest-ref 维护“最新 loadInfo”：按钮点击直接使用当前闭包，异步读取 effect 只
-  // 跟随真实工作区锚点 currentRevision，父级回调引用变化（如仓库快照刷新）不会
-  // 触发重复读取。渲染期写 ref 会触发 react-compiler 的 Refs 告警，effect 内同步合规。
+  // 维护“最新 loadInfo”引用：按钮点击直接使用当前闭包，异步读取 effect 只跟随
+  // 真实工作区锚点 currentRevision，父级回调引用变化（如仓库快照刷新）不会触发重复读取。
   const loadInfoRef = useRef(loadInfo)
   useEffect(() => {
     loadInfoRef.current = loadInfo
   })
 
   useEffect(() => {
-    // loadInfo 的同步段会写状态；微任务调度让读取脱离 effect 同步调用链
-    // （react-compiler EffectSetState），用户感知与同步读取一致。发起前与结果
-    // 返回时都校验锚点：快速连续切换 Revision 时，已被取代的读取不再发起，
-    // 在途的旧锚点慢响应也不会乱序覆盖新值。
+    // 发起前与结果返回时都校验锚点：快速连续切换 Revision 时，已被取代的读取不再
+    // 发起，在途的旧锚点慢响应也不会乱序覆盖新值。
     autoReadRevisionRef.current = currentRevision
     const requestedRevision = currentRevision
     queueMicrotask(() => {

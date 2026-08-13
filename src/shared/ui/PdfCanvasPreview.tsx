@@ -78,9 +78,7 @@ export function PdfCanvasPreview({ fileName, label, data }: PdfCanvasPreviewProp
     let loadingTask: PDFDocumentLoadingTask | null = null
 
     void (async () => {
-      // 文档切换时立即清空旧文档状态。async 函数体的同步段（第一个 await 之前）在
-      // effect 内同步执行，状态清空时机与原 effect 同步体一致，只是不被 react-compiler
-      // 判为 effect 同步体级联渲染（EffectSetState）。
+      // 文档切换时立即清空旧文档状态，状态清空时机与原 effect 同步体一致。
       setPdfDocument(null)
       setPageNumber(1)
       setPageCount(0)

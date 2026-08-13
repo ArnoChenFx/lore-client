@@ -185,15 +185,12 @@ export function SettingsDialog({
   }, [defaultIdentity])
 
   // 磁盘水合或其他设置入口改变偏好时，同步未聚焦输入框显示的已生效整数值；
-  // 渲染期跟随（官方 "adjusting state when a prop changes" 模式，useAdjustFromProps），
-  // 避免 effect 同步 setState（react-compiler EffectSetState）。输入框草稿只在提交时
-  // 写回，因此外部值变化不会覆盖正在输入的内容。
+  // 输入框草稿只在提交时写回，因此外部值变化不会覆盖正在输入的内容。
   useAdjustFromProps(String(binaryPreviewLimitMib), () => {
     setBinaryPreviewLimitDraft(String(binaryPreviewLimitMib))
   })
 
-  // 进入维护页且尚未加载日志信息时，立即标记为加载中；渲染期跟随分类切换，
-  // 避免 effect 同步 setState（react-compiler EffectSetState），加载完成回调负责复位。
+  // 进入维护页且尚未加载日志信息时，立即标记为加载中；加载完成回调负责复位。
   useAdjustFromProps(activeCategory, () => {
     if (activeCategory === 'maintenance' && !applicationLogLoaded) {
       setApplicationLogLoading(true)

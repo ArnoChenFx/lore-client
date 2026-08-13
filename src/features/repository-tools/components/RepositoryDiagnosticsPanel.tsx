@@ -43,8 +43,7 @@ export function RepositoryDiagnosticsPanel({
   const [error, setError] = useState('')
 
   // 诊断草稿与事件日志只能属于当前仓库，切换项目时不得复用上一仓库的预检凭据；
-  // 否则相同路径可能错误解锁 Heal。渲染期跟随（官方 adjusting state during render
-  // 模式，useAdjustFromProps），避免 effect 同步 setState（react-compiler EffectSetState）。
+  // 否则相同路径可能错误解锁 Heal。
   const diagnosticResetKey = `${repositoryName}|${currentRevision ?? ''}`
   useAdjustFromProps(diagnosticResetKey, () => {
     setPath('')

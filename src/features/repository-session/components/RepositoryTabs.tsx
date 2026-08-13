@@ -64,9 +64,7 @@ export function RepositoryTabs({
     return () => cancelAnimationFrame(frame)
   }, [editingSessionKey])
 
-  // 正在编辑的标签被移除（关闭或拖拽重排后消失）时退出编辑态；渲染期跟随
-  // （官方 adjusting state during render 模式），避免 effect 同步 setState
-  // （react-compiler EffectSetState）。置空后条件自然失效，不会形成循环。
+  // 正在编辑的标签被移除（关闭或拖拽重排后消失）时退出编辑态；置空后条件自然失效。
   if (editingSessionKey && !tabs.some((tab) => tab.sessionKey === editingSessionKey)) {
     setEditingSessionKey(null)
   }

@@ -191,7 +191,6 @@ export function RevisionChangesWorkspace({
   /*
    * Revision 清单到达时读取最新视图模式；模式切换本身不进入默认选择 effect，
    * 因而不会破坏“平铺/树视图切换保留现有文件选区”的桌面语义。
-   * latest-ref 在 effect 内同步，避免渲染期写 ref（react-compiler Refs 告警）。
    */
   const viewModeRef = useRef(viewMode)
   useEffect(() => {
@@ -231,15 +230,10 @@ export function RevisionChangesWorkspace({
   const primaryDiff = primaryFile
     ? (diffs.find((diff) => diff.path.replaceAll('\\', '/') === changeFilePath(primaryFile)) ?? null)
     : null
-  // 先提取 patch 再 memo：直接写 primaryDiff?.patch 时 react-compiler 推断依赖为
-  // 整个 primaryDiff 对象（PreserveManualMemo），与声明不匹配；提取后推断收敛。
   const primaryPatch = primaryDiff?.patch
-  // react-compiler 无法证明 diffs.find 结果（primaryDiff）不会被 mutation，因此不会
-  // 保留该 memo；patch 是不可变字符串，这里按官方推荐豁免该行诊断保留手动 memo。
-  // eslint-disable-next-line react-compiler/react-compiler
+  // eslint-disable-next-line react-compiler/react-compiler -- patch 是不可变字符串，依赖收敛后编译器仍无法证明 find 结果不可变
   const diffLines = useMemo(() => (primaryPatch ? parseUnifiedDiff(primaryPatch) : []), [primaryPatch])
-  // countUnifiedDiffLines 只是轻量遍历，不单独 memo：其依赖是 diffLines 数组，
-  // react-compiler 无法证明数组不会被 mutation，会放弃保留该 memo（PreserveManualMemo）。
+  // countUnifiedDiffLines 只是轻量遍历，不单独 memo。
   const diffLineCounts = countUnifiedDiffLines(diffLines)
   const primaryContentKind = resolvedDiffContentKind(primaryFile, primaryDiff)
   const themeType = resolveTheme(preferences.theme)
@@ -250,23 +244,15 @@ export function RevisionChangesWorkspace({
    * rename 以 patch 解析出的 `prevName` 读取旧路径。加载失败由 TextDiffView 显示
    * 原因并保持部分视图，不伪造全文。
    */
-  // 先提取 primaryFile?.status 与 sourceRevision：属性访问与数组元素依赖会让
-  // react-compiler 推断为整个对象/数组（PreserveManualMemo），提取为不可变
-  // 标量后推断收敛，memo 可被编译器保留。
+  // 先提取 primaryFile?.status 与 sourceRevision，使 memo 依赖收敛为不可变标量。
   const primaryFileStatus = primaryFile?.status
   const sourceRevision = diffSourceRevision ?? revision.parentIds[0]
-  // t 只用于构造错误消息；用 latest-ref 在 effect 内同步（合规的 latest-ref 模式），
-  // 避免不稳定的 t 进入依赖数组导致 react-compiler 无法保留该 useCallback。
+  // t 只用于构造错误消息；通过 ref 避免不稳定的 t 进入依赖数组。
   const tRef = useRef(t)
   useEffect(() => {
     tRef.current = t
   })
-  /*
-   * react-compiler 无法证明 files.find 结果（primaryFile）与 parentIds 数组元素
-   * 不会被 mutation，因此不会保留该 useCallback；依赖都是不可变标量，这里按
-   * 官方推荐豁免该诊断保留手动 memo。
-   */
-  /* eslint-disable react-compiler/react-compiler */
+  /* eslint-disable react-compiler/react-compiler -- 依赖均为不可变标量，编译器无法证明 find 结果与数组元素不被 mutation */
   const loadDiffFiles = useCallback(
     async (target: TextDiffFullFileTarget) => {
       if (!onLoadRevisionText) throw new Error(tRef.current('runtimeProvideRealFileContent_aae6'))
@@ -309,10 +295,8 @@ export function RevisionChangesWorkspace({
     }
   }, [])
 
-  // 偏好就绪时同步视图模式与浏览器宽度；渲染期跟随（官方 adjusting state during
-  // render 模式，useAdjustFromProps），避免 effect 同步 setState（react-compiler
-  // EffectSetState）。key 前缀偏好就绪标记：就绪前保持固定值不调整，就绪后一次
-  // 灌入；偏好值是稳定标量，值相同时不会重复调整。
+  // 偏好就绪时同步视图模式与浏览器宽度。key 前缀偏好就绪标记：就绪前保持固定值
+  // 不调整，就绪后一次灌入；偏好值是稳定标量，值相同时不会重复调整。
   const viewPreferenceKey = `${preferencesReady}:${preferences.revisionChangesView}|${preferences.revisionChangesBrowserWidth}`
   useAdjustFromProps(viewPreferenceKey, () => {
     setViewMode(preferences.revisionChangesView)
@@ -320,9 +304,8 @@ export function RevisionChangesWorkspace({
   })
 
   useEffect(() => {
-    // files/revision 变化时重建默认选择。写入放到微任务：files 引用稳定性无法静态
-    // 保证，渲染期调整有循环风险；值未变的写入由 React bail out，微任务 FIFO 保证
-    // 按变更顺序收敛。
+    // files/revision 变化时重建默认选择。写入放到微任务：值未变的写入由 React
+    // bail out，微任务 FIFO 保证按变更顺序收敛。
     queueMicrotask(() => {
       const nextSelection = createDefaultRevisionChangeSelection(files, viewModeRef.current)
       setSelectedObjectIds(nextSelection.selectedObjectIds)
@@ -350,8 +333,7 @@ export function RevisionChangesWorkspace({
     const requestId = previewRequestCounter.current
     queue.cancelPending()
 
-    // 状态写入位于 effect 内联的 async 函数体中：执行时机与同步路径一致，但不会
-    // 被 react-compiler 判为 effect 同步体级联渲染（EffectSetState）。
+    // 状态写入位于 effect 内联的 async 函数体中，执行时机与同步路径一致。
     void (async () => {
       setBinaryPreview(null)
       setBinaryPreviewError(null)
@@ -447,8 +429,7 @@ export function RevisionChangesWorkspace({
     if (!isRevisionWorkspaceSelectionRequestCurrent(selectionRequest, repositoryPath, revision.id)) {
       return
     }
-    // 状态写入放到微任务，脱离 effect 同步调用链（react-compiler EffectSetState）；
-    // 请求有效性检查仍在同步体完成。
+    // 状态写入放到微任务；请求有效性检查仍在同步体完成。
     queueMicrotask(() => {
       const requestedIds = selectionRequest.fileIds
         .filter((fileId) => files.some((file) => file.id === fileId))

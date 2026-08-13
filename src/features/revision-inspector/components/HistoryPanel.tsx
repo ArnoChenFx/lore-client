@@ -88,10 +88,8 @@ export function HistoryPanel({
   const [historyOnlyBranch, setHistoryOnlyBranch] = useState(historyQuery.onlyBranch)
   const [historyLimit, setHistoryLimit] = useState(historyQuery.limit)
 
-  // 查询参数变化时重置草稿；渲染期跟随（官方 adjusting state during render 模式，
-  // useAdjustFromProps），避免 effect 同步 setState（react-compiler EffectSetState）。
-  // key 使用固定字段的内容签名，不依赖父级对 historyQuery 对象引用的稳定性，
-  // 也避免每次渲染对查询对象做 JSON 序列化。
+  // 查询参数变化时重置草稿；key 使用固定字段的内容签名，不依赖父级对
+  // historyQuery 对象引用的稳定性，也避免每次渲染对查询对象做 JSON 序列化。
   const historyQueryKey = `${historyQuery.revision ?? ''}|${historyQuery.branch ?? ''}|${historyQuery.beforeDate ?? ''}|${historyQuery.onlyBranch}|${historyQuery.limit}`
   useAdjustFromProps(historyQueryKey, () => {
     setHistoryRevision(historyQuery.revision ?? '')

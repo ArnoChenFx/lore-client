@@ -80,8 +80,7 @@ function cachedRevisionAvatarUrl(identity: string, pixelSize: number): Promise<s
  * 图片失败只影响当前 URL 的显示，不移除作者文字，也不会让列表行发生尺寸跳动。
  */
 export function RevisionAuthorAvatar({ identity, initials, variant }: RevisionAuthorAvatarProps) {
-  // 头像结果与请求时的 identity 绑定：identity 切换后旧结果由渲染期过滤，避免在
-  // effect 同步体内重置状态（react-compiler EffectSetState）。
+  // 头像结果与请求时的 identity 绑定：identity 切换后旧结果由渲染期过滤。
   const [avatar, setAvatar] = useState<{ identity: string; url: string | null } | null>(null)
   const [failedUrl, setFailedUrl] = useState<string | null>(null)
   const requestedPixelSize = variant === 'compact' ? 40 : 64

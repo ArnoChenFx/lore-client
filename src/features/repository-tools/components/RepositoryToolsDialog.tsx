@@ -215,10 +215,8 @@ export function RepositoryToolsDialog({
   const defaultIdentityParts = useMemo(() => parseCommitIdentity(defaultIdentity), [defaultIdentity])
 
   /*
-   * 保存成功后 App 会重读仓库快照；以下草稿重置统一改为渲染期跟随（官方
-   * adjusting state during render 模式，useAdjustFromProps）：只在快照字段或仓库
-   * 路径真正变化时重新初始化草稿，避免用户输入过程中普通父组件渲染覆盖尚未保存的
-   * 内容，也避免 effect 同步 setState（react-compiler EffectSetState）。
+   * 保存成功后 App 会重读仓库快照；以下草稿重置只在快照字段或仓库路径真正变化时
+   * 重新初始化草稿，避免用户输入过程中普通父组件渲染覆盖尚未保存的内容。
    */
   const identityResetKey = `${repository.path}|${repository.identity ?? ''}|${repository.remoteUrl ?? ''}`
   useAdjustFromProps(identityResetKey, () => {

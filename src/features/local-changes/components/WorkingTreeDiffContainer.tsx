@@ -100,8 +100,7 @@ export function WorkingTreeDiffContainer({
     const requestId = conflictRequestCounter.current
     conflictQueue.current.cancelPending()
 
-    // 状态写入位于 effect 内联的 async 函数体中：执行时机与同步路径一致，但不会
-    // 被 react-compiler 判为 effect 同步体级联渲染（EffectSetState）。
+    // 状态写入位于 effect 内联的 async 函数体中，执行时机与同步路径一致。
     void (async () => {
       setConflictContent(undefined)
       setConflictContentError(null)
@@ -174,8 +173,7 @@ export function WorkingTreeDiffContainer({
     const requestId = diffRequestCounter.current
     diffQueue.current.cancelPending()
 
-    // 状态写入位于 effect 内联的 async 函数体中：执行时机与同步路径一致，但不会
-    // 被 react-compiler 判为 effect 同步体级联渲染（EffectSetState）。
+    // 状态写入位于 effect 内联的 async 函数体中，执行时机与同步路径一致。
     void (async () => {
       setDiff(null)
       setDiffError(null)
@@ -238,8 +236,7 @@ export function WorkingTreeDiffContainer({
     const requestId = binaryPreviewRequestCounter.current
     queue.cancelPending()
 
-    // 状态写入位于 effect 内联的 async 函数体中：执行时机与同步路径一致，但不会
-    // 被 react-compiler 判为 effect 同步体级联渲染（EffectSetState）。
+    // 状态写入位于 effect 内联的 async 函数体中，执行时机与同步路径一致。
     void (async () => {
       setBinaryPreview(null)
       setBinaryPreviewError(null)

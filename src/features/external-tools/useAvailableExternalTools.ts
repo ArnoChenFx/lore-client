@@ -68,9 +68,7 @@ export function useAvailableExternalTools(preferences: ExternalToolPreferences):
   /*
    * activeRepositoryPath 等无关偏好会频繁更新顶层对象；只以两组工具配置的引用生成
    * 稳定投影，避免每次 Repository 标签切换都重新调用原生可执行文件探测。
-   * 投影由 state 承载并在渲染期按 key 更新：key 未变时保持同一引用（不触发额外
-   * 渲染），key 变化时渲染期调整（官方 adjusting state during render 模式），
-   * 避免渲染期读写 ref（react-compiler Refs 告警）。
+   * 投影由 state 承载并按 key 更新：key 未变时保持同一引用（不触发额外渲染）。
    */
   const [toolPreferencesCache, setToolPreferencesCache] = useState<{
     key: string
@@ -102,8 +100,7 @@ export function useAvailableExternalTools(preferences: ExternalToolPreferences):
     const candidates = collectExternalToolCandidates(toolPreferences)
 
     if (candidates.length === 0) {
-      // 无候选时立即清空结果；放微任务避免在 effect 同步体内级联渲染
-      // （react-compiler EffectSetState），执行前仍校验请求序号与卸载状态。
+      // 无候选时立即清空结果；执行前仍校验请求序号与卸载状态。
       queueMicrotask(() => {
         if (!disposed && requestId === requestCounter.current) {
           setAvailableExternalToolIds([])

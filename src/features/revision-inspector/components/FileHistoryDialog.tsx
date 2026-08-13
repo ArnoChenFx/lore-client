@@ -18,8 +18,7 @@ interface FileHistoryDialogProps {
   onClose: () => void
 }
 
-// 动作标签查找表：action 是任意 string，interface 的索引签名保持 open 字典语义，
-// 同时作为 named owner contract 通过 anti-slop no-known-value-widening。
+// 动作标签查找表：action 是任意 string，interface 的索引签名保持 open 字典语义。
 interface FileHistoryActionLabels {
   [action: string]: string
 }

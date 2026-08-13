@@ -65,11 +65,9 @@ export function useWorkspaceLayout() {
   )
 
   /*
-   * 偏好就绪后把磁盘值灌入一次，用渲染期调整（官方 adjusting state during render
-   * 模式）替代 effect 同步 setState（react-compiler EffectSetState）。渲染期调整
-   * 通常发生在挂载之后（偏好文件异步读取完成），此时 .workspace 已挂载，优先读取
-   * 真实宽度与原 effect 语义一致；无 DOM 环境或节点缺失时回退到视口估算，由下方
-   * 挂载时的 resize 校正兜底。
+   * 偏好就绪后把磁盘值灌入一次。水合通常发生在挂载之后（偏好文件异步读取完成），
+   * 此时 .workspace 已挂载，优先读取真实宽度与原 effect 语义一致；无 DOM 环境或
+   * 节点缺失时回退到视口估算，由下方挂载时的 resize 校正兜底。
    */
   if (ready && !hydrated) {
     setHydrated(true)

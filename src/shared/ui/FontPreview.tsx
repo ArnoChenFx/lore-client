@@ -20,8 +20,7 @@ export function FontPreview({ fileName, label, data }: FontPreviewProps) {
   const { t } = useTranslation()
   const instanceId = useId().replaceAll(':', '')
   const family = `LoreAssetPreview-${instanceId}`
-  // 加载结果与来源 data 绑定：data 切换后旧结果由渲染期过滤，避免在 effect 同步体
-  // 内重置状态（react-compiler EffectSetState 会把它判为级联渲染）。
+  // 加载结果与来源 data 绑定：data 切换后旧结果由渲染期过滤，无需在 effect 内重置。
   const [status, setStatus] = useState<{ source: BinaryPreviewData; value: 'loading' | 'ready' | 'error' } | null>(null)
 
   useEffect(() => {

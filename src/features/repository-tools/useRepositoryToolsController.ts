@@ -383,8 +383,7 @@ export function useRepositoryToolsController({
   useEffect(() => {
     if (applicationMode !== 'tauri') {
       lockRequestCounter.current += 1
-      // 状态写入放到微任务，脱离 effect 同步调用链（react-compiler EffectSetState）；
-      // 请求序号已在同步体作废，微任务内写入不会与后续请求竞争。
+      // 状态写入放到微任务；请求序号已在同步体作废，微任务内写入不会与后续请求竞争。
       queueMicrotask(() => {
         setFileLocks([])
         setFileLockState('unavailable')
@@ -399,8 +398,6 @@ export function useRepositoryToolsController({
       })
       return
     }
-    // loadLocks 的同步段会写状态；微任务调度让读取脱离 effect 同步调用链
-    // （react-compiler EffectSetState），用户感知与同步读取一致。
     queueMicrotask(() => {
       void loadLocks(activeSnapshot.changes.map(changeFilePath)).catch(() => {
         // 工作区刷新保持静默；菜单会通过 unavailable 状态给出明确不可用原因。
@@ -532,9 +529,8 @@ export function useRepositoryToolsController({
     resourceRepositoryPathRef.current = repositoryPath
     resourceRequestCounter.current += 1
 
-    // 状态写入与资源释放放到微任务，脱离 effect 同步调用链（react-compiler
-    // EffectSetState）；路径守卫与请求序号仍在同步体完成，微任务 FIFO 保证
-    // 按仓库切换顺序收敛。
+    // 状态写入与资源释放放到微任务；路径守卫与请求序号仍在同步体完成，微任务
+    // FIFO 保证按仓库切换顺序收敛。
     queueMicrotask(() => {
       setLoading(false)
       releaseRepositoryToolResources()

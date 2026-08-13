@@ -444,10 +444,8 @@ export function LocalChanges({
   } | null>(null)
   const previousConflictSessionRef = useRef(Boolean(conflictSession))
 
-  // 偏好就绪时同步本地视图状态；渲染期跟随（官方 adjusting state during render
-  // 模式，useAdjustFromProps），避免 effect 同步 setState（react-compiler
-  // EffectSetState）。key 前缀偏好就绪标记：就绪前保持固定值不调整，就绪后一次
-  // 灌入；偏好值是稳定标量，值相同时不会重复调整，用户拖拽的分割比例不被触碰。
+  // 偏好就绪时同步本地视图状态。key 前缀偏好就绪标记：就绪前保持固定值不调整，
+  // 就绪后一次灌入；偏好值是稳定标量，值相同时不会重复调整，用户拖拽的分割比例不被触碰。
   const viewPreferenceKey = `${preferencesReady}:${preferences.localChangesView}|${preferences.localChangesStageSplit}`
   useAdjustFromProps(viewPreferenceKey, () => {
     setViewMode(preferences.localChangesView)

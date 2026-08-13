@@ -48,15 +48,13 @@ function useObjectUrl(data: BinaryPreviewData, mimeType: string): string {
     let cancelled = false
     const bytes = readBinaryPreviewData(data)
     if (bytes.byteLength === 0) {
-      // 空字节不创建 URL；旧 URL 由下方统一 cleanup 释放。清空状态放到微任务，避免
-      // 在 effect 同步体内级联渲染；微任务执行前若已发生 data 切换或卸载则跳过写入。
+      // 空字节不创建 URL；旧 URL 由下方统一 cleanup 释放。清空状态放到微任务，
+      // 执行前若已发生 data 切换或卸载则跳过写入。
       queueMicrotask(() => {
         if (!cancelled) setUrl('')
       })
     } else if (typeof URL.createObjectURL !== 'undefined') {
-      // 浏览器环境中使用 Object URL。async 函数体的同步段（第一个 await 之前）在
-      // effect 内同步执行，创建与写入时机与原 effect 同步体一致，只是不被
-      // react-compiler 判为 effect 同步体级联渲染（EffectSetState）。
+      // 浏览器环境中使用 Object URL，创建与写入时机与原 effect 同步体一致。
       void (async () => {
         let objectUrl = ''
         try {

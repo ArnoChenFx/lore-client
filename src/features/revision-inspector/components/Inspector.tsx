@@ -701,8 +701,7 @@ export function Inspector({
     const revisionChanged = treeSelectionRevisionRef.current !== revision?.id
     treeSelectionRevisionRef.current = revision?.id
 
-    // 状态写入放到微任务，脱离 effect 同步调用链（react-compiler EffectSetState）；
-    // ref 比较与失效判断仍在同步体完成，微任务 FIFO 保证按变更顺序收敛。
+    // 状态写入放到微任务；ref 比较与失效判断仍在同步体完成，微任务 FIFO 保证按变更顺序收敛。
     queueMicrotask(() => {
       setContextMenu(null)
       setSelectionRequest(null)

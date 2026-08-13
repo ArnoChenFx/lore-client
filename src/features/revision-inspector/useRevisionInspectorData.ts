@@ -230,8 +230,7 @@ export function useRevisionInspectorData({
     const requestId = revisionChangesRequestCounter.current
     revisionChangesQueue.current.cancelPending()
 
-    // 状态写入位于 effect 内联的 async 函数体中：执行时机与同步路径一致，但不会
-    // 被 react-compiler 判为 effect 同步体级联渲染（EffectSetState）。
+    // 状态写入位于 effect 内联的 async 函数体中，执行时机与同步路径一致。
     void (async () => {
       setRevisionChangesError(null)
 
@@ -301,8 +300,7 @@ export function useRevisionInspectorData({
     const requestId = revisionDiffRequestCounter.current
     revisionDiffQueue.current.cancelPending()
 
-    // 状态写入位于 effect 内联的 async 函数体中：执行时机与同步路径一致，但不会
-    // 被 react-compiler 判为 effect 同步体级联渲染（EffectSetState）。
+    // 状态写入位于 effect 内联的 async 函数体中，执行时机与同步路径一致。
     void (async () => {
       setRevisionDiffError(null)
 
@@ -429,8 +427,7 @@ export function useRevisionInspectorData({
     const revisionId = selectedRevision?.id
     revisionFilesQueue.current.cancelPending()
 
-    // 状态写入位于 effect 内联的 async 函数体中：执行时机与同步路径一致，但不会
-    // 被 react-compiler 判为 effect 同步体级联渲染（EffectSetState）。
+    // 状态写入位于 effect 内联的 async 函数体中，执行时机与同步路径一致。
     void (async () => {
       setRevisionFilesError(null)
 

@@ -110,8 +110,8 @@ export function DependencyGraphPanel({
     query?.edges.find((edge) => dependencyEdgeKey(edge.sourcePath, edge.dependencyPath) === selectedEdgeKey) ?? null
 
   useEffect(() => {
-    // 查询结果变化时校正选区。写入放到微任务：query 引用稳定性无法静态保证，
-    // 渲染期调整有循环风险；值未变的写入由 React bail out，顺序由微任务 FIFO 保证。
+    // 查询结果变化时校正选区。写入放到微任务：值未变的写入由 React bail out，
+    // 顺序由微任务 FIFO 保证。
     queueMicrotask(() => {
       if (!query || query.nodes.length === 0) {
         setSelectedNodePath('')

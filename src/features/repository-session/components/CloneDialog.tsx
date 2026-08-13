@@ -155,8 +155,7 @@ export function CloneDialog({
   const [useSharedStore, setUseSharedStore] = useState(() => automaticSharedStore || Boolean(matchingStore))
   const [sharedStorePath, setSharedStorePath] = useState(() => matchingStore?.containerPath ?? '')
 
-  // 仓库选择变化时重置默认目录名；渲染期跟随（官方 adjusting state during render
-  // 模式，useAdjustFromProps），避免 effect 同步 setState（react-compiler EffectSetState）。
+  // 仓库选择变化时重置默认目录名。
   useAdjustFromProps(repository.name, () => {
     setDirectoryName(defaultCloneDirectoryName(repository.name))
   })
