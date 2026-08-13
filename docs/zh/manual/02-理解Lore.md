@@ -162,7 +162,7 @@ Latest 已被别人推进，最后一步会失败，但已上传的 Fragment 可
 | submodule 与工作树是附属机制 | Link 进入历史；Layer 留在本机；Shared Store 上的 Instance 彼此平等。 |
 
 上述心智模型依据
-[Epic Games Lore 官方文档](https://github.com/EpicGames/lore/tree/f8793ac02d0fed1f06c3a08be06563d73490548c/docs)；
+[Epic Games Lore 官方文档](https://github.com/EpicGames/lore/tree/main/docs)；
 Lore 仍处于 0.x，升级后应以当前应用支持的固定版本为准。
 
 [上一章：快速入门](01-快速入门.md) · [下一章：工作区与导航](03-工作区与导航.md)

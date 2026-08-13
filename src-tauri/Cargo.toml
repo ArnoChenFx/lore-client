@@ -18,7 +18,7 @@ toml_edit = "0.25.13"
 image = { version = "0.25", default-features = false, features = ["dds", "exr", "jpeg", "png", "tga", "tiff"] }
 # SVG 只在 Rust 边界解析并栅格化；关闭位图嵌入与内存映射字体功能，且由调用方
 # 覆盖 href 解析器，避免预览读取本地路径、外部资源或把原始 SVG 交给 WebView。
-resvg = { version = "0.47.0", default-features = false, features = ["text", "system-fonts"] }
+resvg = { version = "0.48", default-features = false, features = ["text", "system-fonts"] }
 # Diff 预览只解码单张受限尺寸纹理。EXR 默认的 Rayon 并行解码会把短命像素块
 # 分散到全局工作线程的分配器缓存，在 Windows 上每次刷新都抬高数百 MiB Private Bytes。
 exr = { version = "1.74", default-features = false }
@@ -26,10 +26,10 @@ zstd = "0.13"
 # Blender 旧版压缩文件使用 gzip；关闭系统 zlib，保持桌面构建可复现且不引入额外动态库。
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 glob-match = "0.2.1"
-lore = { git = "https://github.com/EpicGames/lore.git", rev = "a43f648411179f0de690f7f63c2664916f8be466" }
+lore = { git = "https://github.com/EpicGames/lore.git", rev = "2c77355226c6bbc30d6a4bd03cde6bcd8777b0fd" }
 # 认证变更需要调用 Lore 顶层 crate 尚未暴露的 Transport 连接失效入口；
 # 依赖必须与 `lore` 锁定到完全相同的提交，避免协议实现漂移或重复版本。
-lore-revision = { git = "https://github.com/EpicGames/lore.git", rev = "a43f648411179f0de690f7f63c2664916f8be466" }
+lore-revision = { git = "https://github.com/EpicGames/lore.git", rev = "2c77355226c6bbc30d6a4bd03cde6bcd8777b0fd" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
@@ -46,7 +46,7 @@ tauri-plugin-log = "2.9.0"
 log = "0.4"
 # 归档预览只读取 ZIP 中央目录，正文不会解压或写入磁盘；关闭默认功能可避免
 # 引入本功能不需要的加密与额外压缩算法。
-zip = { version = "4.6.1", default-features = false, features = ["deflate"] }
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
 
 # Lore 当前提交扩展了 quinn-proto 的 RTT 与加密错误接口。作为外部 Git
 # 依赖时，上游工作区的 path patch 不会自动传播，因此在客户端侧携带同一份

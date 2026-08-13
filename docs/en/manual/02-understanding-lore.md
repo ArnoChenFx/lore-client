@@ -138,7 +138,7 @@ write enforcement. Use them with Branch protection, reviews, and team practice.
 | Submodules and worktrees are subordinate | Links enter history; Layers stay local; Instances sharing a Store are peers. |
 
 This mental model follows the
-[official Epic Games Lore documentation](https://github.com/EpicGames/lore/tree/f8793ac02d0fed1f06c3a08be06563d73490548c/docs).
+[official Epic Games Lore documentation](https://github.com/EpicGames/lore/tree/main/docs).
 Lore remains pre-1.0, so behavior should be checked against the version supported by the
 current application.
 
