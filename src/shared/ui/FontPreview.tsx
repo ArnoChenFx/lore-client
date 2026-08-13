@@ -20,12 +20,13 @@ export function FontPreview({ fileName, label, data }: FontPreviewProps) {
   const { t } = useTranslation()
   const instanceId = useId().replaceAll(':', '')
   const family = `LoreAssetPreview-${instanceId}`
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  // 加载结果与来源 data 绑定：data 切换后旧结果由渲染期过滤，避免在 effect 同步体
+  // 内重置状态（react-compiler EffectSetState 会把它判为级联渲染）。
+  const [status, setStatus] = useState<{ source: BinaryPreviewData; value: 'loading' | 'ready' | 'error' } | null>(null)
 
   useEffect(() => {
     let cancelled = false
     let loadedFace: FontFace | null = null
-    setStatus('loading')
 
     void (async () => {
       try {
@@ -35,9 +36,9 @@ export function FontPreview({ fileName, label, data }: FontPreviewProps) {
         loadedFace = await face.load()
         if (cancelled) return
         document.fonts.add(loadedFace)
-        setStatus('ready')
+        setStatus({ source: data, value: 'ready' })
       } catch {
-        if (!cancelled) setStatus('error')
+        if (!cancelled) setStatus({ source: data, value: 'error' })
       }
     })()
 
@@ -47,9 +48,12 @@ export function FontPreview({ fileName, label, data }: FontPreviewProps) {
     }
   }, [data, family])
 
-  if (status === 'loading') return null
+  // 只消费当前 data 的加载结果；data 切换后立即回到 loading，无需 effect 重置。
+  const currentStatus = status?.source === data ? status.value : 'loading'
 
-  if (status === 'error') {
+  if (currentStatus === 'loading') return null
+
+  if (currentStatus === 'error') {
     return (
       <div className="binary-diff-preview__pdf-status is-error" role="alert">
         <FileWarning size={24} />

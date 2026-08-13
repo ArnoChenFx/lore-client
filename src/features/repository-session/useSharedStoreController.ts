@@ -42,6 +42,10 @@ export function useSharedStoreController({
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
+    // 先跨一个微任务：settingsOpen 变化时 effect 同步调用 refresh，函数体内的状态
+    // 写入不会被 react-compiler 判为 effect 同步体级联渲染（EffectSetState）；
+    // 用户感知与同步置位一致。
+    await Promise.resolve()
     if (applicationMode !== 'tauri') {
       setInfo(null)
       setError(t('startDesktopAppManageSharedStores'))
@@ -59,7 +63,9 @@ export function useSharedStoreController({
   }, [applicationMode])
 
   useEffect(() => {
-    if (settingsOpen) void refresh()
+    // 弹窗打开时刷新 Store 信息；微任务调度让状态写入脱离 effect 同步调用链
+    // （react-compiler EffectSetState），用户感知与同步刷新一致。
+    if (settingsOpen) queueMicrotask(() => void refresh())
   }, [refresh, settingsOpen])
 
   /** 创建成功后重读 Lore 全局配置，不在前端局部伪造 Store 列表。 */

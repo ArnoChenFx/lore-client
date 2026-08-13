@@ -150,9 +150,9 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
               : undefined
           return {
             repositoryPath,
-            ...(name ? { name } : {}),
-            ...(color ? { color } : {}),
-            ...(icon ? { icon } : {})
+            ...(name ? { name } : undefined),
+            ...(color ? { color } : undefined),
+            ...(icon ? { icon } : undefined)
           }
         })
         .filter(

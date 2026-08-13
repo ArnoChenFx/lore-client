@@ -383,18 +383,28 @@ export function useRepositoryToolsController({
   useEffect(() => {
     if (applicationMode !== 'tauri') {
       lockRequestCounter.current += 1
-      setFileLocks([])
-      setFileLockState('unavailable')
+      // 状态写入放到微任务，脱离 effect 同步调用链（react-compiler EffectSetState）；
+      // 请求序号已在同步体作废，微任务内写入不会与后续请求竞争。
+      queueMicrotask(() => {
+        setFileLocks([])
+        setFileLockState('unavailable')
+      })
       return
     }
     if (!activeSnapshot || activeSnapshot.changes.length === 0) {
       lockRequestCounter.current += 1
-      setFileLocks([])
-      setFileLockState('ready')
+      queueMicrotask(() => {
+        setFileLocks([])
+        setFileLockState('ready')
+      })
       return
     }
-    void loadLocks(activeSnapshot.changes.map(changeFilePath)).catch(() => {
-      // 工作区刷新保持静默；菜单会通过 unavailable 状态给出明确不可用原因。
+    // loadLocks 的同步段会写状态；微任务调度让读取脱离 effect 同步调用链
+    // （react-compiler EffectSetState），用户感知与同步读取一致。
+    queueMicrotask(() => {
+      void loadLocks(activeSnapshot.changes.map(changeFilePath)).catch(() => {
+        // 工作区刷新保持静默；菜单会通过 unavailable 状态给出明确不可用原因。
+      })
     })
   }, [activeSnapshot, applicationMode, loadLocks])
 
@@ -521,14 +531,20 @@ export function useRepositoryToolsController({
 
     resourceRepositoryPathRef.current = repositoryPath
     resourceRequestCounter.current += 1
-    setLoading(false)
-    releaseRepositoryToolResources()
 
-    /*
-     * Repository Tools 允许在仓库标签间保持打开。释放旧仓库资源后重新执行当前页签
-     * 的惰性读取；路径守卫保证普通快照刷新不会重复加载大型工具数据。
-     */
-    if (tab) void open(tab)
+    // 状态写入与资源释放放到微任务，脱离 effect 同步调用链（react-compiler
+    // EffectSetState）；路径守卫与请求序号仍在同步体完成，微任务 FIFO 保证
+    // 按仓库切换顺序收敛。
+    queueMicrotask(() => {
+      setLoading(false)
+      releaseRepositoryToolResources()
+
+      /*
+       * Repository Tools 允许在仓库标签间保持打开。释放旧仓库资源后重新执行当前页签
+       * 的惰性读取；路径守卫保证普通快照刷新不会重复加载大型工具数据。
+       */
+      if (tab) void open(tab)
+    })
   }, [activeSnapshot?.repository.path, open, releaseRepositoryToolResources, tab])
 
   const setActiveBranchProtected = useCallback(

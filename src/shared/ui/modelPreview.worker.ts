@@ -104,7 +104,10 @@ function installWorkerImageStub() {
         set src(value: string) {
           source = value
           queueMicrotask(() => {
-            const event = { type: 'load', target: image } as unknown as Event
+            // Worker 环境没有真实 DOM 事件；构造最小 load 事件并指向图片对象，
+            // 避免用类型断言伪造事件形状（anti-slop no-chained-type-assertions）。
+            const event = new Event('load')
+            Object.defineProperty(event, 'target', { configurable: true, value: image })
             listeners.get('load')?.forEach((listener) => listener.call(image, event))
           })
         }
@@ -175,13 +178,7 @@ function serializeAttribute(
   }
 }
 
-function serializeIndex(
-  geometry: BufferGeometry,
-  budget: TransferBudget
-): {
-  index: ModelPreviewGeometryIndex | null
-  transferable: ArrayBuffer | null
-} {
+function serializeIndex(geometry: BufferGeometry, budget: TransferBudget) {
   const source = geometry.getIndex()
   if (!source) return { index: null, transferable: null }
   const values =
@@ -279,7 +276,7 @@ function serializePrimitive(
   worldMatrix: Matrix4,
   name: string,
   textureContext: TextureSerializationContext
-): { primitive: ModelPreviewPrimitive; transferables: Transferable[]; bounds: Box3 } {
+) {
   const { budget } = textureContext
   budget.primitives += 1
   if (budget.primitives > maximumPrimitiveCount) {
@@ -323,13 +320,7 @@ function serializePrimitive(
   return { primitive, transferables, bounds }
 }
 
-function serializeScene(
-  root: Object3D,
-  request: ModelPreviewWorkerRequest
-): {
-  response: ModelPreviewWorkerResponse
-  transferables: Transferable[]
-} {
+function serializeScene(root: Object3D, request: ModelPreviewWorkerRequest) {
   root.updateMatrixWorld(true)
   const primitives: ModelPreviewPrimitive[] = []
   const transferables: Transferable[] = []
@@ -367,22 +358,22 @@ function serializeScene(
     }
   })
 
-  return {
-    response: {
-      type: 'result',
-      requestId: request.requestId,
-      format: request.format,
-      primitives,
-      textures: textureContext.textures,
-      bounds: hasBounds
-        ? {
-            min: new Vector3().copy(bounds.min).toArray() as [number, number, number],
-            max: new Vector3().copy(bounds.max).toArray() as [number, number, number]
-          }
-        : null
-    },
-    transferables
+  // 去掉显式返回类型后，type 需要 const 断言保持字面量（serializeScene 的调用方
+  // parseModel 声明返回 ModelPreviewWorkerResponse）。
+  const response: ModelPreviewWorkerResponse = {
+    type: 'result',
+    requestId: request.requestId,
+    format: request.format,
+    primitives,
+    textures: textureContext.textures,
+    bounds: hasBounds
+      ? {
+          min: new Vector3().copy(bounds.min).toArray() as [number, number, number],
+          max: new Vector3().copy(bounds.max).toArray() as [number, number, number]
+        }
+      : null
   }
+  return { response, transferables }
 }
 
 async function parseModel(request: ModelPreviewWorkerRequest): Promise<{

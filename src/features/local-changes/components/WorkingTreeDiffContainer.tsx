@@ -99,31 +99,36 @@ export function WorkingTreeDiffContainer({
     conflictRequestCounter.current += 1
     const requestId = conflictRequestCounter.current
     conflictQueue.current.cancelPending()
-    setConflictContent(undefined)
-    setConflictContentError(null)
 
-    const conflict = Boolean(file?.conflict && file?.conflictUnresolved && effectiveContentKind === 'text')
-    if (!conflict || applicationMode === 'browser-demo') {
-      setConflictContentLoading(false)
-      return
-    }
-    const path = changeFilePath(file!)
-    setConflictContentLoading(true)
-    void conflictQueue.current
-      .run(() => loadWorkspaceText(repositoryPath, path))
-      .then((content) => {
-        if (requestId !== conflictRequestCounter.current) return
-        setConflictContent(content)
-      })
-      .catch((error) => {
-        if (requestId !== conflictRequestCounter.current) return
-        setConflictContentError(readErrorMessage(error))
-      })
-      .finally(() => {
-        if (requestId === conflictRequestCounter.current) {
-          setConflictContentLoading(false)
-        }
-      })
+    // 状态写入位于 effect 内联的 async 函数体中：执行时机与同步路径一致，但不会
+    // 被 react-compiler 判为 effect 同步体级联渲染（EffectSetState）。
+    void (async () => {
+      setConflictContent(undefined)
+      setConflictContentError(null)
+
+      const conflict = Boolean(file?.conflict && file?.conflictUnresolved && effectiveContentKind === 'text')
+      if (!conflict || applicationMode === 'browser-demo') {
+        setConflictContentLoading(false)
+        return
+      }
+      const path = changeFilePath(file!)
+      setConflictContentLoading(true)
+      await conflictQueue.current
+        .run(() => loadWorkspaceText(repositoryPath, path))
+        .then((content) => {
+          if (requestId !== conflictRequestCounter.current) return
+          setConflictContent(content)
+        })
+        .catch((error) => {
+          if (requestId !== conflictRequestCounter.current) return
+          setConflictContentError(readErrorMessage(error))
+        })
+        .finally(() => {
+          if (requestId === conflictRequestCounter.current) {
+            setConflictContentLoading(false)
+          }
+        })
+    })()
   }, [applicationMode, effectiveContentKind, file, repositoryPath])
 
   /**
@@ -168,52 +173,57 @@ export function WorkingTreeDiffContainer({
     diffRequestCounter.current += 1
     const requestId = diffRequestCounter.current
     diffQueue.current.cancelPending()
-    setDiff(null)
-    setDiffError(null)
 
-    if (!file) {
-      setDiffLoading(false)
-      return
-    }
-    const path = changeFilePath(file)
-    if (!shouldLoadRepositoryTextDiff(file, path, preferences.binaryDiffVisible)) {
-      setDiffLoading(false)
-      setDiff({
-        path,
-        patch: '',
-        action: file.status
-      })
-      return
-    }
-    if (applicationMode === 'browser-demo') {
-      // 演示模式使用隔离的可解析夹具展示 Diff；它不进入任何 Lore 读写命令。
-      setDiffLoading(false)
-      setDiff(createDemoWorkingTreeDiff(file))
-      return
-    }
+    // 状态写入位于 effect 内联的 async 函数体中：执行时机与同步路径一致，但不会
+    // 被 react-compiler 判为 effect 同步体级联渲染（EffectSetState）。
+    void (async () => {
+      setDiff(null)
+      setDiffError(null)
 
-    setDiffLoading(true)
-    void diffQueue.current
-      .run(() => loadWorkingTreeDiff(repositoryPath, [path], diffReadPreferences))
-      .then((diffs) => {
-        if (requestId !== diffRequestCounter.current) return
-        setDiff(
-          diffs[0] ?? {
-            path,
-            patch: '',
-            action: file.status
+      if (!file) {
+        setDiffLoading(false)
+        return
+      }
+      const path = changeFilePath(file)
+      if (!shouldLoadRepositoryTextDiff(file, path, preferences.binaryDiffVisible)) {
+        setDiffLoading(false)
+        setDiff({
+          path,
+          patch: '',
+          action: file.status
+        })
+        return
+      }
+      if (applicationMode === 'browser-demo') {
+        // 演示模式使用隔离的可解析夹具展示 Diff；它不进入任何 Lore 读写命令。
+        setDiffLoading(false)
+        setDiff(createDemoWorkingTreeDiff(file))
+        return
+      }
+
+      setDiffLoading(true)
+      await diffQueue.current
+        .run(() => loadWorkingTreeDiff(repositoryPath, [path], diffReadPreferences))
+        .then((diffs) => {
+          if (requestId !== diffRequestCounter.current) return
+          setDiff(
+            diffs[0] ?? {
+              path,
+              patch: '',
+              action: file.status
+            }
+          )
+        })
+        .catch((error) => {
+          if (requestId !== diffRequestCounter.current) return
+          setDiffError(readErrorMessage(error))
+        })
+        .finally(() => {
+          if (requestId === diffRequestCounter.current) {
+            setDiffLoading(false)
           }
-        )
-      })
-      .catch((error) => {
-        if (requestId !== diffRequestCounter.current) return
-        setDiffError(readErrorMessage(error))
-      })
-      .finally(() => {
-        if (requestId === diffRequestCounter.current) {
-          setDiffLoading(false)
-        }
-      })
+        })
+    })()
   }, [applicationMode, diffReadPreferences, file, preferences.binaryDiffVisible, repositoryPath])
 
   /**
@@ -227,69 +237,75 @@ export function WorkingTreeDiffContainer({
     binaryPreviewRequestCounter.current += 1
     const requestId = binaryPreviewRequestCounter.current
     queue.cancelPending()
-    setBinaryPreview(null)
-    setBinaryPreviewError(null)
 
-    const path = file ? changeFilePath(file) : ''
-    if (!file || !shouldUseRepositoryPreview(file, path, preferences.binaryDiffVisible, effectiveContentKind)) {
-      setBinaryPreviewLoading(false)
-      return
-    }
-    if (applicationMode === 'browser-demo') {
-      setBinaryPreviewLoading(false)
-      setBinaryPreviewError(t('browserDemoModeReadLocal_fca5'))
-      return
-    }
+    // 状态写入位于 effect 内联的 async 函数体中：执行时机与同步路径一致，但不会
+    // 被 react-compiler 判为 effect 同步体级联渲染（EffectSetState）。
+    void (async () => {
+      setBinaryPreview(null)
+      setBinaryPreviewError(null)
 
-    const requests: Array<{
-      side: keyof BinaryDiffPreview
-      load: () => Promise<BinaryFilePreview>
-    }> = []
-    if (file.status !== 'added' && currentRevisionId) {
-      requests.push({
-        side: 'before',
-        load: () => loadRepositoryBinaryPreview(path, currentRevisionId, !preferences.binaryDiffVisible)
-      })
-    }
-    if (file.status !== 'deleted') {
-      requests.push({
-        side: 'after',
-        load: () => loadRepositoryBinaryPreview(path, undefined, !preferences.binaryDiffVisible)
-      })
-    }
-    if (requests.length === 0) {
-      setBinaryPreviewLoading(false)
-      setBinaryPreviewError(t('repositorySnapshotFileVersionAvailable_2c73'))
-      return
-    }
+      const path = file ? changeFilePath(file) : ''
+      if (!file || !shouldUseRepositoryPreview(file, path, preferences.binaryDiffVisible, effectiveContentKind)) {
+        setBinaryPreviewLoading(false)
+        return
+      }
+      if (applicationMode === 'browser-demo') {
+        setBinaryPreviewLoading(false)
+        setBinaryPreviewError(t('browserDemoModeReadLocal_fca5'))
+        return
+      }
 
-    setBinaryPreviewLoading(true)
-    void queue
-      .run(() => settleTasksSequentially(requests.map((request) => request.load)))
-      .then((results) => {
-        if (requestId !== binaryPreviewRequestCounter.current) return
-        const next: BinaryDiffPreview = {}
-        const errors: string[] = []
-        results.forEach((result, index) => {
-          const request = requests[index]
-          if (!request) return
-          if (result.status === 'fulfilled') {
-            next[request.side] = result.value
+      const requests: Array<{
+        side: keyof BinaryDiffPreview
+        load: () => Promise<BinaryFilePreview>
+      }> = []
+      if (file.status !== 'added' && currentRevisionId) {
+        requests.push({
+          side: 'before',
+          load: () => loadRepositoryBinaryPreview(path, currentRevisionId, !preferences.binaryDiffVisible)
+        })
+      }
+      if (file.status !== 'deleted') {
+        requests.push({
+          side: 'after',
+          load: () => loadRepositoryBinaryPreview(path, undefined, !preferences.binaryDiffVisible)
+        })
+      }
+      if (requests.length === 0) {
+        setBinaryPreviewLoading(false)
+        setBinaryPreviewError(t('repositorySnapshotFileVersionAvailable_2c73'))
+        return
+      }
+
+      setBinaryPreviewLoading(true)
+      await queue
+        .run(() => settleTasksSequentially(requests.map((request) => request.load)))
+        .then((results) => {
+          if (requestId !== binaryPreviewRequestCounter.current) return
+          const next: BinaryDiffPreview = {}
+          const errors: string[] = []
+          results.forEach((result, index) => {
+            const request = requests[index]
+            if (!request) return
+            if (result.status === 'fulfilled') {
+              next[request.side] = result.value
+            } else {
+              errors.push(readErrorMessage(result.reason))
+            }
+          })
+          if (next.before || next.after) {
+            setBinaryPreview(createBinaryDiffPreviewView(next))
           } else {
-            errors.push(readErrorMessage(result.reason))
+            setBinaryPreviewError(errors.join('；') || t('loreReturnPreviewableFileContent_451e'))
           }
         })
-        if (next.before || next.after) {
-          setBinaryPreview(createBinaryDiffPreviewView(next))
-        } else {
-          setBinaryPreviewError(errors.join('；') || t('loreReturnPreviewableFileContent_451e'))
-        }
-      })
-      .finally(() => {
-        if (requestId === binaryPreviewRequestCounter.current) {
-          setBinaryPreviewLoading(false)
-        }
-      })
+        .finally(() => {
+          if (requestId === binaryPreviewRequestCounter.current) {
+            setBinaryPreviewLoading(false)
+          }
+        })
+    })()
+
     // 组件卸载或依赖变化时主动清空预览数据，加速垃圾回收。
     return () => {
       queue.cancelPending()

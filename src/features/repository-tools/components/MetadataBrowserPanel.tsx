@@ -67,9 +67,20 @@ export function MetadataBrowserPanel({ branches, revisions, currentRevision, onL
   const loadSequenceRef = useRef(0)
   const autoLoadTimerRef = useRef<number | null>(null)
   const onLoadRef = useRef(onLoad)
-  onLoadRef.current = onLoad
+  // 在 effect 内维护“最新回调”引用（latest-ref 模式）：load 的异步回调始终读到
+  // 当前 onLoad，而回调本身不进入 effect 依赖，避免请求因回调引用变化重复发出；
+  // 渲染期写 ref 会触发 react-compiler 的 Refs 告警，effect 内写 ref 合规。
+  useEffect(() => {
+    onLoadRef.current = onLoad
+  })
 
-  useEffect(() => setRevision(currentRevision ?? ''), [currentRevision])
+  // 当前 Revision 变化时重置已选 Revision 草稿；渲染期跟随避免 effect 同步
+  // setState（react-compiler EffectSetState），值相同时不触碰用户输入。
+  const [lastCurrentRevision, setLastCurrentRevision] = useState(currentRevision ?? '')
+  if (lastCurrentRevision !== currentRevision) {
+    setLastCurrentRevision(currentRevision ?? '')
+    setRevision(currentRevision ?? '')
+  }
 
   const request = resolveMetadataRequest(scope, target, revision)
   const requestScope = request?.scope
@@ -105,9 +116,13 @@ export function MetadataBrowserPanel({ branches, revisions, currentRevision, onL
     if (!requestScope) {
       // 参数失效时同时作废在途请求，避免旧对象的响应重新填入空参数页面。
       loadSequenceRef.current += 1
-      setLoading(false)
-      setEntries([])
-      setError('')
+      // 清空展示状态放到微任务，避免在 effect 同步体内级联渲染
+      // （react-compiler EffectSetState），执行前请求序号已作废，不会与后续请求竞争。
+      queueMicrotask(() => {
+        setLoading(false)
+        setEntries([])
+        setError('')
+      })
       return
     }
 

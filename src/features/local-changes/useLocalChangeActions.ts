@@ -121,13 +121,18 @@ export function useLocalChangeSelection(files?: ChangeFile[]) {
 
   useEffect(() => {
     const currentFiles = files ?? []
-    setSelectedChangeIds((current) => {
-      const next = reconcileChangeSelection(currentFiles, current, primaryChangeId).selectedIds
-      return current.length === next.length && current.every((id, index) => id === next[index]) ? current : next
+    // 仓库快照切换后协调选区。写入放到微任务：files 引用抖动时不会像渲染期调整
+    // 那样触发无限重渲染，值未变的写入由 React bail out；微任务 FIFO 保证同一
+    // effect 的多次重跑按顺序收敛到最终选区。
+    queueMicrotask(() => {
+      setSelectedChangeIds((current) => {
+        const next = reconcileChangeSelection(currentFiles, current, primaryChangeId).selectedIds
+        return current.length === next.length && current.every((id, index) => id === next[index]) ? current : next
+      })
+      setPrimaryChangeId(
+        (current) => reconcileChangeSelection(currentFiles, selectedChangeIdsRef.current, current).primaryId
+      )
     })
-    setPrimaryChangeId(
-      (current) => reconcileChangeSelection(currentFiles, selectedChangeIdsRef.current, current).primaryId
-    )
   }, [files, primaryChangeId])
 
   const selectChangeFiles = useCallback((selectedIds: string[], primaryId: string | null) => {

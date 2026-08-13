@@ -1,5 +1,5 @@
 import { Binary, FileSearch, History, Info, LoaderCircle, PencilLine, RotateCcw } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SelectInput } from '../../../shared/ui'
@@ -45,26 +45,36 @@ export function RevisionRecoveryPanel({
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
 
-  const loadInfo = async (revision: string) => {
-    if (!revision) return
-    setPending(true)
-    setError('')
-    try {
-      setInfo(await onLoadInfo(revision))
-    } catch (loadError) {
-      setInfo(null)
-      setError(loadError instanceof Error ? loadError.message : String(loadError))
-    } finally {
-      setPending(false)
-    }
+  const loadInfo = useCallback(
+    async (revision: string) => {
+      if (!revision) return
+      setPending(true)
+      setError('')
+      try {
+        setInfo(await onLoadInfo(revision))
+      } catch (loadError) {
+        setInfo(null)
+        setError(loadError instanceof Error ? loadError.message : String(loadError))
+      } finally {
+        setPending(false)
+      }
+    },
+    [onLoadInfo]
+  )
+
+  // 当前 Revision 变化时重置已选修订；渲染期跟随（官方 adjusting state during
+  // render 模式），避免 effect 同步 setState（react-compiler EffectSetState）。
+  const [lastSyncedRevision, setLastSyncedRevision] = useState(currentRevision)
+  if (lastSyncedRevision !== currentRevision) {
+    setLastSyncedRevision(currentRevision)
+    setSelectedRevision(currentRevision)
   }
 
   useEffect(() => {
-    setSelectedRevision(currentRevision)
-    void loadInfo(currentRevision)
-    // 回调由仓库容器提供；这里只跟随写操作后重新读取的真实工作区锚点。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRevision])
+    // loadInfo 的同步段会写状态；微任务调度让读取脱离 effect 同步调用链
+    // （react-compiler EffectSetState），用户感知与同步读取一致。
+    queueMicrotask(() => void loadInfo(currentRevision))
+  }, [currentRevision, loadInfo])
 
   const runFind = async (mode: 'number' | 'metadata') => {
     setPending(true)

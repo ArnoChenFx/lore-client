@@ -116,12 +116,17 @@ export function useRepositorySessionLifecycle({
     setBusyAction,
     notify
   })
-  lifecycleOptions.current = {
-    replaceRepositorySession,
-    activateSnapshot,
-    setBusyAction,
-    notify
-  }
+  // 在 effect 内维护“最新回调”引用：恢复流程的异步回调始终读到当前值，而回调
+  // 本身不进入恢复 effect 依赖，避免恢复流程因回调引用变化重复启动。渲染期写 ref
+  // 会触发 react-compiler 的 Refs 告警，effect 内写 ref 是合规的 latest-ref 模式。
+  useEffect(() => {
+    lifecycleOptions.current = {
+      replaceRepositorySession,
+      activateSnapshot,
+      setBusyAction,
+      notify
+    }
+  })
 
   useEffect(() => {
     if (applicationMode !== 'tauri') return

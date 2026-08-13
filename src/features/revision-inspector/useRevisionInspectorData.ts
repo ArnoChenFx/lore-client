@@ -60,15 +60,13 @@ export function projectRevisionInspector({
         : []
   const visibleRevisionFiles =
     applicationMode === 'browser-demo'
-      ? demoRevisionFiles.map(
-          (file): RevisionFile => ({
-            id: `revision-tree-${file.id}`,
-            path: file.path,
-            name: file.name,
-            size: file.size ?? '—',
-            binary: Boolean(file.binary)
-          })
-        )
+      ? demoRevisionFiles.map((file): RevisionFile => ({
+          id: `revision-tree-${file.id}`,
+          path: file.path,
+          name: file.name,
+          size: file.size ?? '—',
+          binary: Boolean(file.binary)
+        }))
       : revisionFilesRevisionId === selectedRevision?.id
         ? revisionFiles
         : []
@@ -231,137 +229,147 @@ export function useRevisionInspectorData({
     revisionChangesRequestCounter.current += 1
     const requestId = revisionChangesRequestCounter.current
     revisionChangesQueue.current.cancelPending()
-    setRevisionChangesError(null)
 
-    if (!selectedRevision) {
-      setRevisionChanges([])
-      setRevisionChangesRepositoryPath('')
-      setRevisionChangesRevisionId('')
-      setRevisionPrimaryChangePath('')
-      setRevisionChangesLoading(false)
-      return
-    }
-    if (applicationMode === 'browser-demo') {
-      setRevisionChanges([])
-      setRevisionChangesRepositoryPath(repositoryPath)
-      setRevisionChangesRevisionId(selectedRevision.id)
-      setRevisionDiffSource(selectedRevision.parentIds[0] ?? null)
-      setRevisionChangesLoading(false)
-      return
-    }
-    if (!revisionInspectorRetention(inspectorTab).changes) {
-      setRevisionChanges([])
-      setRevisionChangesRepositoryPath('')
-      setRevisionChangesRevisionId('')
-      setRevisionDiffSource(null)
-      setRevisionPrimaryChangePath('')
-      setRevisionChangesLoading(false)
-      return
-    }
+    // 状态写入位于 effect 内联的 async 函数体中：执行时机与同步路径一致，但不会
+    // 被 react-compiler 判为 effect 同步体级联渲染（EffectSetState）。
+    void (async () => {
+      setRevisionChangesError(null)
 
-    setRevisionChanges([])
-    setRevisionChangesRepositoryPath('')
-    setRevisionChangesRevisionId('')
-    setRevisionPrimaryChangePath('')
-    setRevisionChangesLoading(true)
-    /*
-     * 合并 Revision 的第一父可能与结果树完全相同。并行读取各父节点的轻量清单，
-     * 仅当第一父为空时回退首个非空父节点，不批量传输补丁或文件内容。
-     */
-    void revisionChangesQueue.current
-      .run(() =>
-        loadRevisionDiffBaseline(selectedRevision.parentIds, (sourceRevision) =>
-          loadRevisionChanges(repositoryPath, sourceRevision, selectedRevision.id)
-        )
-      )
-      .then((baseline) => {
-        if (requestId !== revisionChangesRequestCounter.current) return
-        setRevisionDiffSource(baseline.sourceRevision)
-        setRevisionChanges(baseline.changes)
+      if (!selectedRevision) {
+        setRevisionChanges([])
+        setRevisionChangesRepositoryPath('')
+        setRevisionChangesRevisionId('')
+        setRevisionPrimaryChangePath('')
+        setRevisionChangesLoading(false)
+        return
+      }
+      if (applicationMode === 'browser-demo') {
+        setRevisionChanges([])
         setRevisionChangesRepositoryPath(repositoryPath)
         setRevisionChangesRevisionId(selectedRevision.id)
-      })
-      .catch((error) => {
-        if (requestId === revisionChangesRequestCounter.current) {
-          setRevisionChangesError(readErrorMessage(error))
-        }
-      })
-      .finally(() => {
-        if (requestId === revisionChangesRequestCounter.current) {
-          setRevisionChangesLoading(false)
-        }
-      })
+        setRevisionDiffSource(selectedRevision.parentIds[0] ?? null)
+        setRevisionChangesLoading(false)
+        return
+      }
+      if (!revisionInspectorRetention(inspectorTab).changes) {
+        setRevisionChanges([])
+        setRevisionChangesRepositoryPath('')
+        setRevisionChangesRevisionId('')
+        setRevisionDiffSource(null)
+        setRevisionPrimaryChangePath('')
+        setRevisionChangesLoading(false)
+        return
+      }
+
+      setRevisionChanges([])
+      setRevisionChangesRepositoryPath('')
+      setRevisionChangesRevisionId('')
+      setRevisionPrimaryChangePath('')
+      setRevisionChangesLoading(true)
+      /*
+       * 合并 Revision 的第一父可能与结果树完全相同。并行读取各父节点的轻量清单，
+       * 仅当第一父为空时回退首个非空父节点，不批量传输补丁或文件内容。
+       */
+      await revisionChangesQueue.current
+        .run(() =>
+          loadRevisionDiffBaseline(selectedRevision.parentIds, (sourceRevision) =>
+            loadRevisionChanges(repositoryPath, sourceRevision, selectedRevision.id)
+          )
+        )
+        .then((baseline) => {
+          if (requestId !== revisionChangesRequestCounter.current) return
+          setRevisionDiffSource(baseline.sourceRevision)
+          setRevisionChanges(baseline.changes)
+          setRevisionChangesRepositoryPath(repositoryPath)
+          setRevisionChangesRevisionId(selectedRevision.id)
+        })
+        .catch((error) => {
+          if (requestId === revisionChangesRequestCounter.current) {
+            setRevisionChangesError(readErrorMessage(error))
+          }
+        })
+        .finally(() => {
+          if (requestId === revisionChangesRequestCounter.current) {
+            setRevisionChangesLoading(false)
+          }
+        })
+    })()
   }, [applicationMode, inspectorTab, repositoryPath, selectedRevision])
 
   useEffect(() => {
     revisionDiffRequestCounter.current += 1
     const requestId = revisionDiffRequestCounter.current
     revisionDiffQueue.current.cancelPending()
-    setRevisionDiffError(null)
 
-    const requestContextCurrent = isRevisionDiffRequestCurrent({
-      repositoryPath,
-      selectedRevisionId: selectedRevision?.id,
-      loadedRepositoryPath: revisionChangesRepositoryPath,
-      loadedRevisionId: revisionChangesRevisionId,
-      primaryPath: revisionPrimaryChangePath,
-      /*
-       * 二进制文件与 OBJ、GLTF 等专用资产由受大小限制的 Preview IPC 读取；
-       * Lore 文本 Diff 会先遍历完整 Revision 状态，既无展示价值又可能长期占用
-       * 全局重读锁。CSV/SVG 只在关闭二进制 Diff 后进入文本路径；启用时分别交给
-       * 受限表格预览与 Rust 安全栅格化图片预览。
-       */
-      primaryFileSupportsTextDiff: shouldLoadRepositoryTextDiff(
-        (applicationMode === 'browser-demo' ? demoRevisionFiles : revisionChanges).find(
-          (file) => changeFilePath(file) === revisionPrimaryChangePath
-        ),
-        revisionPrimaryChangePath,
-        binaryDiffVisible
-      )
-    })
-    if (!selectedRevision || inspectorTab !== 'changes' || !revisionChangesDiffVisible || !requestContextCurrent) {
-      setRevisionDiffs([])
-      setRevisionDiffLoading(false)
-      return
-    }
-    if (applicationMode === 'browser-demo') {
-      // 只为当前主要选择生成隔离夹具，保持与真实按需读取相同的数据规模。
-      setRevisionDiffs(
-        demoRevisionFiles
-          .filter((file) => changeFilePath(file) === revisionPrimaryChangePath)
-          .map(createDemoWorkingTreeDiff)
-      )
-      setRevisionDiffLoading(false)
-      return
-    }
+    // 状态写入位于 effect 内联的 async 函数体中：执行时机与同步路径一致，但不会
+    // 被 react-compiler 判为 effect 同步体级联渲染（EffectSetState）。
+    void (async () => {
+      setRevisionDiffError(null)
 
-    setRevisionDiffs([])
-    setRevisionDiffLoading(true)
-    void revisionDiffQueue.current
-      .run(() =>
-        loadRevisionDiff(
-          repositoryPath,
-          revisionDiffSource,
-          selectedRevision.id,
-          [revisionPrimaryChangePath],
-          diffReadPreferences
+      const requestContextCurrent = isRevisionDiffRequestCurrent({
+        repositoryPath,
+        selectedRevisionId: selectedRevision?.id,
+        loadedRepositoryPath: revisionChangesRepositoryPath,
+        loadedRevisionId: revisionChangesRevisionId,
+        primaryPath: revisionPrimaryChangePath,
+        /*
+         * 二进制文件与 OBJ、GLTF 等专用资产由受大小限制的 Preview IPC 读取；
+         * Lore 文本 Diff 会先遍历完整 Revision 状态，既无展示价值又可能长期占用
+         * 全局重读锁。CSV/SVG 只在关闭二进制 Diff 后进入文本路径；启用时分别交给
+         * 受限表格预览与 Rust 安全栅格化图片预览。
+         */
+        primaryFileSupportsTextDiff: shouldLoadRepositoryTextDiff(
+          (applicationMode === 'browser-demo' ? demoRevisionFiles : revisionChanges).find(
+            (file) => changeFilePath(file) === revisionPrimaryChangePath
+          ),
+          revisionPrimaryChangePath,
+          binaryDiffVisible
         )
-      )
-      .then((diffs) => {
-        if (requestId === revisionDiffRequestCounter.current) {
-          setRevisionDiffs(diffs)
-        }
       })
-      .catch((error) => {
-        if (requestId === revisionDiffRequestCounter.current) {
-          setRevisionDiffError(readErrorMessage(error))
-        }
-      })
-      .finally(() => {
-        if (requestId === revisionDiffRequestCounter.current) {
-          setRevisionDiffLoading(false)
-        }
-      })
+      if (!selectedRevision || inspectorTab !== 'changes' || !revisionChangesDiffVisible || !requestContextCurrent) {
+        setRevisionDiffs([])
+        setRevisionDiffLoading(false)
+        return
+      }
+      if (applicationMode === 'browser-demo') {
+        // 只为当前主要选择生成隔离夹具，保持与真实按需读取相同的数据规模。
+        setRevisionDiffs(
+          demoRevisionFiles
+            .filter((file) => changeFilePath(file) === revisionPrimaryChangePath)
+            .map(createDemoWorkingTreeDiff)
+        )
+        setRevisionDiffLoading(false)
+        return
+      }
+
+      setRevisionDiffs([])
+      setRevisionDiffLoading(true)
+      await revisionDiffQueue.current
+        .run(() =>
+          loadRevisionDiff(
+            repositoryPath,
+            revisionDiffSource,
+            selectedRevision.id,
+            [revisionPrimaryChangePath],
+            diffReadPreferences
+          )
+        )
+        .then((diffs) => {
+          if (requestId === revisionDiffRequestCounter.current) {
+            setRevisionDiffs(diffs)
+          }
+        })
+        .catch((error) => {
+          if (requestId === revisionDiffRequestCounter.current) {
+            setRevisionDiffError(readErrorMessage(error))
+          }
+        })
+        .finally(() => {
+          if (requestId === revisionDiffRequestCounter.current) {
+            setRevisionDiffLoading(false)
+          }
+        })
+    })()
   }, [
     applicationMode,
     binaryDiffVisible,
@@ -420,42 +428,47 @@ export function useRevisionInspectorData({
     const requestId = revisionFilesRequestCounter.current
     const revisionId = selectedRevision?.id
     revisionFilesQueue.current.cancelPending()
-    setRevisionFilesError(null)
 
-    if (!revisionId || applicationMode === 'browser-demo') {
+    // 状态写入位于 effect 内联的 async 函数体中：执行时机与同步路径一致，但不会
+    // 被 react-compiler 判为 effect 同步体级联渲染（EffectSetState）。
+    void (async () => {
+      setRevisionFilesError(null)
+
+      if (!revisionId || applicationMode === 'browser-demo') {
+        setRevisionFiles([])
+        setRevisionFilesRevisionId('')
+        setRevisionFilesLoading(false)
+        return
+      }
+      if (!revisionInspectorRetention(inspectorTab).files) {
+        setRevisionFiles([])
+        setRevisionFilesRevisionId('')
+        setRevisionFilesLoading(false)
+        return
+      }
+
       setRevisionFiles([])
       setRevisionFilesRevisionId('')
-      setRevisionFilesLoading(false)
-      return
-    }
-    if (!revisionInspectorRetention(inspectorTab).files) {
-      setRevisionFiles([])
-      setRevisionFilesRevisionId('')
-      setRevisionFilesLoading(false)
-      return
-    }
-
-    setRevisionFiles([])
-    setRevisionFilesRevisionId('')
-    setRevisionFilesLoading(true)
-    void revisionFilesQueue.current
-      .run(() => loadRevisionFiles(repositoryPath, revisionId))
-      .then((files) => {
-        if (requestId === revisionFilesRequestCounter.current) {
-          setRevisionFiles(files)
-          setRevisionFilesRevisionId(revisionId)
-        }
-      })
-      .catch((error) => {
-        if (requestId === revisionFilesRequestCounter.current) {
-          setRevisionFilesError(readErrorMessage(error))
-        }
-      })
-      .finally(() => {
-        if (requestId === revisionFilesRequestCounter.current) {
-          setRevisionFilesLoading(false)
-        }
-      })
+      setRevisionFilesLoading(true)
+      await revisionFilesQueue.current
+        .run(() => loadRevisionFiles(repositoryPath, revisionId))
+        .then((files) => {
+          if (requestId === revisionFilesRequestCounter.current) {
+            setRevisionFiles(files)
+            setRevisionFilesRevisionId(revisionId)
+          }
+        })
+        .catch((error) => {
+          if (requestId === revisionFilesRequestCounter.current) {
+            setRevisionFilesError(readErrorMessage(error))
+          }
+        })
+        .finally(() => {
+          if (requestId === revisionFilesRequestCounter.current) {
+            setRevisionFilesLoading(false)
+          }
+        })
+    })()
   }, [applicationMode, inspectorTab, repositoryPath, selectedRevision?.id])
 
   const projection = useMemo(

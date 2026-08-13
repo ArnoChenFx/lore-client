@@ -183,10 +183,25 @@ export function SettingsDialog({
     setIdentity(parseCommitIdentity(defaultIdentity))
   }, [defaultIdentity])
 
-  useEffect(() => {
-    // 磁盘水合或其他设置入口改变偏好时，同步未聚焦输入框显示的已生效整数值。
+  // 磁盘水合或其他设置入口改变偏好时，同步未聚焦输入框显示的已生效整数值；
+  // 渲染期跟随（官方 "adjusting state when a prop changes" 模式），避免 effect
+  // 同步 setState（react-compiler EffectSetState）。输入框草稿只在提交时写回，
+  // 因此外部值变化不会覆盖正在输入的内容。
+  const [lastSyncedLimit, setLastSyncedLimit] = useState(binaryPreviewLimitMib)
+  if (lastSyncedLimit !== binaryPreviewLimitMib) {
+    setLastSyncedLimit(binaryPreviewLimitMib)
     setBinaryPreviewLimitDraft(String(binaryPreviewLimitMib))
-  }, [binaryPreviewLimitMib])
+  }
+
+  // 进入维护页且尚未加载日志信息时，立即标记为加载中；渲染期跟随分类切换，
+  // 避免 effect 同步 setState（react-compiler EffectSetState），加载完成回调负责复位。
+  const [lastLoadingCategory, setLastLoadingCategory] = useState<SettingsCategory | null>(null)
+  if (lastLoadingCategory !== activeCategory) {
+    setLastLoadingCategory(activeCategory)
+    if (activeCategory === 'maintenance' && !applicationLogLoaded) {
+      setApplicationLogLoading(true)
+    }
+  }
 
   useEffect(() => {
     /*
@@ -196,7 +211,6 @@ export function SettingsDialog({
      */
     if (activeCategory !== 'maintenance' || applicationLogLoaded) return
     let cancelled = false
-    setApplicationLogLoading(true)
     void loadApplicationLogInfo()
       .then((info) => {
         if (cancelled) return

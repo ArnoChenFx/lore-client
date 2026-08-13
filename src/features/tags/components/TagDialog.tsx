@@ -25,10 +25,16 @@ export function TagDialog({ busy, source, tag, onSubmit, onClose }: TagDialogPro
   const [name, setName] = useState(tag?.name ?? '')
   const [message, setMessage] = useState(tag?.message ?? '')
 
-  useEffect(() => {
+  // 切换编辑对象时重置草稿；渲染期跟随（官方 adjusting state during render 模式），
+  // 避免 effect 同步 setState（react-compiler EffectSetState）。key 使用内容签名，
+  // 不依赖父级对 tag 对象引用的稳定性，用户输入过程中不会触碰草稿。
+  const tagKey = tag ? `${tag.name}|${tag.message}` : ''
+  const [lastTagKey, setLastTagKey] = useState(tagKey)
+  if (lastTagKey !== tagKey) {
+    setLastTagKey(tagKey)
     setName(tag?.name ?? '')
     setMessage(tag?.message ?? '')
-  }, [tag])
+  }
 
   const sourceDescription =
     source.kind === 'revision'

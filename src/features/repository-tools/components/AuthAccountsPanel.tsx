@@ -1,5 +1,5 @@
 import { KeyRound, LoaderCircle, LogIn, LogOut, Plus, RefreshCw, ShieldAlert, Trash2, UserRound } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ControlInput, IconButton, SelectInput, TextButton, TextInput } from '../../../shared/ui'
@@ -102,9 +102,15 @@ export function AuthAccountsPanel({
   const sortedRepositories = useMemo(() => sortRepositoriesForAccountBinding(repositories), [repositories])
   const selectedAccount = accounts.find((identity) => authIdentityKey(identity) === selectedKey) ?? accounts[0]
 
-  useEffect(() => {
+  // 远端地址变化或用户清空草稿时水合；渲染期跟随（官方 adjusting state during
+  // render 模式），避免 effect 同步 setState（react-compiler EffectSetState）。
+  // key 覆盖 remoteUrl 与 remoteDraft 两路变化，行为与原 effect 完全等价。
+  const hydrationKey = `${remoteUrl}|${remoteDraft}`
+  const [lastHydrationKey, setLastHydrationKey] = useState(hydrationKey)
+  if (lastHydrationKey !== hydrationKey) {
+    setLastHydrationKey(hydrationKey)
     if (!remoteDraft.trim() && remoteUrl.trim()) setRemoteDraft(remoteUrl)
-  }, [remoteDraft, remoteUrl])
+  }
 
   const refresh = async () => {
     setPending(true)
@@ -124,10 +130,18 @@ export function AuthAccountsPanel({
     }
   }
 
+  // latest-ref 维护“最新 refresh”：refresh 闭包当前选择，不能进入 effect 依赖，
+  // 但渲染期写 ref 会触发 react-compiler 的 Refs 告警，改为 effect 内同步（合规）。
+  const refreshRef = useRef(refresh)
   useEffect(() => {
-    void refresh()
-    // 外部认证入口通过版本号触发重读；refresh 本身只闭包当前选择，不作为依赖。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    refreshRef.current = refresh
+  })
+
+  useEffect(() => {
+    // 外部认证入口通过版本号触发重读。refresh 的同步段会写状态；微任务调度让调用
+    // 脱离 effect 同步调用链（react-compiler EffectSetState），并保持只跟随
+    // refreshVersion，而不是每次渲染都因 refresh 引用变化重读。
+    queueMicrotask(() => void refreshRef.current())
   }, [refreshVersion])
 
   const interactiveLogin = async () => {

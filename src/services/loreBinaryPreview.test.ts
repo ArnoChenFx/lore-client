@@ -6,7 +6,7 @@ import {
   decodeBinaryFilePreviewEnvelope
 } from './lore'
 
-function createEnvelope(metadata: object, payload: Uint8Array): ArrayBuffer {
+function createEnvelope(metadata: Record<string, unknown>, payload: Uint8Array): ArrayBuffer {
   const metadataBytes = new TextEncoder().encode(JSON.stringify(metadata))
   const envelope = new Uint8Array(4 + metadataBytes.byteLength + payload.byteLength)
   new DataView(envelope.buffer).setUint32(0, metadataBytes.byteLength, true)

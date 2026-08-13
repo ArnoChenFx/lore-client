@@ -87,7 +87,13 @@ export function HistoryPanel({
   const [historyOnlyBranch, setHistoryOnlyBranch] = useState(historyQuery.onlyBranch)
   const [historyLimit, setHistoryLimit] = useState(historyQuery.limit)
 
-  useEffect(() => {
+  // 查询参数变化时重置草稿；渲染期跟随（官方 adjusting state during render 模式），
+  // 避免 effect 同步 setState（react-compiler EffectSetState）。key 使用内容签名，
+  // 不依赖父级对 historyQuery 对象引用的稳定性。
+  const historyQueryKey = JSON.stringify(historyQuery)
+  const [lastHistoryQueryKey, setLastHistoryQueryKey] = useState(historyQueryKey)
+  if (lastHistoryQueryKey !== historyQueryKey) {
+    setLastHistoryQueryKey(historyQueryKey)
     setHistoryRevision(historyQuery.revision ?? '')
     setHistoryBranch(historyQuery.branch ?? '')
     setHistoryBeforeDate(
@@ -95,7 +101,7 @@ export function HistoryPanel({
     )
     setHistoryOnlyBranch(historyQuery.onlyBranch)
     setHistoryLimit(historyQuery.limit)
-  }, [historyQuery])
+  }
 
   const laneModeRevisions = useMemo(
     () => revisionsForLaneMode(revisions, repository, branches, preferences.revisionHistoryLaneMode),

@@ -9,7 +9,15 @@ import i18n from '../i18n'
 const invokeMock = vi.fn()
 let repositoryStatusEvents: Array<{ tagName: string; data: Record<string, unknown> }> = []
 let branchListEvents: Array<{ tagName: string; data: Record<string, unknown> }> = []
-let conflictSessionResponse: unknown = null
+// mock 的冲突会话响应只覆盖断言需要的字段；interface 作为 named owner contract
+// 通过 anti-slop no-known-value-widening，同时保留"任意响应"的 mock 语义。
+interface MockConflictSessionResponse {
+  kind: string
+  currentRevision: string
+  stagedRevision: string
+  incomingRevision: string
+}
+let conflictSessionResponse: MockConflictSessionResponse | null = null
 
 vi.mock('@tauri-apps/api/core', () => ({
   // lore.ts 同时导出二进制流式预览；即使本文件不触发该路径，Bun 也要求 mock

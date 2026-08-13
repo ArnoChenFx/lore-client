@@ -41,9 +41,13 @@ export function RepositoryDiagnosticsPanel({
   const [pending, setPending] = useState('')
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    // 诊断草稿与事件日志只能属于当前仓库，切换项目时不得复用上一仓库的
-    // 预检凭据；否则相同路径可能错误解锁 Heal。
+  // 诊断草稿与事件日志只能属于当前仓库，切换项目时不得复用上一仓库的预检凭据；
+  // 否则相同路径可能错误解锁 Heal。渲染期跟随（官方 adjusting state during render
+  // 模式），避免 effect 同步 setState（react-compiler EffectSetState）。
+  const diagnosticResetKey = `${repositoryName}|${currentRevision ?? ''}`
+  const [lastDiagnosticResetKey, setLastDiagnosticResetKey] = useState(diagnosticResetKey)
+  if (lastDiagnosticResetKey !== diagnosticResetKey) {
+    setLastDiagnosticResetKey(diagnosticResetKey)
     setPath('')
     setReport(null)
     setVerifiedPath(null)
@@ -53,7 +57,7 @@ export function RepositoryDiagnosticsPanel({
     setDumpPath('')
     setInstances([])
     setError('')
-  }, [currentRevision, repositoryName])
+  }
 
   const runReport = async (name: string, task: () => Promise<LoreDiagnosticReport>) => {
     try {

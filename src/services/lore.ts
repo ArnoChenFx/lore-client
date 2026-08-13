@@ -2848,18 +2848,16 @@ function parseWorkingTreeDiffs(events: LoreEvent[]): WorkingTreeDiff[] {
 function parseFileHistory(events: LoreEvent[]): FileHistoryEntry[] {
   return events
     .filter((event) => event.tagName === 'fileHistory')
-    .map(
-      (event): FileHistoryEntry => ({
-        path: readString(event.data.path),
-        revision: readString(event.data.revision),
-        revisionNumber: readNumber(event.data.revisionNumber),
-        parent: Array.isArray(event.data.parent)
-          ? event.data.parent.filter((value): value is string => typeof value === 'string')
-          : [],
-        size: readNumber(event.data.size),
-        action: readString(event.data.action, 'keep').toLowerCase()
-      })
-    )
+    .map((event): FileHistoryEntry => ({
+      path: readString(event.data.path),
+      revision: readString(event.data.revision),
+      revisionNumber: readNumber(event.data.revisionNumber),
+      parent: Array.isArray(event.data.parent)
+        ? event.data.parent.filter((value): value is string => typeof value === 'string')
+        : [],
+      size: readNumber(event.data.size),
+      action: readString(event.data.action, 'keep').toLowerCase()
+    }))
     .filter((entry) => entry.path.length > 0 && entry.revision.length > 0)
 }
 

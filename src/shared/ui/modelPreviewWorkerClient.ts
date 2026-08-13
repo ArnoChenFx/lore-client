@@ -120,10 +120,7 @@ function createMaterial(
 }
 
 /** 用 Worker 返回的可转移几何缓冲重建轻量 Three.js 静态场景。 */
-export function createModelPreviewObject(
-  THREE: typeof import('three'),
-  result: ModelPreviewWorkerResult
-): { root: Object3D; center: import('three').Vector3; size: import('three').Vector3 } {
+export function createModelPreviewObject(THREE: typeof import('three'), result: ModelPreviewWorkerResult) {
   const root = new THREE.Group()
   const textures = result.textures.map((descriptor) => {
     const texture = new THREE.Texture(descriptor.image)

@@ -65,10 +65,14 @@ export function useAppWorkspaceNavigation({
     [onInspectorTabPreferenceChange]
   )
 
-  useEffect(() => {
-    if (!preferencesReady) return
+  // 偏好就绪后把持久化 Inspector 标签灌入本地状态；改用渲染期跟随（官方
+  // "adjusting state when a prop changes" 模式），避免 effect 同步 setState
+  // （react-compiler EffectSetState）。值相同时不会重复调整，用户手动切换不受影响。
+  const [lastSyncedTab, setLastSyncedTab] = useState<InspectorTab | null>(null)
+  if (preferencesReady && lastSyncedTab !== preferredInspectorTab) {
+    setLastSyncedTab(preferredInspectorTab)
     setInspectorTabState(preferredInspectorTab)
-  }, [preferencesReady, preferredInspectorTab])
+  }
 
   const revealRevision = useCallback(
     (revisionId: string) => {

@@ -28,7 +28,7 @@ import type { RepositoryIconId } from '../../types'
 const GRID_COLUMNS = 4
 
 /** 图标组件只在渲染边界映射，偏好文件始终保存左侧的稳定语义 ID。 */
-const REPOSITORY_ICON_COMPONENTS: Record<RepositoryIconId, LucideIcon> = {
+const REPOSITORY_ICON_COMPONENTS = {
   boxes: Boxes,
   'folder-git': FolderGit2,
   code: Code2,
@@ -45,13 +45,13 @@ const REPOSITORY_ICON_COMPONENTS: Record<RepositoryIconId, LucideIcon> = {
   cpu: Cpu,
   terminal: Terminal,
   rocket: Rocket
-}
+} satisfies Record<RepositoryIconId, LucideIcon>
 
 /**
  * 图标选项没有可见名称或 Tooltip；稳定英文短名只作为 radiogroup 内的可访问名称，
  * 避免为纯图形选项维护一整套不会展示给用户的双语资源。
  */
-const REPOSITORY_ICON_ACCESSIBLE_NAMES: Record<RepositoryIconId, string> = {
+const REPOSITORY_ICON_ACCESSIBLE_NAMES = {
   boxes: 'Default',
   'folder-git': 'Source',
   code: 'Code',
@@ -68,7 +68,7 @@ const REPOSITORY_ICON_ACCESSIBLE_NAMES: Record<RepositoryIconId, string> = {
   cpu: 'System',
   terminal: 'Tooling',
   rocket: 'Release'
-}
+} satisfies Record<RepositoryIconId, string>
 
 interface RepositoryIconGlyphProps {
   icon: RepositoryIconId
@@ -124,7 +124,12 @@ export function RepositoryIconPicker({ repositoryName, icon, onChange }: Reposit
       return
     }
 
-    const deltas: Partial<Record<string, number>> = {
+    // 方向键增量表：event.key 是任意字符串，interface 的索引签名保持 open 字典
+    // 语义，同时作为 named owner contract 通过 anti-slop no-known-value-widening。
+    interface ArrowKeyDeltas {
+      [key: string]: number | undefined
+    }
+    const deltas: ArrowKeyDeltas = {
       ArrowLeft: -1,
       ArrowRight: 1,
       ArrowUp: -GRID_COLUMNS,

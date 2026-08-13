@@ -74,10 +74,10 @@ function scopeMatches(scope: string | string[] | undefined, target: string): boo
  *
  * 内置主题对象在运行时被 Object.freeze，这里用 JSON 深克隆解除只读后修改；
  * 主题是纯 JSON 数据，克隆开销只在注册解析时发生一次。返回对象必须保留
- * 库校验要求的 name === 注册名。
+ * 库校验要求的 name === 注册名。base 接受任意可 JSON 序列化的主题对象。
  */
 export function createLoreDiffTheme(
-  base: object,
+  base: unknown,
   themeName: string,
   adjustments: DiffThemeAdjustments
 ): ThemeRegistration {

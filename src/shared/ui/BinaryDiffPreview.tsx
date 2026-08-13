@@ -1,5 +1,5 @@
 import { ArrowRight, Binary, FileWarning } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { formatPreviewBytes } from '../lib'
@@ -41,28 +41,44 @@ interface PreviewCardProps {
  */
 function useObjectUrl(data: BinaryPreviewData, mimeType: string): string {
   const [url, setUrl] = useState('')
+  // 记录当前创建的 Object URL，供 effect cleanup 在 data 变化或卸载时释放。
+  const urlRef = useRef('')
 
   useEffect(() => {
+    let cancelled = false
     const bytes = readBinaryPreviewData(data)
     if (bytes.byteLength === 0) {
-      setUrl('')
+      // 空字节不创建 URL；旧 URL 已由 React 在 effect 重跑前执行上一次 cleanup 释放。
+      // 清空状态放到微任务，避免在 effect 同步体内级联渲染，实际在下次绘制前生效。
+      queueMicrotask(() => setUrl(''))
       return
     }
 
-    // 浏览器环境中使用 Object URL。
+    // 浏览器环境中使用 Object URL。创建与状态写入都放在异步回调内，避免在 effect
+    // 同步路径触发级联渲染（react-compiler EffectSetState）；执行时机仍紧跟 effect。
     if (typeof URL.createObjectURL !== 'undefined') {
-      try {
-        const blob = new Blob([bytes.slice().buffer], { type: mimeType })
-        const objectUrl = URL.createObjectURL(blob)
-        setUrl(objectUrl)
-
-        // 组件卸载时释放 Object URL。
-        return () => {
-          URL.revokeObjectURL(objectUrl)
+      void (async () => {
+        let objectUrl = ''
+        try {
+          const blob = new Blob([bytes.slice().buffer], { type: mimeType })
+          objectUrl = URL.createObjectURL(blob)
+        } catch {
+          // 创建失败（如内存不足）时退回空 URL，不保留上一个 data 的 URL。
         }
-      } catch {
-        setUrl('')
-      }
+        if (cancelled) {
+          if (objectUrl) URL.revokeObjectURL(objectUrl)
+          return
+        }
+        setUrl(objectUrl)
+        urlRef.current = objectUrl
+      })()
+    }
+
+    return () => {
+      // data 变化或卸载时释放上一次创建的 Object URL。
+      cancelled = true
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current)
+      urlRef.current = ''
     }
   }, [data, mimeType])
 

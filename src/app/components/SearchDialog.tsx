@@ -32,37 +32,31 @@ export function SearchDialog({ revisions, branches, changes, onSelect, onClose }
         .filter((item) =>
           includes(item.title, item.author, item.id, ...item.branchPointers.map((pointer) => pointer.name))
         )
-        .map(
-          (value): SearchResult => ({
-            kind: 'revision',
-            id: value.id,
-            title: value.title,
-            detail: `${value.shortId} · ${value.author}`,
-            value
-          })
-        ),
+        .map((value): SearchResult => ({
+          kind: 'revision',
+          id: value.id,
+          title: value.title,
+          detail: `${value.shortId} · ${value.author}`,
+          value
+        })),
       ...branches
         .filter((item) => includes(item.name, item.author, item.latest))
-        .map(
-          (value): SearchResult => ({
-            kind: 'branch',
-            id: value.id,
-            title: value.name,
-            detail: value.remote ? t('remoteBranches') : t('localBranches'),
-            value
-          })
-        ),
+        .map((value): SearchResult => ({
+          kind: 'branch',
+          id: value.id,
+          title: value.name,
+          detail: value.remote ? t('remoteBranches') : t('localBranches'),
+          value
+        })),
       ...changes
         .filter((item) => includes(item.name, item.path))
-        .map(
-          (value): SearchResult => ({
-            kind: 'change',
-            id: value.id,
-            title: value.name,
-            detail: value.path,
-            value
-          })
-        )
+        .map((value): SearchResult => ({
+          kind: 'change',
+          id: value.id,
+          title: value.name,
+          detail: value.path,
+          value
+        }))
     ].slice(0, 80)
   }, [branches, changes, query, revisions, t])
 

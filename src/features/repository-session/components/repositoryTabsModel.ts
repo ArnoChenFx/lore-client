@@ -98,9 +98,9 @@ export function updateRepositoryTabCustomizations(
     name || color || icon
       ? {
           repositoryPath: repository.path,
-          ...(name ? { name } : {}),
-          ...(color ? { color } : {}),
-          ...(icon ? { icon } : {})
+          ...(name ? { name } : undefined),
+          ...(color ? { color } : undefined),
+          ...(icon ? { icon } : undefined)
         }
       : null
 

@@ -443,11 +443,16 @@ export function LocalChanges({
   } | null>(null)
   const previousConflictSessionRef = useRef(Boolean(conflictSession))
 
-  useEffect(() => {
-    if (!preferencesReady) return
+  // 偏好就绪时同步本地视图状态；渲染期跟随（官方 adjusting state during render
+  // 模式），避免 effect 同步 setState（react-compiler EffectSetState）。
+  // 偏好值是稳定标量，值相同时不会重复调整，用户拖拽的分割比例不被触碰。
+  const [lastSyncedViewPreference, setLastSyncedViewPreference] = useState<string | null>(null)
+  const viewPreferenceKey = `${preferences.localChangesView}|${preferences.localChangesStageSplit}`
+  if (preferencesReady && lastSyncedViewPreference !== viewPreferenceKey) {
+    setLastSyncedViewPreference(viewPreferenceKey)
     setViewMode(preferences.localChangesView)
     setStageSplit(preferences.localChangesStageSplit)
-  }, [preferences.localChangesStageSplit, preferences.localChangesView, preferencesReady])
+  }
 
   useEffect(() => {
     const conflictWasActive = previousConflictSessionRef.current

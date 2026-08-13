@@ -1,5 +1,5 @@
 import { GitCompareArrows, History, LoaderCircle, RefreshCw, ShieldCheck, ShieldOff, Undo2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SelectInput } from '../../../shared/ui'
@@ -168,10 +168,18 @@ export function BranchCollaborationPanel({
     }
   }
 
+  // latest-ref 维护“最新 refreshBranch”：回调由 App 包装且闭包当前上下文，不能
+  // 进入 effect 依赖；渲染期写 ref 会触发 react-compiler 的 Refs 告警，改为
+  // effect 内同步（合规）。
+  const refreshBranchRef = useRef(refreshBranch)
   useEffect(() => {
-    void refreshBranch(selectedBranch)
-    // 回调由 App 包装，仓库切换时组件会重新挂载；这里只跟随明确的 Branch 选择。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    refreshBranchRef.current = refreshBranch
+  })
+
+  useEffect(() => {
+    // 只跟随明确的 Branch 选择。refreshBranch 的同步段会写状态；微任务调度让调用
+    // 脱离 effect 同步调用链（react-compiler EffectSetState）。
+    queueMicrotask(() => void refreshBranchRef.current(selectedBranch))
   }, [selectedBranch])
 
   const compare = async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   AppGlobalOverlays,
@@ -220,7 +220,13 @@ function App() {
   } = useOperationHistory(applicationMode === 'tauri')
   const { availableExternalToolIds, availableExternalDiffTools, availableExternalMergeTools } =
     useAvailableExternalTools(preferences)
-  const workspaceRef = useRef<HTMLElement>(null)
+  // 渲染期可读的 workspace 节点镜像。PaneResizer 在事件处理器里读取 container，
+  // 直接传 ref.current 会触发 react-compiler 的渲染期 ref 访问告警；用 callback ref
+  // 把节点同步进 state，渲染期读取 state 是安全的，DOM 挂载语义不变。
+  const [workspaceNode, setWorkspaceNode] = useState<HTMLElement | null>(null)
+  const attachWorkspaceNode = useCallback((node: HTMLElement | null) => {
+    setWorkspaceNode(node)
+  }, [])
   const activeSnapshot =
     snapshots.find((snapshot) => repositorySessionKey(snapshot) === activeRepositoryId) ?? snapshots[0]
   const activeRepositoryPath = activeSnapshot?.repository.path ?? ''
@@ -906,7 +912,7 @@ function App() {
       overlays={appOverlays}
     >
       <AppWorkspace
-        workspaceRef={workspaceRef}
+        workspaceRef={attachWorkspaceNode}
         repositoryOpen={Boolean(activeSnapshot)}
         sidebarWidth={layout.sidebarWidth}
         inspectorWidth={layout.inspectorWidth}
@@ -949,7 +955,7 @@ function App() {
               label={t('resizeTheSidebar')}
               value={layout.sidebarWidth}
               direction="right"
-              container={workspaceRef.current}
+              container={workspaceNode}
               onChange={resizeSidebar}
               onReset={resetLayout}
             />
@@ -1038,7 +1044,7 @@ function App() {
                   label={t('resizeTheInspector')}
                   value={layout.inspectorWidth}
                   direction="left"
-                  container={workspaceRef.current}
+                  container={workspaceNode}
                   onChange={resizeInspector}
                   onReset={resetLayout}
                 />

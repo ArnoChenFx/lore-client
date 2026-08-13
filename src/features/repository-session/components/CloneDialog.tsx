@@ -70,10 +70,7 @@ interface CloneSubmissionInput {
  * 从请求中消失；没有根文件时标签、递归和深度同样没有语义，不能把它们传给 Lore 后再
  * 让用户误以为筛选已经生效。
  */
-export function buildCloneSubmission(input: CloneSubmissionInput): {
-  viewPath: string
-  options: LoreCloneOptions
-} {
+export function buildCloneSubmission(input: CloneSubmissionInput) {
   const targetRevision = input.targetRevision.trim()
   const layerRepository = input.layerRepository.trim()
   const layerMetadataKey = input.layerMetadataKey.trim()
@@ -157,13 +154,24 @@ export function CloneDialog({
   const [useSharedStore, setUseSharedStore] = useState(() => automaticSharedStore || Boolean(matchingStore))
   const [sharedStorePath, setSharedStorePath] = useState(() => matchingStore?.containerPath ?? '')
 
-  useEffect(() => setDirectoryName(defaultCloneDirectoryName(repository.name)), [repository.name])
-  useEffect(() => {
+  // 仓库选择变化时重置默认目录名；渲染期跟随（官方 adjusting state during render
+  // 模式），避免 effect 同步 setState（react-compiler EffectSetState）。
+  const [lastRepoName, setLastRepoName] = useState(repository.name)
+  if (lastRepoName !== repository.name) {
+    setLastRepoName(repository.name)
+    setDirectoryName(defaultCloneDirectoryName(repository.name))
+  }
+
+  // Store 列表异步载入后同步自动开关与匹配容器路径；matchingStore 是引用稳定的
+  // useMemo 派生值，用容器路径做变化键，值相同时保持本地草稿不被触碰。
+  const [lastStoreKey, setLastStoreKey] = useState<string | null>(null)
+  const storeKey = `${automaticSharedStore}:${matchingStore?.containerPath ?? ''}`
+  if (storeKey !== lastStoreKey) {
+    setLastStoreKey(storeKey)
     setUseSharedStore(automaticSharedStore || Boolean(matchingStore))
-    // 异步载入 Store 列表后，仅在用户尚未填写路径时使用匹配 Store 的容器路径。
-    // 这样不会覆盖用户为本次 Clone 输入的显式路径。
+    // 仅在用户尚未填写路径时使用匹配 Store 的容器路径，不覆盖用户为本次 Clone 输入的显式路径。
     setSharedStorePath((currentPath) => currentPath || matchingStore?.containerPath || '')
-  }, [automaticSharedStore, matchingStore])
+  }
 
   /**
    * 系统选择器可能需要数秒才出现，也可能在浏览器演示或权限不足时直接失败。

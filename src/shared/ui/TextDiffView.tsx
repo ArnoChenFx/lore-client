@@ -132,10 +132,9 @@ export function TextDiffView({
     }
   }, [patch])
 
-  /** 文件、补丁或展开策略变化时，立即淘汰旧加载请求及其错误提示。 */
+  /** 文件、补丁或展开策略变化时，立即淘汰旧加载请求；过期错误由渲染期的 identity 过滤丢弃。 */
   useEffect(() => {
     fullFileRequestCounter.current += 1
-    setFullFileError(null)
     return () => {
       // 卸载或身份变化时同步使在途请求失效，避免异步拒绝写回已离开的视图。
       fullFileRequestCounter.current += 1

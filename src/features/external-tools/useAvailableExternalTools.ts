@@ -68,19 +68,33 @@ export function useAvailableExternalTools(preferences: ExternalToolPreferences):
   /*
    * activeRepositoryPath 等无关偏好会频繁更新顶层对象；只以两组工具配置的引用生成
    * 稳定投影，避免每次 Repository 标签切换都重新调用原生可执行文件探测。
+   * 投影由 state 承载并在渲染期按 key 更新：key 未变时保持同一引用（不触发额外
+   * 渲染），key 变化时渲染期调整（官方 adjusting state during render 模式），
+   * 避免渲染期读写 ref（react-compiler Refs 告警）。
    */
-  const toolPreferencesCache = useRef<{ key: string; value: ExternalToolPreferences } | null>(null)
-  if (toolPreferencesCache.current?.key !== toolConfigurationKey) {
-    toolPreferencesCache.current = {
+  const [toolPreferencesCache, setToolPreferencesCache] = useState<{
+    key: string
+    value: ExternalToolPreferences
+  } | null>(null)
+  if (toolPreferencesCache?.key !== toolConfigurationKey) {
+    setToolPreferencesCache({
       key: toolConfigurationKey,
       value: {
         externalDiffTools: preferences.externalDiffTools,
         externalMergeTools: preferences.externalMergeTools
       }
-    }
+    })
   }
-  // 内容未变化时复用上一份等价数组，隔离偏好归一化产生的新引用。
-  const toolPreferences = toolPreferencesCache.current.value
+  // 内容未变化时复用上一份等价数组，隔离偏好归一化产生的新引用；首渲染用直接投影。
+  // useMemo 让依赖数组获得静态稳定的投影引用，exhaustive-deps 不再认为它每次渲染变化。
+  const toolPreferences = useMemo(
+    () =>
+      toolPreferencesCache?.value ?? {
+        externalDiffTools: preferences.externalDiffTools,
+        externalMergeTools: preferences.externalMergeTools
+      },
+    [preferences.externalDiffTools, preferences.externalMergeTools, toolPreferencesCache]
+  )
 
   useEffect(() => {
     const requestId = ++requestCounter.current
@@ -88,7 +102,13 @@ export function useAvailableExternalTools(preferences: ExternalToolPreferences):
     const candidates = collectExternalToolCandidates(toolPreferences)
 
     if (candidates.length === 0) {
-      setAvailableExternalToolIds([])
+      // 无候选时立即清空结果；放微任务避免在 effect 同步体内级联渲染
+      // （react-compiler EffectSetState），执行前仍校验请求序号与卸载状态。
+      queueMicrotask(() => {
+        if (!disposed && requestId === requestCounter.current) {
+          setAvailableExternalToolIds([])
+        }
+      })
       return () => {
         disposed = true
       }

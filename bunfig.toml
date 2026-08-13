@@ -1,0 +1,4 @@
+# Bun 测试运行器配置（项目交付命令为 `bun test`）。
+[test]
+# vendored anti-slop 插件的自测文件不属于本项目测试集。
+pathIgnorePatterns = ["tools/**", "node_modules/**", "dist/**"]

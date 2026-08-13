@@ -71,7 +71,11 @@ export function WorkingTreeDiff({
 }: WorkingTreeDiffProps) {
   const { t } = useTranslation()
   const { preferences } = useClientPreferences()
-  const lines = useMemo(() => (diff?.patch ? parseUnifiedDiff(diff.patch) : []), [diff?.patch])
+  // 先提取 patch 再 memo：直接写 diff?.patch 时 react-compiler 推断依赖为整个 diff
+  // 对象（PreserveManualMemo），与声明的 [diff?.patch] 不匹配；提取后推断收敛到
+  // 局部变量，memo 可被编译器保留。
+  const patch = diff?.patch
+  const lines = useMemo(() => (patch ? parseUnifiedDiff(patch) : []), [patch])
   const lineCounts = useMemo(() => countUnifiedDiffLines(lines), [lines])
   const themeType = resolveTheme(preferences.theme)
   const previewableKind = file ? binaryPreviewKind(changeFilePath(file)) : null

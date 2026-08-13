@@ -112,11 +112,15 @@ export function HistoryPanelContainer({
     void applyHistoryQuery(historyQuery)
   }, [applyHistoryQuery, historyQuery, preferences.revisionHistoryLaneMode, preferencesReady])
 
-  useEffect(() => {
-    // 查询只属于当前仓库；切换项目时回到完整的当前 Branch 历史。
+  // 查询只属于当前仓库；切换项目时回到完整的当前 Branch 历史。渲染期跟随
+  // （官方 adjusting state during render 模式），避免 effect 同步 setState
+  // （react-compiler EffectSetState）。
+  const [lastHistoryPath, setLastHistoryPath] = useState(snapshot.repository.path)
+  if (lastHistoryPath !== snapshot.repository.path) {
+    setLastHistoryPath(snapshot.repository.path)
     setHistoryQuery(DEFAULT_HISTORY_QUERY)
     setHistoryLoading(false)
-  }, [snapshot.repository.path])
+  }
 
   return (
     <HistoryPanel

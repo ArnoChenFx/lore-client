@@ -10,7 +10,12 @@ import type { BinaryPreviewKind } from '../../types'
  * `model` 下发，由前端 Canvas 解析，且禁止加载器拉取外部材质或缓冲。
  * CSV 以表格预览下发；它同时保留在文本类白名单中，便于 Lore 生成行级 Diff。
  */
-const previewKindsByExtension: Readonly<Record<string, BinaryPreviewKind>> = {
+// 扩展名 → 预览类别查找表：扩展名来自用户文件系统，interface 的索引签名保持
+// open 字典语义，同时作为 named owner contract 通过 anti-slop no-known-value-widening。
+interface PreviewKindsByExtension {
+  readonly [extension: string]: BinaryPreviewKind
+}
+const previewKindsByExtension: PreviewKindsByExtension = {
   png: 'image',
   jpg: 'image',
   jpeg: 'image',

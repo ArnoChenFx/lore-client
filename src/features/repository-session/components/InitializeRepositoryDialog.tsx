@@ -49,7 +49,13 @@ export function InitializeRepositoryDialog({
   const [sharedStorePath, setSharedStorePath] = useState('')
   const repositoryIdentity = formatCommitIdentity(repositoryIdentityName, repositoryIdentityEmail)
 
-  useEffect(() => {
+  // 目录、默认身份或自动开关变化时重置整个表单草稿；渲染期跟随（官方 adjusting
+  // state during render 模式），避免 effect 同步 setState（react-compiler
+  // EffectSetState）。key 覆盖原 effect 的全部依赖，值相同时不触碰用户草稿。
+  const formResetKey = `${directoryPath}|${defaultIdentityParts.name}|${defaultIdentityParts.email}|${automaticSharedStore}|${suggestedName}`
+  const [lastFormResetKey, setLastFormResetKey] = useState(formResetKey)
+  if (lastFormResetKey !== formResetKey) {
+    setLastFormResetKey(formResetKey)
     setRepositoryName(suggestedName)
     setDescription('')
     setRepositoryIdentityName(defaultIdentityParts.name)
@@ -57,7 +63,7 @@ export function InitializeRepositoryDialog({
     // 新一次初始化沿用设备级自动开关，但不复用上一次表单的路径草稿。
     setUseSharedStore(automaticSharedStore)
     setSharedStorePath('')
-  }, [automaticSharedStore, defaultIdentityParts.email, defaultIdentityParts.name, directoryPath, suggestedName])
+  }
 
   return (
     <div

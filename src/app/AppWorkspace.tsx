@@ -1,7 +1,7 @@
-import type { ReactNode, RefObject } from 'react'
+import type { ReactNode, Ref } from 'react'
 
 interface AppWorkspaceProps {
-  workspaceRef: RefObject<HTMLElement | null>
+  workspaceRef: Ref<HTMLElement | null>
   repositoryOpen: boolean
   sidebarWidth: number
   inspectorWidth: number

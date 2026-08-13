@@ -688,39 +688,42 @@ export function Inspector({
   const effectiveTreeFiles = useMemo(
     () =>
       treeFiles ??
-      files.map(
-        (file): RevisionFile => ({
-          id: `revision-tree-${file.id}`,
-          path: file.path,
-          name: file.name,
-          size: file.size ?? '—',
-          binary: Boolean(file.binary)
-        })
-      ),
+      files.map((file): RevisionFile => ({
+        id: `revision-tree-${file.id}`,
+        path: file.path,
+        name: file.name,
+        size: file.size ?? '—',
+        binary: Boolean(file.binary)
+      })),
     [files, treeFiles]
   )
   useEffect(() => {
-    setContextMenu(null)
-    setSelectionRequest(null)
     const revisionChanged = treeSelectionRevisionRef.current !== revision?.id
     treeSelectionRevisionRef.current = revision?.id
 
-    if (revisionChanged) {
-      if (pendingTreeRevealRef.current?.revisionId !== revision?.id) {
-        pendingTreeRevealRef.current = null
-      }
-      // Revision 上下文变化后清空文件选区；不能让相同路径或演示 ID 把上一
-      // Revision 的操作上下文带入当前 Revision，也不能默认首项并触发自动滚动。
-      setTreeSelection(createEmptyRevisionTreeSelection())
-      return
-    }
+    // 状态写入放到微任务，脱离 effect 同步调用链（react-compiler EffectSetState）；
+    // ref 比较与失效判断仍在同步体完成，微任务 FIFO 保证按变更顺序收敛。
+    queueMicrotask(() => {
+      setContextMenu(null)
+      setSelectionRequest(null)
 
-    /*
-     * 同一 Revision 的完整树可能因惰性加载或父级偏好状态更新而产生新数组引用。
-     * 这里只剔除已经不存在的文件，避免“在文件树中显示”的批量选区被 effect
-     * 紧接着重置；当原选区全部失效时保持空选区，等待用户显式选择。
-     */
-    setTreeSelection((current) => reconcileRevisionTreeSelection(treeReady, effectiveTreeFiles, current))
+      if (revisionChanged) {
+        if (pendingTreeRevealRef.current?.revisionId !== revision?.id) {
+          pendingTreeRevealRef.current = null
+        }
+        // Revision 上下文变化后清空文件选区；不能让相同路径或演示 ID 把上一
+        // Revision 的操作上下文带入当前 Revision，也不能默认首项并触发自动滚动。
+        setTreeSelection(createEmptyRevisionTreeSelection())
+        return
+      }
+
+      /*
+       * 同一 Revision 的完整树可能因惰性加载或父级偏好状态更新而产生新数组引用。
+       * 这里只剔除已经不存在的文件，避免“在文件树中显示”的批量选区被 effect
+       * 紧接着重置；当原选区全部失效时保持空选区，等待用户显式选择。
+       */
+      setTreeSelection((current) => reconcileRevisionTreeSelection(treeReady, effectiveTreeFiles, current))
+    })
   }, [effectiveTreeFiles, revision?.id, treeReady])
 
   const closeContextMenu = useCallback(() => setContextMenu(null), [])

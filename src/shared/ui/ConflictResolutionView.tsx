@@ -247,12 +247,12 @@ export function ConflictResolutionView({ content, fileName, themeType, onResolve
 
   useEffect(() => {
     let active = true
-    setPrepared(null)
     void prepareConflictResolution(file, options).then((result) => {
       if (active) setPrepared({ file, ...result })
     })
     return () => {
-      // 文件切换后丢弃旧预检结果，避免把上一个冲突文件的合法性套到新正文上。
+      // 文件切换后丢弃旧预检结果，避免把上一个冲突文件的合法性套到新正文上；
+      // 渲染期通过 prepared.file 与当前 file 的引用比较过滤过期结果。
       active = false
     }
   }, [file, options])

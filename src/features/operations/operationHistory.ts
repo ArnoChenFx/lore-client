@@ -19,13 +19,7 @@ export function limitRecentOperationRecords<T>(records: T[]): T[] {
  * 两类记录由不同回调产生，必须按统一开始时间裁剪，否则各保留 200 条会让操作中心
  * 实际展示 400 条。返回值保留各自原有顺序，便于操作中心继续分组展示实时流。
  */
-export function selectRecentOperationHistory(
-  operations: OperationRecord[],
-  streams: LoreOperationStreamRecord[]
-): {
-  operations: OperationRecord[]
-  streams: LoreOperationStreamRecord[]
-} {
+export function selectRecentOperationHistory(operations: OperationRecord[], streams: LoreOperationStreamRecord[]) {
   const selected = [
     ...operations.map((record) => ({ kind: 'operation' as const, key: record.id, startedAt: record.startedAt })),
     ...streams.map((record) => ({ kind: 'stream' as const, key: record.operationId, startedAt: record.startedAt }))

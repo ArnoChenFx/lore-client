@@ -64,12 +64,15 @@ export function useWorkspaceLayout() {
     fitLayoutToContainer(preferences.workspaceLayout, readInitialContainerWidth())
   )
 
-  useEffect(() => {
-    if (!ready || hydrated) return
-    const containerWidth = document.querySelector<HTMLElement>('.workspace')?.clientWidth ?? readInitialContainerWidth()
-    setLayout(fitLayoutToContainer(preferences.workspaceLayout, containerWidth))
+  /*
+   * 偏好就绪后把磁盘值灌入一次，用渲染期调整（官方 adjusting state during render
+   * 模式）替代 effect 同步 setState（react-compiler EffectSetState）。水合使用视口
+   * 估算宽度，挂载后下方 resize 监听器立即用真实 workspace 宽度校正，语义不变。
+   */
+  if (ready && !hydrated) {
     setHydrated(true)
-  }, [hydrated, preferences.workspaceLayout, ready])
+    setLayout(fitLayoutToContainer(preferences.workspaceLayout, readInitialContainerWidth()))
+  }
 
   useEffect(() => {
     // 水合前不能把内存默认值写回磁盘，否则会覆盖尚未读取完成的用户布局。

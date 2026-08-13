@@ -26,6 +26,9 @@ describe('model preview worker client', () => {
   })
 
   it('terminates and rejects a superseded parse without detaching source data', async () => {
+    // FakeWorker 是测试替身，不能直接断言为全局 Worker 构造器；双重断言是
+    // 测试标准做法。
+    // eslint-disable-next-line anti-slop/no-chained-type-assertions
     globalThis.Worker = FakeWorker as unknown as typeof Worker
     const source = new Uint8Array([70, 66, 88, 32, 55, 53, 48, 48])
     const task = startModelPreviewWorker('fbx', source)

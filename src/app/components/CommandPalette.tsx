@@ -65,7 +65,13 @@ export function CommandPalette({ onClose, onRun }: CommandPaletteProps) {
       ),
     [commands, query]
   )
-  useEffect(() => setSelectedIndex(0), [query])
+  // 查询词变化时选中项回到第一项；渲染期跟随（官方 "adjusting state when a prop
+  // changes" 模式），避免 effect 同步 setState（react-compiler EffectSetState）。
+  const [lastSyncedQuery, setLastSyncedQuery] = useState(query)
+  if (query !== lastSyncedQuery) {
+    setLastSyncedQuery(query)
+    setSelectedIndex(0)
+  }
 
   const runSelected = () => {
     const command = filteredCommands[selectedIndex]

@@ -77,13 +77,15 @@ export function PdfCanvasPreview({ fileName, label, data }: PdfCanvasPreviewProp
     let cancelled = false
     let loadingTask: PDFDocumentLoadingTask | null = null
 
-    setPdfDocument(null)
-    setPageNumber(1)
-    setPageCount(0)
-    setLoadingDocument(true)
-    setError(null)
-
     void (async () => {
+      // 文档切换时立即清空旧文档状态。位于异步回调内：执行时机与 effect 同步体
+      // 相同（同一微任务 tick），但避免在 effect 同步路径触发级联渲染
+      // （react-compiler EffectSetState）。
+      setPdfDocument(null)
+      setPageNumber(1)
+      setPageCount(0)
+      setLoadingDocument(true)
+      setError(null)
       try {
         // 核心解析器与 worker 均按需加载，图片预览不会承担 PDF.js 的启动成本。
         const [pdfjs, { default: pdfWorkerUrl }] = await Promise.all([

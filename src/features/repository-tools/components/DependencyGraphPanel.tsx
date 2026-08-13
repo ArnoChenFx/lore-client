@@ -66,7 +66,9 @@ export function DependencyGraphPanel({
   const viewportRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
   const panStateRef = useRef<DependencyGraphPanState | null>(null)
-  const panRef = useRef({ x: 0, y: 0 })
+  // 平移的原生值由 state 承载（渲染期读取 CSS 变量初值）；拖拽过程中的高频更新仍
+  // 由 moveGraphPan 直接写 DOM 合成层变量，不触发重渲染（见该函数注释）。
+  const [pan, setPan] = useState({ x: 0, y: 0 })
   const [rootFiles, setRootFiles] = useState('')
   const [tags, setTags] = useState('')
   const [recursive, setRecursive] = useState(true)
@@ -106,19 +108,23 @@ export function DependencyGraphPanel({
     query?.edges.find((edge) => dependencyEdgeKey(edge.sourcePath, edge.dependencyPath) === selectedEdgeKey) ?? null
 
   useEffect(() => {
-    if (!query || query.nodes.length === 0) {
-      setSelectedNodePath('')
-      setSelectedEdgeKey('')
-      return
-    }
-    setSelectedNodePath((current) =>
-      query.nodes.some((node) => node.path === current)
-        ? current
-        : (query.nodes.find((node) => node.root)?.path ?? query.nodes[0].path)
-    )
-    setSelectedEdgeKey((current) =>
-      query.edges.some((edge) => dependencyEdgeKey(edge.sourcePath, edge.dependencyPath) === current) ? current : ''
-    )
+    // 查询结果变化时校正选区。写入放到微任务：query 引用稳定性无法静态保证，
+    // 渲染期调整有循环风险；值未变的写入由 React bail out，顺序由微任务 FIFO 保证。
+    queueMicrotask(() => {
+      if (!query || query.nodes.length === 0) {
+        setSelectedNodePath('')
+        setSelectedEdgeKey('')
+        return
+      }
+      setSelectedNodePath((current) =>
+        query.nodes.some((node) => node.path === current)
+          ? current
+          : (query.nodes.find((node) => node.root)?.path ?? query.nodes[0].path)
+      )
+      setSelectedEdgeKey((current) =>
+        query.edges.some((edge) => dependencyEdgeKey(edge.sourcePath, edge.dependencyPath) === current) ? current : ''
+      )
+    })
   }, [query])
 
   const runPending = async <T,>(operation: () => Promise<T>): Promise<T> => {
@@ -216,10 +222,10 @@ export function DependencyGraphPanel({
     const widthRatio = (viewportRef.current.clientWidth - 24) / layout.width
     const heightRatio = (viewportRef.current.clientHeight - 24) / layout.height
     const nextZoom = clampGraphZoom(Math.min(1, widthRatio, heightRatio))
-    panRef.current = {
+    setPan({
       x: Math.round((viewportRef.current.clientWidth - layout.width * nextZoom) / 2),
       y: Math.round((viewportRef.current.clientHeight - layout.height * nextZoom) / 2)
-    }
+    })
     setZoom(nextZoom)
   }
 
@@ -236,8 +242,8 @@ export function DependencyGraphPanel({
       pointerId: event.pointerId,
       pointerX: event.clientX,
       pointerY: event.clientY,
-      panX: panRef.current.x,
-      panY: panRef.current.y
+      panX: pan.x,
+      panY: pan.y
     }
     event.currentTarget.setPointerCapture(event.pointerId)
     setPanning(true)
@@ -252,7 +258,6 @@ export function DependencyGraphPanel({
       x: origin.panX + event.clientX - origin.pointerX,
       y: origin.panY + event.clientY - origin.pointerY
     }
-    panRef.current = nextPan
     /*
      * pointermove 是高频热路径。直接更新合成层变量，避免整棵依赖图和详情面板随
      * 每个鼠标采样重渲染；释放时的 panning 状态更新会自然保留 ref 中的最终值。
@@ -290,9 +295,9 @@ export function DependencyGraphPanel({
      * 相机偏移对齐到整数 CSS 像素，避免非整数 translate 让整张节点文字落在半像素
      * 上。最多不到 0.5px 的锚点误差不会被感知，但能显著降低缩放后的字形发虚。
      */
-    const nextPanX = Math.round(dependencyGraphPanOffsetAfterZoom(panRef.current.x, pointerX, zoom, nextZoom))
-    const nextPanY = Math.round(dependencyGraphPanOffsetAfterZoom(panRef.current.y, pointerY, zoom, nextZoom))
-    panRef.current = { x: nextPanX, y: nextPanY }
+    const nextPanX = Math.round(dependencyGraphPanOffsetAfterZoom(pan.x, pointerX, zoom, nextZoom))
+    const nextPanY = Math.round(dependencyGraphPanOffsetAfterZoom(pan.y, pointerY, zoom, nextZoom))
+    setPan({ x: nextPanX, y: nextPanY })
     setZoom(nextZoom)
   }
 
@@ -528,8 +533,8 @@ export function DependencyGraphPanel({
                       width: layout.width,
                       height: layout.height,
                       '--dependency-graph-zoom': zoom,
-                      '--dependency-graph-pan-x': `${panRef.current.x}px`,
-                      '--dependency-graph-pan-y': `${panRef.current.y}px`
+                      '--dependency-graph-pan-x': `${pan.x}px`,
+                      '--dependency-graph-pan-y': `${pan.y}px`
                     } as CSSProperties
                   }
                 >

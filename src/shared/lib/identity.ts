@@ -53,7 +53,7 @@ export function formatCommitIdentity(name: string, email: string): string {
 }
 
 /** 返回 Revision 列表的可读作者名；纯邮箱历史仍原样显示，避免产生虚构姓名。 */
-export function revisionAuthorFromIdentity(identity: string): { author: string; email?: string } {
+export function revisionAuthorFromIdentity(identity: string) {
   const parts = parseCommitIdentity(identity)
   return {
     author: parts.name || parts.email || t('unknownAuthor'),

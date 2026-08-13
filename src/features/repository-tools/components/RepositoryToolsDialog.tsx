@@ -214,63 +214,84 @@ export function RepositoryToolsDialog({
   const defaultIdentityParts = useMemo(() => parseCommitIdentity(defaultIdentity), [defaultIdentity])
 
   /*
-   * 保存成功后 App 会重读仓库快照；这里只在快照字段或仓库路径真正变化时
-   * 重新初始化草稿，避免用户输入过程中普通父组件渲染覆盖尚未保存的内容。
+   * 保存成功后 App 会重读仓库快照；以下草稿重置统一改为渲染期跟随（官方
+   * adjusting state during render 模式）：只在快照字段或仓库路径真正变化时重新
+   * 初始化草稿，避免用户输入过程中普通父组件渲染覆盖尚未保存的内容，也避免
+   * effect 同步 setState（react-compiler EffectSetState）。
    */
-  useEffect(() => {
+  const identityResetKey = `${repository.path}|${repository.identity ?? ''}|${repository.remoteUrl ?? ''}`
+  const [lastIdentityResetKey, setLastIdentityResetKey] = useState(identityResetKey)
+  if (lastIdentityResetKey !== identityResetKey) {
+    setLastIdentityResetKey(identityResetKey)
     const nextIdentity = parseCommitIdentity(repository.identity ?? '')
     setIdentityName(nextIdentity.name)
     setIdentityEmail(nextIdentity.email)
     setRemoteUrl(repository.remoteUrl ?? '')
-  }, [repository.identity, repository.path, repository.remoteUrl])
+  }
 
-  useEffect(() => {
+  const remoteNameResetKey = `${repository.path}|${repository.name}`
+  const [lastRemoteNameResetKey, setLastRemoteNameResetKey] = useState(remoteNameResetKey)
+  if (lastRemoteNameResetKey !== remoteNameResetKey) {
+    setLastRemoteNameResetKey(remoteNameResetKey)
     setRemoteRepositoryName(repository.name)
     setRemoteRepositoryNameDirty(false)
     setRemoteDescription('')
     setRemoteDescriptionDirty(false)
-  }, [repository.name, repository.path])
+  }
 
-  useEffect(() => {
-    /*
-     * 服务器按 Repository ID 找到的名称是部分成功发布后的权威值。用户尚未编辑时
-     * 自动回填，避免再次用不同名称触发 Lore 的 ID 唯一性错误。
-     */
-    if (connectedRemoteName && !remoteRepositoryNameDirty) {
-      setRemoteRepositoryName(connectedRemoteName)
-    }
-  }, [connectedRemoteName, remoteRepositoryNameDirty])
+  /*
+   * 服务器按 Repository ID 找到的名称是部分成功发布后的权威值。用户尚未编辑时
+   * 自动回填，避免再次用不同名称触发 Lore 的 ID 唯一性错误；值已一致时不重复写入。
+   */
+  if (
+    connectedRemoteName &&
+    !remoteRepositoryNameDirty &&
+    remoteRepositoryName !== connectedRemoteName &&
+    lastRemoteNameResetKey === remoteNameResetKey
+  ) {
+    setRemoteRepositoryName(connectedRemoteName)
+  }
 
-  useEffect(() => {
-    /*
-     * 仓库已有绑定时默认显示该账户；没有绑定时保持显式空值，让公开服务器发布
-     * 不会因为设备上恰好登录了一个账户而悄悄切换为认证请求。
-     */
+  /*
+   * 仓库已有绑定时默认显示该账户；没有绑定时保持显式空值，让公开服务器发布
+   * 不会因为设备上恰好登录了一个账户而悄悄切换为认证请求。
+   */
+  const publishAccountKey = `${repository.path}|${boundPublishAccount?.userId ?? ''}`
+  const [lastPublishAccountKey, setLastPublishAccountKey] = useState(publishAccountKey)
+  if (lastPublishAccountKey !== publishAccountKey) {
+    setLastPublishAccountKey(publishAccountKey)
     setPublishAuthUserId(boundPublishAccount?.userId ?? '')
-  }, [boundPublishAccount?.userId, repository.path])
+  }
 
-  useEffect(() => {
-    /*
-     * 远端详情在弹层打开后异步返回。只在用户尚未编辑时写入真实说明，避免慢请求
-     * 覆盖已经键入的发布文案。
-     */
-    if (!remoteDescriptionDirty) {
-      setRemoteDescription(connectedRemoteDescription)
-    }
-  }, [connectedRemoteDescription, remoteDescriptionDirty])
+  /*
+   * 远端详情在弹层打开后异步返回。只在用户尚未编辑时写入真实说明，避免慢请求
+   * 覆盖已经键入的发布文案；值已一致时不重复写入。
+   */
+  if (
+    !remoteDescriptionDirty &&
+    remoteDescription !== connectedRemoteDescription &&
+    lastRemoteNameResetKey === remoteNameResetKey
+  ) {
+    setRemoteDescription(connectedRemoteDescription)
+  }
 
-  useEffect(() => {
+  const viewResetKey = `${repository.path}|${repositoryView?.content ?? ''}`
+  const [lastViewResetKey, setLastViewResetKey] = useState(viewResetKey)
+  if (lastViewResetKey !== viewResetKey) {
+    setLastViewResetKey(viewResetKey)
     setViewDraft(repositoryView?.content ?? '')
     setViewPreview(null)
     setPreviewedViewContent(null)
     setViewError('')
-  }, [repository.path, repositoryView?.content])
+  }
 
-  useEffect(() => {
-    /*
-     * 组合仓库表单只能属于当前 Repository。切换项目标签时清空所有草稿和危险
-     * 选择，防止把上一仓库的挂载路径误提交到新仓库。
-     */
+  /*
+   * 组合仓库表单只能属于当前 Repository。切换项目标签时清空所有草稿和危险
+   * 选择，防止把上一仓库的挂载路径误提交到新仓库。
+   */
+  const [lastResourceRepositoryPath, setLastResourceRepositoryPath] = useState(repository.path)
+  if (lastResourceRepositoryPath !== repository.path) {
+    setLastResourceRepositoryPath(repository.path)
     setResourcePending(false)
     setLayerEditorOpen(false)
     setLayerTargetPath('')
@@ -289,7 +310,7 @@ export function RepositoryToolsDialog({
     setEditingLinkPin('')
     setLockPath('')
     setLockFilter('')
-  }, [repository.path])
+  }
 
   const configurationDirty = useMemo(
     () =>
