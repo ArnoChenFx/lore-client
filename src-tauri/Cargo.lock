@@ -2861,7 +2861,7 @@ dependencies = [
 
 [[package]]
 name = "lore-client"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "exr",
  "flate2",
