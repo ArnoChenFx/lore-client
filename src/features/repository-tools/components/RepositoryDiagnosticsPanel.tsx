@@ -2,6 +2,7 @@ import { FileSearch, HardDrive, LoaderCircle, RefreshCw, ShieldAlert, Stethoscop
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useAdjustFromProps } from '../../../hooks/useAdjustFromProps'
 import { confirmLocalized } from '../../../i18n'
 import { NumberInput, TextButton, TextInput } from '../../../shared/ui'
 import type { LoreDiagnosticReport, LoreRepositoryInstance } from '../../../types'
@@ -43,11 +44,9 @@ export function RepositoryDiagnosticsPanel({
 
   // 诊断草稿与事件日志只能属于当前仓库，切换项目时不得复用上一仓库的预检凭据；
   // 否则相同路径可能错误解锁 Heal。渲染期跟随（官方 adjusting state during render
-  // 模式），避免 effect 同步 setState（react-compiler EffectSetState）。
+  // 模式，useAdjustFromProps），避免 effect 同步 setState（react-compiler EffectSetState）。
   const diagnosticResetKey = `${repositoryName}|${currentRevision ?? ''}`
-  const [lastDiagnosticResetKey, setLastDiagnosticResetKey] = useState(diagnosticResetKey)
-  if (lastDiagnosticResetKey !== diagnosticResetKey) {
-    setLastDiagnosticResetKey(diagnosticResetKey)
+  useAdjustFromProps(diagnosticResetKey, () => {
     setPath('')
     setReport(null)
     setVerifiedPath(null)
@@ -57,7 +56,7 @@ export function RepositoryDiagnosticsPanel({
     setDumpPath('')
     setInstances([])
     setError('')
-  }
+  })
 
   const runReport = async (name: string, task: () => Promise<LoreDiagnosticReport>) => {
     try {

@@ -26,6 +26,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useAdjustFromProps } from '../../../hooks/useAdjustFromProps'
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
 import { resolveTheme } from '../../../hooks/useTheme'
 import { t } from '../../../i18n'
@@ -309,15 +310,14 @@ export function RevisionChangesWorkspace({
   }, [])
 
   // 偏好就绪时同步视图模式与浏览器宽度；渲染期跟随（官方 adjusting state during
-  // render 模式），避免 effect 同步 setState（react-compiler EffectSetState）。
-  // 偏好值是稳定标量，值相同时不会重复调整。
-  const [lastSyncedViewPreference, setLastSyncedViewPreference] = useState<string | null>(null)
-  const viewPreferenceKey = `${preferences.revisionChangesView}|${preferences.revisionChangesBrowserWidth}`
-  if (preferencesReady && lastSyncedViewPreference !== viewPreferenceKey) {
-    setLastSyncedViewPreference(viewPreferenceKey)
+  // render 模式，useAdjustFromProps），避免 effect 同步 setState（react-compiler
+  // EffectSetState）。key 前缀偏好就绪标记：就绪前保持固定值不调整，就绪后一次
+  // 灌入；偏好值是稳定标量，值相同时不会重复调整。
+  const viewPreferenceKey = `${preferencesReady}:${preferences.revisionChangesView}|${preferences.revisionChangesBrowserWidth}`
+  useAdjustFromProps(viewPreferenceKey, () => {
     setViewMode(preferences.revisionChangesView)
     setBrowserWidth(preferences.revisionChangesBrowserWidth)
-  }
+  })
 
   useEffect(() => {
     // files/revision 变化时重建默认选择。写入放到微任务：files 引用稳定性无法静态

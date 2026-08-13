@@ -22,6 +22,8 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useAdjustFromProps } from '../../hooks/useAdjustFromProps'
+
 interface CommandPaletteProps {
   onClose: () => void
   onRun: (command: string) => void
@@ -66,12 +68,11 @@ export function CommandPalette({ onClose, onRun }: CommandPaletteProps) {
     [commands, query]
   )
   // 查询词变化时选中项回到第一项；渲染期跟随（官方 "adjusting state when a prop
-  // changes" 模式），避免 effect 同步 setState（react-compiler EffectSetState）。
-  const [lastSyncedQuery, setLastSyncedQuery] = useState(query)
-  if (query !== lastSyncedQuery) {
-    setLastSyncedQuery(query)
+  // changes" 模式，useAdjustFromProps），避免 effect 同步 setState
+  // （react-compiler EffectSetState）。
+  useAdjustFromProps(query, () => {
     setSelectedIndex(0)
-  }
+  })
 
   const runSelected = () => {
     const command = filteredCommands[selectedIndex]

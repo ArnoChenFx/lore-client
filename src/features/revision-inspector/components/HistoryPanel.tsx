@@ -2,6 +2,7 @@ import { AlignJustify, Columns3, Filter, GitGraph, GitMerge, ListFilter, LoaderC
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useAdjustFromProps } from '../../../hooks/useAdjustFromProps'
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
 import { useDismissiblePopover } from '../../../hooks/useDismissiblePopover'
 import { t } from '../../../i18n'
@@ -87,13 +88,12 @@ export function HistoryPanel({
   const [historyOnlyBranch, setHistoryOnlyBranch] = useState(historyQuery.onlyBranch)
   const [historyLimit, setHistoryLimit] = useState(historyQuery.limit)
 
-  // 查询参数变化时重置草稿；渲染期跟随（官方 adjusting state during render 模式），
-  // 避免 effect 同步 setState（react-compiler EffectSetState）。key 使用内容签名，
-  // 不依赖父级对 historyQuery 对象引用的稳定性。
-  const historyQueryKey = JSON.stringify(historyQuery)
-  const [lastHistoryQueryKey, setLastHistoryQueryKey] = useState(historyQueryKey)
-  if (lastHistoryQueryKey !== historyQueryKey) {
-    setLastHistoryQueryKey(historyQueryKey)
+  // 查询参数变化时重置草稿；渲染期跟随（官方 adjusting state during render 模式，
+  // useAdjustFromProps），避免 effect 同步 setState（react-compiler EffectSetState）。
+  // key 使用固定字段的内容签名，不依赖父级对 historyQuery 对象引用的稳定性，
+  // 也避免每次渲染对查询对象做 JSON 序列化。
+  const historyQueryKey = `${historyQuery.revision ?? ''}|${historyQuery.branch ?? ''}|${historyQuery.beforeDate ?? ''}|${historyQuery.onlyBranch}|${historyQuery.limit}`
+  useAdjustFromProps(historyQueryKey, () => {
     setHistoryRevision(historyQuery.revision ?? '')
     setHistoryBranch(historyQuery.branch ?? '')
     setHistoryBeforeDate(
@@ -101,7 +101,7 @@ export function HistoryPanel({
     )
     setHistoryOnlyBranch(historyQuery.onlyBranch)
     setHistoryLimit(historyQuery.limit)
-  }
+  })
 
   const laneModeRevisions = useMemo(
     () => revisionsForLaneMode(revisions, repository, branches, preferences.revisionHistoryLaneMode),

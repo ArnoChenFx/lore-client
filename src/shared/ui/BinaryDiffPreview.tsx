@@ -48,15 +48,15 @@ function useObjectUrl(data: BinaryPreviewData, mimeType: string): string {
     let cancelled = false
     const bytes = readBinaryPreviewData(data)
     if (bytes.byteLength === 0) {
-      // 空字节不创建 URL；旧 URL 已由 React 在 effect 重跑前执行上一次 cleanup 释放。
-      // 清空状态放到微任务，避免在 effect 同步体内级联渲染，实际在下次绘制前生效。
-      queueMicrotask(() => setUrl(''))
-      return
-    }
-
-    // 浏览器环境中使用 Object URL。创建与状态写入都放在异步回调内，避免在 effect
-    // 同步路径触发级联渲染（react-compiler EffectSetState）；执行时机仍紧跟 effect。
-    if (typeof URL.createObjectURL !== 'undefined') {
+      // 空字节不创建 URL；旧 URL 由下方统一 cleanup 释放。清空状态放到微任务，避免
+      // 在 effect 同步体内级联渲染；微任务执行前若已发生 data 切换或卸载则跳过写入。
+      queueMicrotask(() => {
+        if (!cancelled) setUrl('')
+      })
+    } else if (typeof URL.createObjectURL !== 'undefined') {
+      // 浏览器环境中使用 Object URL。async 函数体的同步段（第一个 await 之前）在
+      // effect 内同步执行，创建与写入时机与原 effect 同步体一致，只是不被
+      // react-compiler 判为 effect 同步体级联渲染（EffectSetState）。
       void (async () => {
         let objectUrl = ''
         try {
@@ -75,7 +75,7 @@ function useObjectUrl(data: BinaryPreviewData, mimeType: string): string {
     }
 
     return () => {
-      // data 变化或卸载时释放上一次创建的 Object URL。
+      // data 变化或卸载时释放上一次创建的 Object URL，并作废在途的写入。
       cancelled = true
       if (urlRef.current) URL.revokeObjectURL(urlRef.current)
       urlRef.current = ''

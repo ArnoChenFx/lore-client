@@ -66,9 +66,11 @@ export function DependencyGraphPanel({
   const viewportRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
   const panStateRef = useRef<DependencyGraphPanState | null>(null)
-  // 平移的原生值由 state 承载（渲染期读取 CSS 变量初值）；拖拽过程中的高频更新仍
-  // 由 moveGraphPan 直接写 DOM 合成层变量，不触发重渲染（见该函数注释）。
+  // 平移的渲染值由 state 承载；事件处理器内的高频读写统一走 panValueRef（最新值），
+  // 拖拽/缩放结束或触发重渲染前写回 state 一次，避免合成层变量与 React 渲染值分叉
+  // 导致图在拖拽结束后弹回原位置。
   const [pan, setPan] = useState({ x: 0, y: 0 })
+  const panValueRef = useRef({ x: 0, y: 0 })
   const [rootFiles, setRootFiles] = useState('')
   const [tags, setTags] = useState('')
   const [recursive, setRecursive] = useState(true)
@@ -222,10 +224,12 @@ export function DependencyGraphPanel({
     const widthRatio = (viewportRef.current.clientWidth - 24) / layout.width
     const heightRatio = (viewportRef.current.clientHeight - 24) / layout.height
     const nextZoom = clampGraphZoom(Math.min(1, widthRatio, heightRatio))
-    setPan({
+    const nextPan = {
       x: Math.round((viewportRef.current.clientWidth - layout.width * nextZoom) / 2),
       y: Math.round((viewportRef.current.clientHeight - layout.height * nextZoom) / 2)
-    })
+    }
+    panValueRef.current = nextPan
+    setPan(nextPan)
     setZoom(nextZoom)
   }
 
@@ -242,8 +246,9 @@ export function DependencyGraphPanel({
       pointerId: event.pointerId,
       pointerX: event.clientX,
       pointerY: event.clientY,
-      panX: pan.x,
-      panY: pan.y
+      // 起点必须是合成层的当前值（可能来自上一次拖拽），而不是 state 中可能过期的渲染值。
+      panX: panValueRef.current.x,
+      panY: panValueRef.current.y
     }
     event.currentTarget.setPointerCapture(event.pointerId)
     setPanning(true)
@@ -259,9 +264,11 @@ export function DependencyGraphPanel({
       y: origin.panY + event.clientY - origin.pointerY
     }
     /*
-     * pointermove 是高频热路径。直接更新合成层变量，避免整棵依赖图和详情面板随
-     * 每个鼠标采样重渲染；释放时的 panning 状态更新会自然保留 ref 中的最终值。
+     * pointermove 是高频热路径。只更新合成层变量与最新值 ref，避免整棵依赖图和
+     * 详情面板随每个鼠标采样重渲染；释放时由 stopGraphPan 把 ref 中的最终值写回
+     * state，保证下一次渲染的 CSS 变量与合成层一致。
      */
+    panValueRef.current = nextPan
     canvasRef.current?.style.setProperty('--dependency-graph-pan-x', `${nextPan.x}px`)
     canvasRef.current?.style.setProperty('--dependency-graph-pan-y', `${nextPan.y}px`)
     event.preventDefault()
@@ -274,6 +281,10 @@ export function DependencyGraphPanel({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId)
     }
+    // 拖拽结束把合成层的最终平移量同步回 state：setPanning(false) 会触发重渲染，
+    // 若不写回，CSS 变量会按过期渲染值重算，图将弹回拖拽前位置；未拖拽时值相同，
+    // 由 React bail out 跳过。
+    setPan(panValueRef.current)
     setPanning(false)
   }
 
@@ -294,10 +305,14 @@ export function DependencyGraphPanel({
     /*
      * 相机偏移对齐到整数 CSS 像素，避免非整数 translate 让整张节点文字落在半像素
      * 上。最多不到 0.5px 的锚点误差不会被感知，但能显著降低缩放后的字形发虚。
+     * 缩放以合成层当前平移为锚点：拖拽刚结束时 state 可能尚未跟上，直接读 ref。
      */
-    const nextPanX = Math.round(dependencyGraphPanOffsetAfterZoom(pan.x, pointerX, zoom, nextZoom))
-    const nextPanY = Math.round(dependencyGraphPanOffsetAfterZoom(pan.y, pointerY, zoom, nextZoom))
-    setPan({ x: nextPanX, y: nextPanY })
+    const currentPan = panValueRef.current
+    const nextPanX = Math.round(dependencyGraphPanOffsetAfterZoom(currentPan.x, pointerX, zoom, nextZoom))
+    const nextPanY = Math.round(dependencyGraphPanOffsetAfterZoom(currentPan.y, pointerY, zoom, nextZoom))
+    const nextPan = { x: nextPanX, y: nextPanY }
+    panValueRef.current = nextPan
+    setPan(nextPan)
     setZoom(nextZoom)
   }
 
@@ -520,6 +535,8 @@ export function DependencyGraphPanel({
               onPointerCancel={stopGraphPan}
               onLostPointerCapture={() => {
                 panStateRef.current = null
+                // 捕获丢失与 stopGraphPan 一样需要把最终平移量同步回 state，避免下次渲染回弹。
+                setPan(panValueRef.current)
                 setPanning(false)
               }}
               onWheel={zoomGraphWithWheel}

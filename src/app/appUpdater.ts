@@ -3,6 +3,7 @@ import { relaunch } from '@tauri-apps/plugin-process'
 import { check, type DownloadEvent, type Update } from '@tauri-apps/plugin-updater'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { useAdjustFromProps } from '../hooks/useAdjustFromProps'
 import { logError, logWarning } from '../services/logging'
 
 export type AppUpdatePhase =
@@ -156,16 +157,14 @@ export function useAppUpdater(enabled: boolean, automaticallyCheck = true) {
   }, [enabled])
 
   // enabled 是 Tauri 能力探测后的渐进值；相位切换改为渲染期跟随（官方
-  // "adjusting state when a prop changes" 模式），避免 effect 同步 setState
-  // （react-compiler EffectSetState）；资源释放与调度副作用仍留在 effect。
-  const [previousEnabled, setPreviousEnabled] = useState(enabled)
-  if (enabled !== previousEnabled) {
-    setPreviousEnabled(enabled)
+  // "adjusting state when a prop changes" 模式，useAdjustFromProps），避免 effect
+  // 同步 setState（react-compiler EffectSetState）；资源释放与调度副作用仍留在 effect。
+  useAdjustFromProps(`${enabled}`, () => {
     setState((current) => ({
       ...current,
       phase: enabled ? (current.phase === 'unsupported' ? 'idle' : current.phase) : 'unsupported'
     }))
-  }
+  })
 
   useEffect(() => {
     if (!enabled) {

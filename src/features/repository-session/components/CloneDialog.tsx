@@ -13,6 +13,7 @@ import {
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useAdjustFromProps } from '../../../hooks/useAdjustFromProps'
 import { readErrorMessage } from '../../../shared/lib'
 import { CheckboxInput, IconButton, NumberInput, TextButton, TextInput } from '../../../shared/ui'
 import type { LoreCloneOptions, LoreSharedStoreInfo, RemoteRepository } from '../../../types'
@@ -155,23 +156,19 @@ export function CloneDialog({
   const [sharedStorePath, setSharedStorePath] = useState(() => matchingStore?.containerPath ?? '')
 
   // 仓库选择变化时重置默认目录名；渲染期跟随（官方 adjusting state during render
-  // 模式），避免 effect 同步 setState（react-compiler EffectSetState）。
-  const [lastRepoName, setLastRepoName] = useState(repository.name)
-  if (lastRepoName !== repository.name) {
-    setLastRepoName(repository.name)
+  // 模式，useAdjustFromProps），避免 effect 同步 setState（react-compiler EffectSetState）。
+  useAdjustFromProps(repository.name, () => {
     setDirectoryName(defaultCloneDirectoryName(repository.name))
-  }
+  })
 
   // Store 列表异步载入后同步自动开关与匹配容器路径；matchingStore 是引用稳定的
   // useMemo 派生值，用容器路径做变化键，值相同时保持本地草稿不被触碰。
-  const [lastStoreKey, setLastStoreKey] = useState<string | null>(null)
   const storeKey = `${automaticSharedStore}:${matchingStore?.containerPath ?? ''}`
-  if (storeKey !== lastStoreKey) {
-    setLastStoreKey(storeKey)
+  useAdjustFromProps(storeKey, () => {
     setUseSharedStore(automaticSharedStore || Boolean(matchingStore))
     // 仅在用户尚未填写路径时使用匹配 Store 的容器路径，不覆盖用户为本次 Clone 输入的显式路径。
     setSharedStorePath((currentPath) => currentPath || matchingStore?.containerPath || '')
-  }
+  })
 
   /**
    * 系统选择器可能需要数秒才出现，也可能在浏览器演示或权限不足时直接失败。

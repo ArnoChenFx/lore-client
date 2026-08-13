@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { useAdjustFromProps } from '../../../hooks/useAdjustFromProps'
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
 import { t } from '../../../i18n'
 import { loadRevisionHistory } from '../../../services/lore'
@@ -113,14 +114,12 @@ export function HistoryPanelContainer({
   }, [applyHistoryQuery, historyQuery, preferences.revisionHistoryLaneMode, preferencesReady])
 
   // 查询只属于当前仓库；切换项目时回到完整的当前 Branch 历史。渲染期跟随
-  // （官方 adjusting state during render 模式），避免 effect 同步 setState
-  // （react-compiler EffectSetState）。
-  const [lastHistoryPath, setLastHistoryPath] = useState(snapshot.repository.path)
-  if (lastHistoryPath !== snapshot.repository.path) {
-    setLastHistoryPath(snapshot.repository.path)
+  // （官方 adjusting state during render 模式，useAdjustFromProps），避免 effect
+  // 同步 setState（react-compiler EffectSetState）。
+  useAdjustFromProps(snapshot.repository.path, () => {
     setHistoryQuery(DEFAULT_HISTORY_QUERY)
     setHistoryLoading(false)
-  }
+  })
 
   return (
     <HistoryPanel

@@ -27,6 +27,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useAdjustFromProps } from '../../../hooks/useAdjustFromProps'
 import {
   fileLockOwnerLabel,
   formatCommitIdentity,
@@ -215,29 +216,29 @@ export function RepositoryToolsDialog({
 
   /*
    * 保存成功后 App 会重读仓库快照；以下草稿重置统一改为渲染期跟随（官方
-   * adjusting state during render 模式）：只在快照字段或仓库路径真正变化时重新
-   * 初始化草稿，避免用户输入过程中普通父组件渲染覆盖尚未保存的内容，也避免
-   * effect 同步 setState（react-compiler EffectSetState）。
+   * adjusting state during render 模式，useAdjustFromProps）：只在快照字段或仓库
+   * 路径真正变化时重新初始化草稿，避免用户输入过程中普通父组件渲染覆盖尚未保存的
+   * 内容，也避免 effect 同步 setState（react-compiler EffectSetState）。
    */
   const identityResetKey = `${repository.path}|${repository.identity ?? ''}|${repository.remoteUrl ?? ''}`
-  const [lastIdentityResetKey, setLastIdentityResetKey] = useState(identityResetKey)
-  if (lastIdentityResetKey !== identityResetKey) {
-    setLastIdentityResetKey(identityResetKey)
+  useAdjustFromProps(identityResetKey, () => {
     const nextIdentity = parseCommitIdentity(repository.identity ?? '')
     setIdentityName(nextIdentity.name)
     setIdentityEmail(nextIdentity.email)
     setRemoteUrl(repository.remoteUrl ?? '')
-  }
+  })
 
   const remoteNameResetKey = `${repository.path}|${repository.name}`
-  const [lastRemoteNameResetKey, setLastRemoteNameResetKey] = useState(remoteNameResetKey)
-  if (lastRemoteNameResetKey !== remoteNameResetKey) {
-    setLastRemoteNameResetKey(remoteNameResetKey)
+  // 收敛标记只协调下方回填守卫的渲染时序：仓库切换触发的重置完成后才允许回填，
+  // 避免重置与回填在同一渲染帧内互相覆盖。守卫本身不校验数据源归属——旧仓库的
+  // connectedRemoteName / connectedRemoteDescription 不会写入当前仓库草稿，由
+  // useRepositoryToolsController 的请求代际隔离与资源释放保证。
+  const remoteNameSettled = useAdjustFromProps(remoteNameResetKey, () => {
     setRemoteRepositoryName(repository.name)
     setRemoteRepositoryNameDirty(false)
     setRemoteDescription('')
     setRemoteDescriptionDirty(false)
-  }
+  })
 
   /*
    * 服务器按 Repository ID 找到的名称是部分成功发布后的权威值。用户尚未编辑时
@@ -247,7 +248,7 @@ export function RepositoryToolsDialog({
     connectedRemoteName &&
     !remoteRepositoryNameDirty &&
     remoteRepositoryName !== connectedRemoteName &&
-    lastRemoteNameResetKey === remoteNameResetKey
+    remoteNameSettled
   ) {
     setRemoteRepositoryName(connectedRemoteName)
   }
@@ -257,41 +258,31 @@ export function RepositoryToolsDialog({
    * 不会因为设备上恰好登录了一个账户而悄悄切换为认证请求。
    */
   const publishAccountKey = `${repository.path}|${boundPublishAccount?.userId ?? ''}`
-  const [lastPublishAccountKey, setLastPublishAccountKey] = useState(publishAccountKey)
-  if (lastPublishAccountKey !== publishAccountKey) {
-    setLastPublishAccountKey(publishAccountKey)
+  useAdjustFromProps(publishAccountKey, () => {
     setPublishAuthUserId(boundPublishAccount?.userId ?? '')
-  }
+  })
 
   /*
    * 远端详情在弹层打开后异步返回。只在用户尚未编辑时写入真实说明，避免慢请求
    * 覆盖已经键入的发布文案；值已一致时不重复写入。
    */
-  if (
-    !remoteDescriptionDirty &&
-    remoteDescription !== connectedRemoteDescription &&
-    lastRemoteNameResetKey === remoteNameResetKey
-  ) {
+  if (!remoteDescriptionDirty && remoteDescription !== connectedRemoteDescription && remoteNameSettled) {
     setRemoteDescription(connectedRemoteDescription)
   }
 
   const viewResetKey = `${repository.path}|${repositoryView?.content ?? ''}`
-  const [lastViewResetKey, setLastViewResetKey] = useState(viewResetKey)
-  if (lastViewResetKey !== viewResetKey) {
-    setLastViewResetKey(viewResetKey)
+  useAdjustFromProps(viewResetKey, () => {
     setViewDraft(repositoryView?.content ?? '')
     setViewPreview(null)
     setPreviewedViewContent(null)
     setViewError('')
-  }
+  })
 
   /*
    * 组合仓库表单只能属于当前 Repository。切换项目标签时清空所有草稿和危险
    * 选择，防止把上一仓库的挂载路径误提交到新仓库。
    */
-  const [lastResourceRepositoryPath, setLastResourceRepositoryPath] = useState(repository.path)
-  if (lastResourceRepositoryPath !== repository.path) {
-    setLastResourceRepositoryPath(repository.path)
+  useAdjustFromProps(repository.path, () => {
     setResourcePending(false)
     setLayerEditorOpen(false)
     setLayerTargetPath('')
@@ -310,7 +301,7 @@ export function RepositoryToolsDialog({
     setEditingLinkPin('')
     setLockPath('')
     setLockFilter('')
-  }
+  })
 
   const configurationDirty = useMemo(
     () =>

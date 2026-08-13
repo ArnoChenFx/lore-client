@@ -105,6 +105,8 @@ export function AuthAccountsPanel({
   // 远端地址变化或用户清空草稿时水合；渲染期跟随（官方 adjusting state during
   // render 模式），避免 effect 同步 setState（react-compiler EffectSetState）。
   // key 覆盖 remoteUrl 与 remoteDraft 两路变化，行为与原 effect 完全等价。
+  // 注意：这是"key 变化后还要按草稿状态条件水合"的模式，与 useAdjustFromProps 的
+  // "key 变化即调整"语义不同（后者会无条件覆盖已输入的草稿），因此保留手写样板。
   const hydrationKey = `${remoteUrl}|${remoteDraft}`
   const [lastHydrationKey, setLastHydrationKey] = useState(hydrationKey)
   if (lastHydrationKey !== hydrationKey) {

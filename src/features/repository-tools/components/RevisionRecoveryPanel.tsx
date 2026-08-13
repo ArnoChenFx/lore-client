@@ -1,7 +1,8 @@
 import { Binary, FileSearch, History, Info, LoaderCircle, PencilLine, RotateCcw } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useAdjustFromProps } from '../../../hooks/useAdjustFromProps'
 import { SelectInput } from '../../../shared/ui'
 import type { LoreRevisionInfo, Revision } from '../../../types'
 
@@ -45,36 +46,59 @@ export function RevisionRecoveryPanel({
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
 
+  // 自动读取的代际标记：记录最后一次发起的自动读取目标，锚点漂移后旧响应不写回。
+  const autoReadRevisionRef = useRef(currentRevision)
+  // isCurrent 由调用方提供：自动读取校验锚点是否仍是最新；手动“加载信息”按钮
+  // 不传参（默认恒真），读取期间用户切换 Revision 不会丢弃手动选择的结果。
   const loadInfo = useCallback(
-    async (revision: string) => {
+    async (revision: string, isCurrent: (revision: string) => boolean = () => true) => {
       if (!revision) return
       setPending(true)
       setError('')
       try {
-        setInfo(await onLoadInfo(revision))
+        const info = await onLoadInfo(revision)
+        if (!isCurrent(revision)) return
+        setInfo(info)
       } catch (loadError) {
+        if (!isCurrent(revision)) return
         setInfo(null)
         setError(loadError instanceof Error ? loadError.message : String(loadError))
       } finally {
-        setPending(false)
+        if (isCurrent(revision)) {
+          setPending(false)
+        }
       }
     },
     [onLoadInfo]
   )
 
   // 当前 Revision 变化时重置已选修订；渲染期跟随（官方 adjusting state during
-  // render 模式），避免 effect 同步 setState（react-compiler EffectSetState）。
-  const [lastSyncedRevision, setLastSyncedRevision] = useState(currentRevision)
-  if (lastSyncedRevision !== currentRevision) {
-    setLastSyncedRevision(currentRevision)
+  // render 模式，useAdjustFromProps），避免 effect 同步 setState（react-compiler
+  // EffectSetState）。
+  useAdjustFromProps(currentRevision, () => {
     setSelectedRevision(currentRevision)
-  }
+  })
+
+  // latest-ref 维护“最新 loadInfo”：按钮点击直接使用当前闭包，异步读取 effect 只
+  // 跟随真实工作区锚点 currentRevision，父级回调引用变化（如仓库快照刷新）不会
+  // 触发重复读取。渲染期写 ref 会触发 react-compiler 的 Refs 告警，effect 内同步合规。
+  const loadInfoRef = useRef(loadInfo)
+  useEffect(() => {
+    loadInfoRef.current = loadInfo
+  })
 
   useEffect(() => {
     // loadInfo 的同步段会写状态；微任务调度让读取脱离 effect 同步调用链
-    // （react-compiler EffectSetState），用户感知与同步读取一致。
-    queueMicrotask(() => void loadInfo(currentRevision))
-  }, [currentRevision, loadInfo])
+    // （react-compiler EffectSetState），用户感知与同步读取一致。发起前与结果
+    // 返回时都校验锚点：快速连续切换 Revision 时，已被取代的读取不再发起，
+    // 在途的旧锚点慢响应也不会乱序覆盖新值。
+    autoReadRevisionRef.current = currentRevision
+    const requestedRevision = currentRevision
+    queueMicrotask(() => {
+      if (autoReadRevisionRef.current !== requestedRevision) return
+      void loadInfoRef.current(requestedRevision, (revision) => autoReadRevisionRef.current === revision)
+    })
+  }, [currentRevision])
 
   const runFind = async (mode: 'number' | 'metadata') => {
     setPending(true)

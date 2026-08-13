@@ -2,6 +2,7 @@ import { Database, File, GitBranch, GitCommitHorizontal, LoaderCircle, RefreshCw
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useAdjustFromProps } from '../../../hooks/useAdjustFromProps'
 import { SelectInput, TextButton, TextInput } from '../../../shared/ui'
 import type { Branch, LoreMetadataEntry, LoreMetadataScope, Revision } from '../../../types'
 
@@ -74,13 +75,12 @@ export function MetadataBrowserPanel({ branches, revisions, currentRevision, onL
     onLoadRef.current = onLoad
   })
 
-  // 当前 Revision 变化时重置已选 Revision 草稿；渲染期跟随避免 effect 同步
-  // setState（react-compiler EffectSetState），值相同时不触碰用户输入。
-  const [lastCurrentRevision, setLastCurrentRevision] = useState(currentRevision ?? '')
-  if (lastCurrentRevision !== currentRevision) {
-    setLastCurrentRevision(currentRevision ?? '')
+  // 当前 Revision 变化时重置已选 Revision 草稿；渲染期跟随（官方 adjusting state
+  // during render 模式，useAdjustFromProps）避免 effect 同步 setState
+  // （react-compiler EffectSetState），值相同时不触碰用户输入。
+  useAdjustFromProps(currentRevision ?? '', () => {
     setRevision(currentRevision ?? '')
-  }
+  })
 
   const request = resolveMetadataRequest(scope, target, revision)
   const requestScope = request?.scope
