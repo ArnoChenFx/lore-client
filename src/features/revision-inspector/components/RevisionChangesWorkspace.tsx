@@ -42,6 +42,7 @@ import {
   LatestTaskQueue,
   parseUnifiedDiff,
   repositoryFileContentKind,
+  repositoryPathDirectory,
   resolvedDiffContentKind,
   resolveSelectedChangeFiles,
   selectChangeContext,
@@ -231,15 +232,23 @@ export function RevisionChangesWorkspace({
     : null
   /**
    * 移动来源优先使用轻量清单的已确认转换；清单的哈希配对因同内容文件歧义而失败时，
-   * 右侧真实 Diff 事件的 `fromPath` 是权威来源，标题仍显示“旧 → 新”。
+   * 右侧真实 Diff 事件的 `fromPath` 是权威来源，标题仍显示“旧 → 新”。同目录只改
+   * 文件名按重命名展示，父目录变化才属于移动，与清单转换的 kind 判定一致。
    */
   const diffMoveTransition =
     primaryDiff?.action === 'move' && primaryDiff.previousPath && primaryFile
-      ? {
-          sourcePath: primaryDiff.previousPath.replaceAll('\\', '/'),
-          targetPath: changeFilePath(primaryFile),
-          kind: 'moved' as const
-        }
+      ? (() => {
+          const sourcePath = primaryDiff.previousPath.replaceAll('\\', '/')
+          const targetPath = changeFilePath(primaryFile)
+          return {
+            sourcePath,
+            targetPath,
+            kind:
+              repositoryPathDirectory(sourcePath) === repositoryPathDirectory(targetPath)
+                ? ('renamed' as const)
+                : ('moved' as const)
+          }
+        })()
       : null
   const primaryPathTransition = (primaryFile ? changeFilePathTransition(primaryFile) : null) ?? diffMoveTransition
   const primaryPatch = primaryDiff?.patch

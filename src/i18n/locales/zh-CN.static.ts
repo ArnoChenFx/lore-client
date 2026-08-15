@@ -63,8 +63,9 @@ const zhCNStatic = {
   binaryPreviewDecodeFailed: '无法解码该资产预览；文件可能损坏或使用了尚未支持的编码。',
   binaryPreviewInvalidAsset: '资产结构无效或超出安全解析限制。',
   binaryPreviewLimit: '单文件预览上限',
-  binaryPreviewLimitDescription: '控制读取到内存并传给内嵌预览器的单个原始文件大小；请输入不小于 1 MiB 的整数。',
-  binaryPreviewLimitInvalid: '二进制预览上限无效，请在客户端设置中输入不小于 1 MiB 的整数。',
+  binaryPreviewLimitDescription:
+    '控制读取到内存并传给内嵌预览器的单个原始文件大小；请输入不小于 0.01 MiB 的数值（支持小数）。',
+  binaryPreviewLimitInvalid: '二进制预览上限无效，请在客户端设置中输入不小于 0.01 MiB 的数值。',
   binaryPreviewSizeOnly: '资产超过内嵌预览上限',
   binaryPreviewSizeOnlyHint: '为避免占用过多内存，未读取资产内容，仅显示文件大小变化。',
   binaryPreviewTooLarge: '文件超过当前内嵌预览上限，请调整客户端设置或使用外部应用打开。',

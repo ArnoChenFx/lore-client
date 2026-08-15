@@ -263,29 +263,19 @@ pub async fn lore_revision_files(
 ) -> Result<Vec<LoreRevisionFile>, LoreCommandError> {
     let revision = validate_revision(&revision)?;
     run_heavy_lore_task(&REVISION_FILES_READ_LANE, move || {
-        let files = collect_revision_tree_files(&repository_path, &revision)?;
-        // 一次批量 Store 区间读取采样内容前缀；采样失败只影响图标级分类，不阻断列表。
-        let file_refs = files.iter().collect::<Vec<_>>();
-        let classifications = classify_revision_tree_files(&repository_path, &file_refs)
-            .map_err(|error| {
-                log::warn!(
-                    "Revision file classification sampling failed for {revision}: {}",
-                    error.message
-                );
-                error
-            })
-            .unwrap_or_default();
-        Ok(files
-            .into_iter()
-            .map(|file| LoreRevisionFile {
-                path: file.path.clone(),
-                size: file.size,
-                content_classification: classifications
-                    .get(&file.path)
-                    .copied()
-                    .unwrap_or_else(FileContentClassification::deferred),
-            })
-            .collect())
+        collect_revision_tree_files(&repository_path, &revision).map(|files| {
+            files
+                .into_iter()
+                .map(|file| LoreRevisionFile {
+                    path: file.path,
+                    size: file.size,
+                    // 文件树可能包含数万文件，全量前缀采样会随文件数线性放大 Store
+                    // 读取；这里保持轻量 deferred，当前主要选择的真实 Diff 会在按需
+                    // 读取后给出权威 text/binary 结论。
+                    content_classification: FileContentClassification::deferred(),
+                })
+                .collect()
+        })
     })
     .await
 }

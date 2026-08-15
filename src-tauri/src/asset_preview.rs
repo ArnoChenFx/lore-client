@@ -26,9 +26,13 @@ const MAX_UNREAL_SUMMARY_PREFIX_BYTES: usize = 128 * 1024;
 /// 64 个缩略图表项在最坏 UTF-16 名称长度下仍应落在该窗口内；超过时按无缩略图降级。
 const MAX_UNREAL_THUMBNAIL_TABLE_BYTES: usize = 1024 * 1024;
 const UNREAL_THUMBNAIL_TABLE_PROBE_BYTES: usize = 4 * 1024;
-/// 4 KiB 探针固定成本且候选窗口最多 128 个位置；只有 1 MiB 扩大读取需要单独限流，
-/// 防止恶意摘要用大量“像表项数”的假候选把 I/O 放大成数百 MiB。
+/// 4 KiB 探针固定成本且候选窗口最多 512 个字节位置（去重后候选数仍受其约束）；
+/// 只有 1 MiB 扩大读取需要单独限流，防止恶意摘要用大量“像表项数”的假候选把
+/// I/O 放大成数百 MiB。
 const MAX_UNREAL_THUMBNAIL_TABLE_EXPANSIONS: usize = 16;
+/// 缩略图对象正文的累计读取预算：多条表项可指向同一片大对象，恶意摘要可通过
+/// 合法小表项把单文件读取放大成无界远端下载；预算耗尽即停止全部候选验证。
+const MAX_UNREAL_THUMBNAIL_READ_BYTES: usize = 32 * 1024 * 1024;
 
 /// 归档目录中可安全展示的一项；路径始终只是文本，不会用于文件系统访问。
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -1202,9 +1206,11 @@ fn parse_unreal_asset_from_reader(
             // 缩略图表不只在包尾：UE 资产常把表放在摘要之后、名称表之前（如
             // TwinBlast 资产的偏移仅几千字节）。因此不能按偏移降序截断候选，
             // 必须与内存解析路径一样遍历全部候选，否则真实偏移被垃圾整数挤出
-            // 验证名单。4 KiB 探针有固定窗口上界（候选 ≤ 128 个）；昂贵的
-            // 1 MiB 扩大读取单独设总次数上限，防止恶意摘要放大 I/O。
+            // 验证名单。4 KiB 探针有固定窗口上界（512 个字节位置，去重后
+            // 候选数仍受其约束）；昂贵的 1 MiB 扩大读取和对象正文读取分别设
+            // 总次数与总字节上限，防止恶意摘要把远端叶片下载放大到无界。
             let mut expansions = 0;
+            let mut object_bytes_read = 0usize;
             'tables: for table_offset in table_offsets {
                 let table_probe = read_bounded_range(
                     reader,
@@ -1218,9 +1224,7 @@ fn parse_unreal_asset_from_reader(
                             .get(..4)
                             .and_then(|bytes| bytes.try_into().ok())
                             .map(i32::from_le_bytes)?;
-                        if !(1..=64).contains(&entry_count)
-                            || table_probe.len() >= MAX_UNREAL_THUMBNAIL_TABLE_BYTES
-                        {
+                        if !(1..=64).contains(&entry_count) {
                             return None;
                         }
                         // 只有首字段已经像真实表项数、但 4 KiB 不足时才扩大读取；
@@ -1263,6 +1267,12 @@ fn parse_unreal_asset_from_reader(
                                     "thumbnail object size overflowed",
                                 )
                             })?;
+                    // 多条表项可指向同一片大对象；累计预算耗尽即停止全部验证，
+                    // 不让恶意摘要通过合法小表项把单文件读取放大成无界下载。
+                    object_bytes_read = match object_bytes_read.checked_add(object_size) {
+                        Some(total) if total <= MAX_UNREAL_THUMBNAIL_READ_BYTES => total,
+                        _ => break 'tables,
+                    };
                     let Ok(object) =
                         read_exact_range(reader, file_size, thumbnail_offset, object_size)
                     else {

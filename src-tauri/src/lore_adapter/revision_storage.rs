@@ -503,6 +503,8 @@ pub(super) struct RangeGetCapture {
     pub(super) bytes: Vec<u8>,
     /// Header 报告的完整内容大小；用于把请求区间收敛到真实内容边界。
     pub(super) size_content: u64,
+    /// Header 是否到达；未到达时返回空缓冲区必须报错而不是伪装成 EOF。
+    pub(super) header_seen: bool,
     pub(super) error: Option<String>,
 }
 
@@ -610,6 +612,12 @@ pub(super) fn run_storage_range_get_operation(
     }
 
     // 起始偏移越界由 Lore 以 INVALID_ARGUMENTS 拒绝；这里只收敛“读到结尾”的请求。
+    if !capture.header_seen {
+        return Err(LoreCommandError::new(
+            "storage_payload_invalid",
+            "Lore store range read returned data without a header",
+        ));
+    }
     let available = capture.size_content.saturating_sub(requested_offset);
     let expected = if requested_length == 0 {
         available
@@ -637,6 +645,7 @@ pub(super) fn prepare_range_get_buffer(
 ) -> Result<(), String> {
     capture.offset = offset;
     capture.size_content = size_content;
+    capture.header_seen = true;
     if offset > size_content {
         return Err("Lore store range read starts past the content end".to_owned());
     }
@@ -967,15 +976,17 @@ pub(super) fn read_revision_file_content(
 
 /// Revision 列表批量采样的单文件预算。
 ///
-/// 列表采样在单次 Store 调用中携带全部文件，总量受文件数约束，因此单文件预算
-/// 低于工作区 64 KiB 采样；4 KiB 已足以覆盖常见 BOM、magic、UTF-16 模式与控制
-/// 字符分布，分类结论与 64 KiB 采样对同一文件一致。
+/// 列表采样在单次 Store 调用中携带参与变化的文件，单文件预算低于工作区 64 KiB
+/// 采样；4 KiB 已足以覆盖常见 BOM、magic、UTF-16 模式与控制字符分布。采样窗口
+/// 只覆盖前缀，4–64 KiB 区间才出现 NUL/控制字符的罕见内容会在主要选择加载真实
+/// Diff 后收敛为权威结论。
 const REVISION_LIST_SAMPLE_BYTES: u64 = 4 * 1024;
 
 /// 通过一次批量 Store 区间读取为 Revision 树文件采样内容前缀并分类。
 ///
 /// 只有真实返回内容的文件得到结构化分类；单个 item 缺失或整体读取失败时，缺失
-/// 文件保持 `deferred`，不阻断轻量清单（列表正确性不依赖图标级分类）。
+/// 文件保持 `deferred`，不阻断轻量清单（列表正确性不依赖图标级分类）。空文件
+/// 直接归类为文本，不发起采样请求。
 pub(super) fn classify_revision_tree_files(
     repository_path: &str,
     files: &[&RevisionTreeFile],
@@ -985,8 +996,16 @@ pub(super) fn classify_revision_tree_files(
     }
     let store = open_revision_storage(repository_path)?;
     let mut requested = Vec::new();
+    let mut classifications = BTreeMap::new();
     for (index, file) in files.iter().enumerate() {
         let file = *file;
+        if file.size == 0 {
+            classifications.insert(
+                file.path.clone(),
+                FileContentClassification::text(FileContentClassificationSource::Empty),
+            );
+            continue;
+        }
         let Ok(partition) = file.repository.parse() else {
             log::warn!(
                 "Skip revision file {} with an invalid repository ID during classification",
@@ -1023,7 +1042,6 @@ pub(super) fn classify_revision_tree_files(
     close_revision_storage(store);
 
     let contents = result?;
-    let mut classifications = BTreeMap::new();
     for (id, file, _) in requested {
         let Some(bytes) = contents.get(&id) else {
             continue;
@@ -1344,9 +1362,10 @@ pub(super) fn build_file_preview(
         if supports_large_embedded_thumbnail(&relative_path) {
             /*
              * 资产格式在 Revision 侧总是优先区间缩略图读取，避免为预览物化或下载
-             * 完整对象（远端冷缓存时只拉触及叶片）。区间读取失败——格式不兼容或
-             * 存储错误——回退完整读取以保留 GLB 模型等完整解析能力；超限文件仍
-             * 保持元数据降级，不因兜底突破完整正文内存预算。
+             * 完整对象（远端冷缓存时只拉触及叶片）。区间路径只产出缩略图正文；
+             * 没有内嵌缩略图的合法包仍需完整解析（GLB 模型预览等），因此在区间
+             * 成功但无缩略图、或区间读取失败时都回退整读；超限文件保持元数据
+             * 降级，不因兜底突破完整正文内存预算。
              */
             return match build_revision_large_asset_preview(
                 repository_path,
@@ -1354,7 +1373,28 @@ pub(super) fn build_file_preview(
                 &relative_path,
                 normalized_path.clone(),
             ) {
-                Ok(preview) => Ok(preview),
+                Ok(preview) if !preview.data.is_empty() => Ok(preview),
+                Ok(preview) => {
+                    if binary_preview_size_exceeded(file.size, preview_limit_bytes) {
+                        return Ok(metadata_only_preview(
+                            file.size,
+                            LoreFilePreviewContentState::TooLarge,
+                        ));
+                    }
+                    match build_full_revision_preview(
+                        repository_path,
+                        file,
+                        &relative_path,
+                        normalized_path,
+                        kind,
+                        source_mime_type,
+                        preview_limit_bytes,
+                    ) {
+                        Ok(full) => Ok(full),
+                        // 完整读取失败时保留区间路径已解析出的元数据结果。
+                        Err(_) => Ok(preview),
+                    }
+                }
                 Err(interval_error) => {
                     if binary_preview_size_exceeded(file.size, preview_limit_bytes) {
                         return Ok(metadata_only_preview(

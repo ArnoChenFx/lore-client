@@ -77,9 +77,9 @@ const enUSStatic = {
   binaryPreviewInvalidAsset: 'The asset structure is invalid or exceeds safe parsing limits.',
   binaryPreviewLimit: 'Per-file preview limit',
   binaryPreviewLimitDescription:
-    'Controls the size of one source file read into memory and sent to the embedded previewer; enter a whole number of at least 1 MiB.',
+    'Controls the size of one source file read into memory and sent to the embedded previewer; enter a value of at least 0.01 MiB (fractions allowed).',
   binaryPreviewLimitInvalid:
-    'The binary preview limit is invalid; enter a whole number of at least 1 MiB in Client Settings.',
+    'The binary preview limit is invalid; enter a value of at least 0.01 MiB in Client Settings.',
   binaryPreviewSizeOnly: 'Asset exceeds the embedded preview limit',
   binaryPreviewSizeOnlyHint: 'The asset content was not read; only its file size change is shown to limit memory use.',
   binaryPreviewTooLarge:

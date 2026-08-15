@@ -49,7 +49,7 @@ export function changeFilePath(file: RepositoryFileReference): string {
 }
 
 /** 返回仓库相对路径的父目录；根目录文件统一使用 `.`。 */
-function repositoryPathDirectory(path: string): string {
+export function repositoryPathDirectory(path: string): string {
   const separatorIndex = path.lastIndexOf('/')
   return separatorIndex >= 0 ? path.slice(0, separatorIndex) || '.' : '.'
 }
