@@ -197,8 +197,8 @@ pub struct ClientPreferences {
     pub revision_changes_diff_visible: bool,
     /// 工作区与 Revision 是否读取并显示可预览的二进制 Diff。
     pub binary_diff_visible: bool,
-    /// 单个二进制文件允许进入完整内嵌预览链路的最大原始体积，单位为 MiB。
-    pub binary_preview_limit_mib: u64,
+    /// 单个二进制文件允许进入完整内嵌预览链路的最大原始体积，单位为 MiB；允许小数。
+    pub binary_preview_limit_mib: f64,
     /// Revision History 左侧轨道使用完整多道拓扑或当前 Branch 单道投影。
     pub revision_history_lane_mode: String,
     pub diff: DiffPreference,
@@ -526,7 +526,7 @@ mod tests {
                 color: Some("#4aa7ad".to_owned()),
                 icon: Some("gamepad".to_owned()),
             }],
-            binary_preview_limit_mib: 64,
+            binary_preview_limit_mib: 64.0,
             diff: DiffPreference {
                 diff_style: "split".to_owned(),
                 expand_full_file: true,
@@ -561,7 +561,7 @@ mod tests {
         assert!(!restored.automatically_check_for_updates);
         assert_eq!(restored.external_diff_tools[0].kind, "custom");
         assert_eq!(restored.external_diff_tools[0].name, "Studio Diff");
-        assert_eq!(restored.binary_preview_limit_mib, 64);
+        assert_eq!(restored.binary_preview_limit_mib, 64.0);
         // 前端新增的 Diff 参数必须随偏好文件往返，否则重启后会静默丢失布局选择。
         assert_eq!(restored.diff.diff_style, "split");
         assert!(restored.diff.expand_full_file);
@@ -626,7 +626,7 @@ mod tests {
         assert!(preferences.local_changes_diff_visible);
         assert!(preferences.revision_changes_diff_visible);
         assert!(preferences.binary_diff_visible);
-        assert_eq!(preferences.binary_preview_limit_mib, 20);
+        assert_eq!(preferences.binary_preview_limit_mib, 20.0);
         assert_eq!(preferences.revision_history_lane_mode, "flat");
         // 旧文件缺省启动检查字段时保持既有行为，不因升级静默关闭自动更新。
         assert!(preferences.automatically_check_for_updates);
@@ -666,7 +666,7 @@ mod tests {
     #[test]
     fn preferences_reject_zero_binary_preview_limit() {
         let preferences = ClientPreferences {
-            binary_preview_limit_mib: 0,
+            binary_preview_limit_mib: 0.0,
             ..Default::default()
         };
 

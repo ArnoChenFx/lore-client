@@ -243,8 +243,9 @@ export function SettingsDialog({
 
   const commitBinaryPreviewLimit = () => {
     const parsed = Number(binaryPreviewLimitDraft)
+    // 保留两位小数精度：0.01 MiB 的区间缩略图调试场景也允许保存。
     const normalized = Number.isFinite(parsed)
-      ? Math.max(MIN_BINARY_PREVIEW_LIMIT_MIB, Math.round(parsed))
+      ? Math.max(MIN_BINARY_PREVIEW_LIMIT_MIB, Math.round(parsed * 100) / 100)
       : binaryPreviewLimitMib
     setBinaryPreviewLimitDraft(String(normalized))
     onBinaryPreviewLimitMibChange(normalized)
@@ -564,8 +565,8 @@ export function SettingsDialog({
                     <NumberInput
                       value={binaryPreviewLimitDraft}
                       min={MIN_BINARY_PREVIEW_LIMIT_MIB}
-                      step={1}
-                      inputMode="numeric"
+                      step={0.01}
+                      inputMode="decimal"
                       aria-label={t('binaryPreviewLimit')}
                       aria-describedby="binary-preview-limit-hint"
                       onChange={(event) => setBinaryPreviewLimitDraft(event.target.value)}

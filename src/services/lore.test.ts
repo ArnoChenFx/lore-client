@@ -1177,6 +1177,46 @@ describe('Lore event adapter', () => {
     ])
   })
 
+  it('carries the real move source path from fileDiff events', () => {
+    const events: LoreEvent[] = [
+      {
+        tagName: 'fileDiff',
+        data: {
+          path: 'Content/World/New.uasset',
+          action: 'move',
+          fromPath: 'Content/World/Old.uasset',
+          patch: 'Binary files differ\n'
+        }
+      },
+      {
+        // 空 fromPath 与缺失字段都不产生 previousPath。
+        tagName: 'fileDiff',
+        data: {
+          path: 'Content/World/Added.uasset',
+          action: 'add',
+          fromPath: '',
+          patch: '+payload'
+        }
+      }
+    ]
+
+    expect(loreEventParsers.parseWorkingTreeDiffs(events)).toEqual([
+      {
+        path: 'Content/World/New.uasset',
+        action: 'move',
+        previousPath: 'Content/World/Old.uasset',
+        patch: 'Binary files differ\n',
+        contentClassification: { kind: 'binary', source: 'loreDiff' }
+      },
+      {
+        path: 'Content/World/Added.uasset',
+        action: 'add',
+        patch: '+payload',
+        contentClassification: { kind: 'text', source: 'loreDiff' }
+      }
+    ])
+  })
+
   it('creates a file revision timeline from fileHistory events', () => {
     const events: LoreEvent[] = [
       {

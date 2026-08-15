@@ -263,18 +263,29 @@ pub async fn lore_revision_files(
 ) -> Result<Vec<LoreRevisionFile>, LoreCommandError> {
     let revision = validate_revision(&revision)?;
     run_heavy_lore_task(&REVISION_FILES_READ_LANE, move || {
-        collect_revision_tree_files(&repository_path, &revision).map(|files| {
-            files
-                .into_iter()
-                .map(|file| LoreRevisionFile {
-                    path: file.path,
-                    size: file.size,
-                    // 固定 Lore Storage 不支持前缀范围读取；文件树保持轻量，当前主要选择
-                    // 的真实 Diff 会在按需读取后给出权威 text/binary 结论。
-                    content_classification: FileContentClassification::deferred(),
-                })
-                .collect()
-        })
+        let files = collect_revision_tree_files(&repository_path, &revision)?;
+        // 一次批量 Store 区间读取采样内容前缀；采样失败只影响图标级分类，不阻断列表。
+        let file_refs = files.iter().collect::<Vec<_>>();
+        let classifications = classify_revision_tree_files(&repository_path, &file_refs)
+            .map_err(|error| {
+                log::warn!(
+                    "Revision file classification sampling failed for {revision}: {}",
+                    error.message
+                );
+                error
+            })
+            .unwrap_or_default();
+        Ok(files
+            .into_iter()
+            .map(|file| LoreRevisionFile {
+                path: file.path.clone(),
+                size: file.size,
+                content_classification: classifications
+                    .get(&file.path)
+                    .copied()
+                    .unwrap_or_else(FileContentClassification::deferred),
+            })
+            .collect())
     })
     .await
 }
@@ -290,12 +301,12 @@ pub async fn lore_file_preview(
     path: String,
     revision: Option<String>,
     metadata_only: Option<bool>,
-    preview_limit_mib: Option<u64>,
+    preview_limit_mib: Option<f64>,
 ) -> Result<tauri::ipc::Response, LoreCommandError> {
     let revision = revision
         .map(|value| validate_revision(&value))
         .transpose()?;
-    // IPC 参数不能未经检查直接参与内存预算；Rust 仍拒绝零值和字节换算溢出。
+    // IPC 参数不能未经检查直接参与内存预算；Rust 仍拒绝零值、非有限值和字节换算溢出。
     let preview_limit_bytes =
         binary_preview_limit_bytes(preview_limit_mib.unwrap_or(DEFAULT_BINARY_PREVIEW_LIMIT_MIB))
             .map_err(|error| LoreCommandError::new(error.code, error.message))?;
@@ -324,7 +335,7 @@ pub async fn lore_file_preview_stream(
     path: String,
     revision: Option<String>,
     metadata_only: Option<bool>,
-    preview_limit_mib: Option<u64>,
+    preview_limit_mib: Option<f64>,
     on_chunk: tauri::ipc::Channel<tauri::ipc::Response>,
 ) -> Result<(), LoreCommandError> {
     let revision = revision
@@ -471,7 +482,31 @@ pub async fn lore_revision_changes(
             .map(|revision| collect_revision_tree_files(&repository_path, revision))
             .transpose()?
             .unwrap_or_default();
-        Ok(compare_revision_tree_files(&source_files, &target_files))
+        let mut changes = compare_revision_tree_files(&source_files, &target_files);
+        // 采样来源与目标树中参与变化的文件，覆盖轻量清单的延迟分类；采样失败只
+        // 影响图标级结论，真实 Diff 仍会在主要选择读取后给出权威 text/binary。
+        // 同一路径在两侧都出现时只保留目标侧（modify 采样新内容）。
+        let changed_paths = changes
+            .iter()
+            .map(|change| change.path.clone())
+            .collect::<BTreeSet<_>>();
+        let mut sample_files = BTreeMap::<&str, &RevisionTreeFile>::new();
+        for file in source_files.iter().chain(target_files.iter()) {
+            if changed_paths.contains(&file.path) {
+                sample_files.insert(file.path.as_str(), file);
+            }
+        }
+        let sample_files = sample_files.into_values().collect::<Vec<_>>();
+        if let Ok(classifications) = classify_revision_tree_files(&repository_path, &sample_files) {
+            for change in &mut changes {
+                if let Some(classification) = classifications.get(&change.path) {
+                    change.content_classification = *classification;
+                }
+            }
+        } else {
+            log::warn!("Revision changes classification sampling failed for {target_revision}");
+        }
+        Ok(changes)
     })
     .await
 }

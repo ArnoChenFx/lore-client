@@ -283,11 +283,19 @@ describe('client preferences stored on disk', () => {
   it('persists and bounds the binary preview size limit in MiB', () => {
     expect(DEFAULT_CLIENT_PREFERENCES.binaryPreviewLimitMib).toBe(20)
 
-    updateClientPreferences({ binaryPreviewLimitMib: 64.4 })
-    expect(getClientPreferences().binaryPreviewLimitMib).toBe(64)
+    // 两位小数精度保留，0.01 MiB 的区间缩略图调试场景可保存。
+    updateClientPreferences({ binaryPreviewLimitMib: 64.44 })
+    expect(getClientPreferences().binaryPreviewLimitMib).toBe(64.44)
+
+    updateClientPreferences({ binaryPreviewLimitMib: 0.01 })
+    expect(getClientPreferences().binaryPreviewLimitMib).toBe(0.01)
+
+    // 超出两位小数的输入裁剪到两位小数。
+    updateClientPreferences({ binaryPreviewLimitMib: 0.125 })
+    expect(getClientPreferences().binaryPreviewLimitMib).toBe(0.13)
 
     updateClientPreferences({ binaryPreviewLimitMib: 0 })
-    expect(getClientPreferences().binaryPreviewLimitMib).toBe(1)
+    expect(getClientPreferences().binaryPreviewLimitMib).toBe(0.01)
 
     updateClientPreferences({ binaryPreviewLimitMib: 2048 })
     expect(getClientPreferences().binaryPreviewLimitMib).toBe(2048)

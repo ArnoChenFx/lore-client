@@ -2836,6 +2836,7 @@ function parseWorkingTreeDiffs(events: LoreEvent[]): WorkingTreeDiff[] {
         path: readString(event.data.path),
         patch,
         action: readString(event.data.action, 'keep').toLowerCase(),
+        previousPath: readString(event.data.fromPath).replaceAll('\\', '/') || undefined,
         contentClassification: {
           kind: patch.includes('Binary files differ') ? 'binary' : 'text',
           source: 'loreDiff'

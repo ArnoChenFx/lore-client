@@ -10,15 +10,20 @@ import {
 import type { ClientPreferences, WorkspaceLayout } from '../types'
 import { invokeLogged, logError } from './logging'
 
-/** 默认值保持升级前行为；最小值同时用于设置输入和磁盘偏好规范化。 */
+/** 默认值保持升级前行为；最小值同时用于设置输入和磁盘偏好规范化（允许小数）。 */
 export const DEFAULT_BINARY_PREVIEW_LIMIT_MIB = 20
-export const MIN_BINARY_PREVIEW_LIMIT_MIB = 1
+export const MIN_BINARY_PREVIEW_LIMIT_MIB = 0.01
 
 /*
  * 产品不设置最大值；这里只把超过 u64 字节计数能力的 MiB 值裁剪到可精确换算的
  * 技术边界。该值约 16 EiB，不构成正常使用中的产品限制，也不会暴露到输入控件。
  */
 const MAX_BINARY_PREVIEW_LIMIT_MIB_BY_BYTE_COUNTER = 17_592_186_044_415
+
+/** 偏好以最多两位小数的 MiB 保存，避免 JSON 中出现超出 u64 精度的字节换算值。 */
+function roundPreviewLimitMib(value: number): number {
+  return Math.round(value * 100) / 100
+}
 
 export const DEFAULT_CLIENT_PREFERENCES: ClientPreferences = {
   version: 5,
@@ -257,14 +262,14 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
         ? value.binaryDiffVisible
         : DEFAULT_CLIENT_PREFERENCES.binaryDiffVisible,
     /*
-     * 偏好以整数 MiB 保存，避免 JSON 中出现超过 JavaScript 安全整数的字节数。
-     * 手工编辑产生的非有限值或非数字回退默认值，合法数字则裁剪到安全预算。
+     * 偏好以最多两位小数的 MiB 保存。手工编辑产生的非有限值或非数字回退默认值，
+     * 合法数字则裁剪到安全预算；0.01 MiB 的区间缩略图调试场景保留两位小数精度。
      */
     binaryPreviewLimitMib:
       typeof value?.binaryPreviewLimitMib === 'number' && Number.isFinite(value.binaryPreviewLimitMib)
         ? Math.max(
             MIN_BINARY_PREVIEW_LIMIT_MIB,
-            Math.min(MAX_BINARY_PREVIEW_LIMIT_MIB_BY_BYTE_COUNTER, Math.round(value.binaryPreviewLimitMib))
+            Math.min(MAX_BINARY_PREVIEW_LIMIT_MIB_BY_BYTE_COUNTER, roundPreviewLimitMib(value.binaryPreviewLimitMib))
           )
         : DEFAULT_CLIENT_PREFERENCES.binaryPreviewLimitMib,
     /*

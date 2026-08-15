@@ -26,8 +26,9 @@ const MAX_UNREAL_SUMMARY_PREFIX_BYTES: usize = 128 * 1024;
 /// 64 个缩略图表项在最坏 UTF-16 名称长度下仍应落在该窗口内；超过时按无缩略图降级。
 const MAX_UNREAL_THUMBNAIL_TABLE_BYTES: usize = 1024 * 1024;
 const UNREAL_THUMBNAIL_TABLE_PROBE_BYTES: usize = 4 * 1024;
-/// 摘要尾部字段会随 UE 版本移动，但候选探测不能把 512 个任意整数放大成 512 MiB I/O。
-const MAX_UNREAL_THUMBNAIL_TABLE_CANDIDATES: usize = 16;
+/// 4 KiB 探针固定成本且候选窗口最多 128 个位置；只有 1 MiB 扩大读取需要单独限流，
+/// 防止恶意摘要用大量“像表项数”的假候选把 I/O 放大成数百 MiB。
+const MAX_UNREAL_THUMBNAIL_TABLE_EXPANSIONS: usize = 16;
 
 /// 归档目录中可安全展示的一项；路径始终只是文本，不会用于文件系统访问。
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -138,7 +139,7 @@ impl AssetPreviewError {
         Self {
             code: "binary_preview_too_large",
             message: format!(
-                "The file is {:.1} MiB, exceeding the {:.0} MiB embedded preview limit; \
+                "The file is {:.1} MiB, exceeding the {:.2} MiB embedded preview limit; \
                  open it with an external application",
                 size as f64 / (1024.0 * 1024.0),
                 limit_bytes as f64 / (1024.0 * 1024.0)
@@ -146,8 +147,8 @@ impl AssetPreviewError {
         }
     }
 
-    /// 前端或偏好文件提交了零值，或无法换算到字节计数器的技术溢出值。
-    pub(crate) fn invalid_limit(limit_mib: u64) -> Self {
+    /// 前端或偏好文件提交了零值、非有限值，或无法换算到字节计数器的技术溢出值。
+    pub(crate) fn invalid_limit(limit_mib: f64) -> Self {
         Self {
             code: "binary_preview_limit_invalid",
             message: format!(
@@ -1197,11 +1198,13 @@ fn parse_unreal_asset_from_reader(
 
     let mut thumbnail = None;
     if !byte_swapped {
-        if let Some(mut table_offsets) = unreal_thumbnail_table_candidates(&summary, file_size) {
-            // 缩略图表通常位于包尾；优先验证较大的绝对偏移，可避开摘要中的 Count、
-            // Version 等小整数，同时把恶意摘要可放大的随机读取次数固定在 16 次以内。
-            table_offsets.sort_unstable_by(|left, right| right.cmp(left));
-            table_offsets.truncate(MAX_UNREAL_THUMBNAIL_TABLE_CANDIDATES);
+        if let Some(table_offsets) = unreal_thumbnail_table_candidates(&summary, file_size) {
+            // 缩略图表不只在包尾：UE 资产常把表放在摘要之后、名称表之前（如
+            // TwinBlast 资产的偏移仅几千字节）。因此不能按偏移降序截断候选，
+            // 必须与内存解析路径一样遍历全部候选，否则真实偏移被垃圾整数挤出
+            // 验证名单。4 KiB 探针有固定窗口上界（候选 ≤ 128 个）；昂贵的
+            // 1 MiB 扩大读取单独设总次数上限，防止恶意摘要放大 I/O。
+            let mut expansions = 0;
             'tables: for table_offset in table_offsets {
                 let table_probe = read_bounded_range(
                     reader,
@@ -1220,8 +1223,12 @@ fn parse_unreal_asset_from_reader(
                         {
                             return None;
                         }
-                        // 只有首字段已经像真实表项数、但 4 KiB 不足时才扩大读取；绝大
-                        // 多数摘要整数候选在探针阶段即被淘汰，不会各自放大成 1 MiB I/O。
+                        // 只有首字段已经像真实表项数、但 4 KiB 不足时才扩大读取；
+                        // 扩大次数有总上限，多数摘要整数候选在探针阶段即被淘汰。
+                        if expansions >= MAX_UNREAL_THUMBNAIL_TABLE_EXPANSIONS {
+                            return None;
+                        }
+                        expansions += 1;
                         let table = read_bounded_range(
                             reader,
                             file_size,
@@ -1922,17 +1929,23 @@ pub fn binary_preview_format(path: &Path) -> Option<(&'static str, &'static str)
 }
 
 /// 预览偏好的产品默认值与最小值；产品不设置最大值。
-pub const DEFAULT_BINARY_PREVIEW_LIMIT_MIB: u64 = 20;
-pub const MIN_BINARY_PREVIEW_LIMIT_MIB: u64 = 1;
+///
+/// 使用 f64 支持小于 1 MiB 的区间缩略图调试场景（如 0.01 MiB ≈ 10 KiB）。
+pub const DEFAULT_BINARY_PREVIEW_LIMIT_MIB: f64 = 20.0;
+pub const MIN_BINARY_PREVIEW_LIMIT_MIB: f64 = 0.01;
 
-/// 把正整数 MiB 转成字节；产品不设最大值，只拒绝零值和 u64 技术溢出。
-pub fn binary_preview_limit_bytes(limit_mib: u64) -> Result<u64, AssetPreviewError> {
-    if limit_mib < MIN_BINARY_PREVIEW_LIMIT_MIB {
+/// 把 MiB 转成字节；产品不设最大值，只拒绝零值、非有限值与 u64 技术溢出。
+///
+/// 小数 MiB 按向下取整换算，保证“不超过用户声明的上限”这一安全语义。
+pub fn binary_preview_limit_bytes(limit_mib: f64) -> Result<u64, AssetPreviewError> {
+    if !limit_mib.is_finite() || limit_mib < MIN_BINARY_PREVIEW_LIMIT_MIB {
         return Err(AssetPreviewError::invalid_limit(limit_mib));
     }
-    limit_mib
-        .checked_mul(1024 * 1024)
-        .ok_or_else(|| AssetPreviewError::invalid_limit(limit_mib))
+    let bytes = limit_mib * (1024.0 * 1024.0);
+    if bytes > u64::MAX as f64 {
+        return Err(AssetPreviewError::invalid_limit(limit_mib));
+    }
+    Ok(bytes.floor() as u64)
 }
 
 /// 判断原始资产是否超过当前完整正文内嵌预览上限。
@@ -2518,7 +2531,12 @@ mod tests {
         bytes.extend_from_slice(&0u32.to_le_bytes());
         bytes.extend_from_slice(&8i32.to_le_bytes());
         bytes.extend_from_slice(&64i32.to_le_bytes());
-        bytes.extend_from_slice(&[0u8; 24]);
+        // 摘要候选窗口内填充比真实表偏移更大的垃圾整数：真实资产的名称表字节会
+        // 产生大量假候选，表偏移并不总是最大的值，验证必须遍历全部候选而不是
+        // 降序截断前 16 个（截断会把位于文件前部的真实表挤出验证名单）。
+        for value in 1..=20u32 {
+            bytes.extend_from_slice(&(1_000_000u32 + value * 10_000).to_le_bytes());
+        }
         bytes.extend_from_slice(&(table_offset as i32).to_le_bytes());
         bytes.resize(thumbnail_offset, 0);
         bytes.extend_from_slice(&4i32.to_le_bytes());
@@ -3086,7 +3104,7 @@ mod tests {
 
     #[test]
     fn binary_preview_rejects_content_larger_than_configured_limit() {
-        let limit = binary_preview_limit_bytes(20).unwrap();
+        let limit = binary_preview_limit_bytes(20.0).unwrap();
         assert!(ensure_binary_preview_size(20 * 1024 * 1024, limit).is_ok());
         assert_eq!(
             ensure_binary_preview_size(20 * 1024 * 1024 + 1, limit)
@@ -3097,18 +3115,35 @@ mod tests {
     }
 
     #[test]
-    fn binary_preview_limit_accepts_large_values_and_rejects_numeric_overflow() {
-        assert_eq!(binary_preview_limit_bytes(1).unwrap(), 1024 * 1024);
+    fn binary_preview_limit_accepts_fractional_values_and_rejects_invalid_ones() {
+        // 整数 MiB 语义不变。
+        assert_eq!(binary_preview_limit_bytes(1.0).unwrap(), 1024 * 1024);
         assert_eq!(
-            binary_preview_limit_bytes(2048).unwrap(),
+            binary_preview_limit_bytes(2048.0).unwrap(),
             2048 * 1024 * 1024
         );
+        // 小数 MiB 向下取整换算，保持“不超过声明上限”的安全语义。
+        assert_eq!(binary_preview_limit_bytes(0.01).unwrap(), 10_485);
+        assert_eq!(binary_preview_limit_bytes(0.5).unwrap(), 512 * 1024);
+        // 零值、负值、非有限值与字节计数器溢出都被拒绝。
         assert_eq!(
-            binary_preview_limit_bytes(0).unwrap_err().code,
+            binary_preview_limit_bytes(0.0).unwrap_err().code,
             "binary_preview_limit_invalid"
         );
         assert_eq!(
-            binary_preview_limit_bytes(u64::MAX).unwrap_err().code,
+            binary_preview_limit_bytes(-1.0).unwrap_err().code,
+            "binary_preview_limit_invalid"
+        );
+        assert_eq!(
+            binary_preview_limit_bytes(f64::NAN).unwrap_err().code,
+            "binary_preview_limit_invalid"
+        );
+        assert_eq!(
+            binary_preview_limit_bytes(f64::INFINITY).unwrap_err().code,
+            "binary_preview_limit_invalid"
+        );
+        assert_eq!(
+            binary_preview_limit_bytes(f64::MAX).unwrap_err().code,
             "binary_preview_limit_invalid"
         );
     }

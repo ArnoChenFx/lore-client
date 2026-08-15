@@ -225,11 +225,23 @@ export function RevisionChangesWorkspace({
   const selectedSet = new Set(selectedObjectIds)
   const resolvedSelectedFiles = resolveSelectedChangeFiles(selectedObjectIds, files, allRows)
   const primaryFile = files.find((file) => changeFileObjectId(file.id) === primaryObjectId) ?? null
-  const primaryPathTransition = primaryFile ? changeFilePathTransition(primaryFile) : null
   const primaryDirectory = changeDirectoryPathFromObjectId(primaryObjectId)
   const primaryDiff = primaryFile
     ? (diffs.find((diff) => diff.path.replaceAll('\\', '/') === changeFilePath(primaryFile)) ?? null)
     : null
+  /**
+   * 移动来源优先使用轻量清单的已确认转换；清单的哈希配对因同内容文件歧义而失败时，
+   * 右侧真实 Diff 事件的 `fromPath` 是权威来源，标题仍显示“旧 → 新”。
+   */
+  const diffMoveTransition =
+    primaryDiff?.action === 'move' && primaryDiff.previousPath && primaryFile
+      ? {
+          sourcePath: primaryDiff.previousPath.replaceAll('\\', '/'),
+          targetPath: changeFilePath(primaryFile),
+          kind: 'moved' as const
+        }
+      : null
+  const primaryPathTransition = (primaryFile ? changeFilePathTransition(primaryFile) : null) ?? diffMoveTransition
   const primaryPatch = primaryDiff?.patch
   // eslint-disable-next-line react-compiler/react-compiler -- patch 是不可变字符串，依赖收敛后编译器仍无法证明 find 结果不可变
   const diffLines = useMemo(() => (primaryPatch ? parseUnifiedDiff(primaryPatch) : []), [primaryPatch])

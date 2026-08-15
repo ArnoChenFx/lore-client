@@ -56,7 +56,7 @@ describe('commit author and email editors', () => {
     )
 
     expect(html).toContain('aria-label="Per-file preview limit"')
-    expect(html).toContain('min="1"')
+    expect(html).toContain('min="0.01"')
     expect(html).not.toContain(' max=')
     expect(html).toContain('value="64"')
   })

@@ -411,6 +411,76 @@ fn commit_includes_only_explicitly_staged_files_after_read_only_scan() {
 }
 
 #[test]
+fn revision_asset_preview_falls_back_to_full_read_when_range_parse_fails() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("System time should be later than the Unix epoch")
+        .as_nanos();
+    let repository_path =
+        std::env::temp_dir().join(format!("lore-client-preview-fallback-{unique}"));
+    let _cleanup = TemporaryRepository::new(repository_path.clone());
+    std::fs::create_dir_all(&repository_path)
+        .expect("The temporary test directory should be created");
+    let repository_path_string = repository_path.to_string_lossy().into_owned();
+
+    initialize_repository(
+        &repository_path_string,
+        "preview-fallback",
+        "Range preview fallback regression",
+        "lore-client-test",
+        None,
+        false,
+        None,
+    )
+    .expect("The temporary Lore repository should be initialized");
+    std::fs::create_dir_all(repository_path.join("Assets"))
+        .expect("The asset directory should be created");
+    // 扩展名进入资产缩略图白名单，但内容不是有效 UE 包：区间缩略图解析必然失败。
+    std::fs::write(
+        repository_path.join("Assets/T_Invalid.uasset"),
+        "not a real unreal package",
+    )
+    .expect("The invalid asset file should be created");
+    tauri::async_runtime::block_on(lore_stage(
+        repository_path_string.clone(),
+        vec!["Assets/T_Invalid.uasset".to_owned()],
+    ))
+    .expect("The invalid asset should be staged");
+    let commit = tauri::async_runtime::block_on(lore_commit(
+        repository_path_string.clone(),
+        "Commit invalid asset".to_owned(),
+        None,
+    ))
+    .expect("The staged file should commit successfully");
+    let revision = committed_revision(&commit);
+    // 0.01 MiB 上限让该文件保持在完整正文预算内，回退整读不被大小校验拦截。
+    let preview_limit =
+        binary_preview_limit_bytes(0.01).expect("The fractional preview limit should be valid");
+
+    let preview = build_file_preview(
+        &repository_path_string,
+        "Assets/T_Invalid.uasset",
+        Some(&revision),
+        false,
+        preview_limit,
+    )
+    .expect("A failed range thumbnail read must fall back to the full read preview");
+
+    // 区间路径失败后回退整读：完整解析同样不识别该内容，因此返回无缩略图、无
+    // 结构化元数据的可用预览，而不是把区间失败误报为 TooLarge 或硬错误。
+    assert!(preview.data.is_empty());
+    assert!(preview.structured_preview.is_none());
+    assert_eq!(
+        preview.content_state,
+        LoreFilePreviewContentState::Available
+    );
+    assert_eq!(preview.size, 25);
+
+    release_repository_cache(&repository_path)
+        .expect("The cached repository context should be released before cleanup");
+}
+
+#[test]
 fn structural_status_does_not_guess_an_ambiguous_move_source() {
     let baseline_files = vec![
         RevisionTreeFile {
@@ -2338,6 +2408,158 @@ fn revision_diff_adds_empty_new_files_without_text_hunks() {
         &["empty.txt".to_owned()],
     );
     assert_eq!(targeted_events, events);
+}
+
+#[test]
+fn revision_diff_supplement_uses_event_from_path_for_moves() {
+    let file = |path: &str| RevisionTreeFile {
+        path: path.to_owned(),
+        size: 1,
+        address: String::new(),
+        repository: String::new(),
+    };
+    let source = vec![file("old.txt")];
+    let target = vec![file("new.txt")];
+    let mut events = vec![serde_json::json!({
+        "tagName": "fileDiff",
+        "data": {
+            "path": "new.txt",
+            "patch": "diff --git a/old.txt b/new.txt\nmove from old.txt\n",
+            "action": "move",
+            "fromPath": "old.txt"
+        }
+    })];
+
+    supplement_structural_diff_events(&mut events, &source, &target, &[]);
+
+    // 来源路径由事件 fromPath 覆盖，集合差不得再伪造一个 Delete。
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["data"]["path"], "new.txt");
+}
+
+#[test]
+fn revision_diff_supplement_keeps_moves_without_patch_header_parsing() {
+    let file = |path: &str| RevisionTreeFile {
+        path: path.to_owned(),
+        size: 1,
+        address: String::new(),
+        repository: String::new(),
+    };
+    let source = vec![file("old.txt")];
+    let target = vec![file("new.txt")];
+    let mut events = vec![serde_json::json!({
+        "tagName": "fileDiff",
+        "data": {
+            "path": "new.txt",
+            "patch": "Binary files differ\n",
+            "action": "move",
+            "fromPath": "old.txt"
+        }
+    })];
+
+    supplement_structural_diff_events(&mut events, &source, &target, &[]);
+
+    // 补丁头不携带 "move from " 时，事件 fromPath 仍是来源路径的唯一可靠来源。
+    assert_eq!(events.len(), 1);
+}
+
+#[test]
+fn revision_diff_supplement_ignores_empty_from_path() {
+    let file = |path: &str| RevisionTreeFile {
+        path: path.to_owned(),
+        size: 1,
+        address: String::new(),
+        repository: String::new(),
+    };
+    let source = vec![file("old.txt")];
+    let target = vec![file("new.txt")];
+    let mut events = vec![serde_json::json!({
+        "tagName": "fileDiff",
+        "data": {
+            "path": "new.txt",
+            "patch": "",
+            "action": "add",
+            "fromPath": ""
+        }
+    })];
+
+    supplement_structural_diff_events(&mut events, &source, &target, &[]);
+
+    // 空 fromPath 不覆盖任何路径；new.txt 已有事件，集合差只补 old.txt 的 Delete。
+    assert_eq!(events.len(), 2);
+    assert!(events
+        .iter()
+        .any(|event| event["data"]["path"] == "old.txt"));
+}
+
+#[test]
+fn range_get_buffer_allocates_only_the_requested_range() {
+    let mut capture = RangeGetCapture::default();
+    prepare_range_get_buffer(&mut capture, 100, 4096, 24 * 1024 * 1024).expect("range is valid");
+    assert_eq!(capture.offset, 100);
+    assert_eq!(capture.size_content, 24 * 1024 * 1024);
+    assert_eq!(capture.bytes.len(), 4096);
+
+    // 请求越过内容末尾时收敛到内容边界，不读取或分配多余字节。
+    let mut tail = RangeGetCapture::default();
+    prepare_range_get_buffer(&mut tail, 24 * 1024 * 1024 - 100, 4096, 24 * 1024 * 1024)
+        .expect("range is valid");
+    assert_eq!(tail.bytes.len(), 100);
+
+    // length 为 0 表示读到内容结尾。
+    let mut to_end = RangeGetCapture::default();
+    prepare_range_get_buffer(&mut to_end, 500, 0, 1000).expect("range is valid");
+    assert_eq!(to_end.bytes.len(), 500);
+
+    // 起始偏移越过内容结尾必须被拒绝，不能静默返回空。
+    let mut past_end = RangeGetCapture::default();
+    assert!(prepare_range_get_buffer(&mut past_end, 1001, 0, 1000).is_err());
+}
+
+#[test]
+fn range_get_chunk_writes_at_content_offset_within_the_range() {
+    let mut capture = RangeGetCapture::default();
+    prepare_range_get_buffer(&mut capture, 100, 10, 200).expect("range is valid");
+    copy_range_get_chunk(&mut capture, 102, b"abc").expect("chunk is in range");
+    assert_eq!(&capture.bytes[2..5], b"abc");
+    assert_eq!(capture.bytes[0], 0);
+
+    // 区间外的叶片拒绝写入，避免把相邻内容拼进错误的请求结果。
+    let mut before = RangeGetCapture::default();
+    prepare_range_get_buffer(&mut before, 100, 10, 200).expect("range is valid");
+    assert!(copy_range_get_chunk(&mut before, 90, b"abc").is_err());
+    let mut beyond = RangeGetCapture::default();
+    prepare_range_get_buffer(&mut beyond, 100, 10, 200).expect("range is valid");
+    assert!(copy_range_get_chunk(&mut beyond, 109, b"abc").is_err());
+}
+
+#[test]
+fn batch_range_items_are_buffered_and_checked_independently() {
+    let mut capture = BatchRangeGetCapture::default();
+    capture.items.insert(1, BatchRangeItemCapture::default());
+    capture.items.insert(2, BatchRangeItemCapture::default());
+    capture.items.get_mut(&1).expect("item exists").offset = 0;
+    capture.items.get_mut(&2).expect("item exists").offset = 4096;
+
+    prepare_batch_range_item_buffer(capture.items.get_mut(&1).expect("item exists"), 4096, 8192)
+        .expect("range is valid");
+    prepare_batch_range_item_buffer(capture.items.get_mut(&2).expect("item exists"), 4096, 8192)
+        .expect("range is valid");
+    assert_eq!(capture.items[&1].bytes.len(), 4096);
+    assert_eq!(capture.items[&2].bytes.len(), 4096);
+
+    copy_batch_range_item_chunk(capture.items.get_mut(&1).expect("item exists"), 64, b"a")
+        .expect("chunk is in range");
+    copy_batch_range_item_chunk(capture.items.get_mut(&2).expect("item exists"), 4100, b"b")
+        .expect("chunk is in range");
+    assert_eq!(capture.items[&1].bytes[64], b'a');
+    assert_eq!(capture.items[&2].bytes[4], b'b');
+    assert_eq!(capture.items[&1].bytes[0], 0);
+
+    // 一个 item 的越界叶片只拒绝该 item，不影响其余状态。
+    let bad = capture.items.get_mut(&2).expect("item exists");
+    assert!(copy_batch_range_item_chunk(bad, 8192, b"c").is_err());
+    assert_eq!(capture.items[&1].bytes[64], b'a');
 }
 
 #[test]

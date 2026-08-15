@@ -413,6 +413,8 @@ export interface WorkingTreeDiff {
   path: string
   patch: string
   action: string
+  /** Move/Copy 事件携带的真实来源路径；其他动作不返回。 */
+  previousPath?: string
   /** Lore unified diff marker 给出的当前文件真实内容分类。 */
   contentClassification?: FileContentClassification
 }

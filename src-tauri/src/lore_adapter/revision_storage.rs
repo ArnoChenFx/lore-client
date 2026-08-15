@@ -3,6 +3,8 @@
 //! 本模块由原 `lore_adapter.rs` 按职责机械迁移而来。共享 DTO、调度与错误语义仍由
 //! 父模块统一管理，避免模块化重构改变现有 IPC 契约或 Lore 调用行为。
 
+use std::io::{self, Read, Seek, SeekFrom};
+
 use super::*;
 /// 为低层 Store 构造远端认证上下文。
 ///
@@ -489,6 +491,377 @@ pub(super) fn run_storage_get_operation(
     ))
 }
 
+/// 单次区间请求的捕获状态。
+///
+/// 与整读的 `StorageGetCapture` 不同，这里只预分配请求区间大小的缓冲：Header 始终
+/// 报告完整内容大小，但区间请求只交付触及的叶片，按内容偏移换算到区间内写入。
+#[derive(Default)]
+pub(super) struct RangeGetCapture {
+    /// 请求区间的起始内容偏移。
+    pub(super) offset: u64,
+    /// 请求区间内已收到的连续字节。
+    pub(super) bytes: Vec<u8>,
+    /// Header 报告的完整内容大小；用于把请求区间收敛到真实内容边界。
+    pub(super) size_content: u64,
+    pub(super) error: Option<String>,
+}
+
+/// 执行单次 Store 区间读取，只分配请求范围大小的缓冲。
+///
+/// Header 与完成状态仍通过与整读相同的 operation stream 上报，保持诊断一致性；
+/// 只有体积最大的 `StorageGetData` 被直接聚合为区间字节，不进入通用 JSON 收集器。
+pub(super) fn run_storage_range_get_operation(
+    handle: LoreStore,
+    item: LoreStorageGetItem,
+) -> Result<Vec<u8>, LoreCommandError> {
+    const OPERATION: &str = "storage.get";
+    let operation_id = format!(
+        "lore-operation-{}",
+        OPERATION_STREAM_COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+    emit_operation_stream(LoreOperationStreamEvent {
+        operation_id: operation_id.clone(),
+        operation: OPERATION,
+        phase: "queued",
+        event: None,
+        status: None,
+        duration_ms: None,
+        cancellable: false,
+    });
+    let started_at = Instant::now();
+    emit_operation_stream(LoreOperationStreamEvent {
+        operation_id: operation_id.clone(),
+        operation: OPERATION,
+        phase: "running",
+        event: None,
+        status: None,
+        duration_ms: None,
+        cancellable: false,
+    });
+
+    let requested_offset = item.offset;
+    let requested_length = item.length;
+    let capture = Arc::new(Mutex::new(RangeGetCapture::default()));
+    let capture_target = Arc::clone(&capture);
+    let callback: LoreEventCallback = Some(Box::new(move |event: &LoreEvent| {
+        match event {
+            LoreEvent::StorageGetHeader(data) => {
+                if let Ok(mut target) = capture_target.lock() {
+                    if target.error.is_none() {
+                        target.error = prepare_range_get_buffer(
+                            &mut target,
+                            requested_offset,
+                            requested_length,
+                            data.size_content,
+                        )
+                        .err();
+                    }
+                }
+            }
+            LoreEvent::StorageGetData(data) => {
+                if let Ok(mut target) = capture_target.lock() {
+                    if target.error.is_none() {
+                        // SAFETY: Lore 明确保证该借用视图在当前 callback 调用期间有效。
+                        let bytes = unsafe { data.bytes.as_slice() };
+                        target.error = copy_range_get_chunk(&mut target, data.offset, bytes).err();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }));
+
+    let status = lore::runtime().block_on(lore::storage::get::get(
+        LoreGlobalArgs::default(),
+        LoreStorageGetArgs {
+            handle,
+            items: LoreArray::from_vec(vec![item]),
+        },
+        callback,
+    ));
+    let capture = {
+        let mut target = capture.lock().map_err(|_| {
+            LoreCommandError::new(
+                "storage_capture_poisoned",
+                "The Lore storage payload collector state is poisoned",
+            )
+        })?;
+        std::mem::take(&mut *target)
+    };
+    if let Some(error) = capture.error {
+        return Err(LoreCommandError::new("storage_payload_invalid", error));
+    }
+
+    let duration_ms = started_at.elapsed().as_millis();
+    emit_operation_stream(LoreOperationStreamEvent {
+        operation_id,
+        operation: OPERATION,
+        phase: if status == 0 { "succeeded" } else { "failed" },
+        event: None,
+        status: Some(status),
+        duration_ms: Some(duration_ms),
+        cancellable: false,
+    });
+    if status != 0 {
+        return Err(LoreCommandError::new(
+            "storage_get_failed",
+            format!("Lore store range read failed with status {status}"),
+        ));
+    }
+
+    // 起始偏移越界由 Lore 以 INVALID_ARGUMENTS 拒绝；这里只收敛“读到结尾”的请求。
+    let available = capture.size_content.saturating_sub(requested_offset);
+    let expected = if requested_length == 0 {
+        available
+    } else {
+        available.min(requested_length)
+    };
+    if capture.bytes.len() != expected as usize {
+        return Err(LoreCommandError::new(
+            "storage_payload_invalid",
+            format!(
+                "Lore store range read returned {} bytes, expected {expected}",
+                capture.bytes.len()
+            ),
+        ));
+    }
+    Ok(capture.bytes)
+}
+
+/** 按请求区间（而非完整内容）预分配区间读取缓冲。 */
+pub(super) fn prepare_range_get_buffer(
+    capture: &mut RangeGetCapture,
+    offset: u64,
+    length: u64,
+    size_content: u64,
+) -> Result<(), String> {
+    capture.offset = offset;
+    capture.size_content = size_content;
+    if offset > size_content {
+        return Err("Lore store range read starts past the content end".to_owned());
+    }
+    let available = size_content - offset;
+    let requested = if length == 0 {
+        available
+    } else {
+        available.min(length)
+    };
+    let size = usize::try_from(requested)
+        .map_err(|_| "Lore store range read exceeds this platform's size limits")?;
+    capture.bytes = vec![0; size];
+    Ok(())
+}
+
+/** 把内容内偏移换算到请求区间内写入，校验越界。 */
+pub(super) fn copy_range_get_chunk(
+    capture: &mut RangeGetCapture,
+    offset: u64,
+    bytes: &[u8],
+) -> Result<(), String> {
+    if bytes.is_empty() {
+        return Ok(());
+    }
+    let local = offset
+        .checked_sub(capture.offset)
+        .ok_or_else(|| "Lore store range chunk starts before the requested offset")?;
+    let end = local
+        .checked_add(bytes.len() as u64)
+        .ok_or_else(|| "Lore store range chunk offset overflowed")?;
+    if end > capture.bytes.len() as u64 {
+        return Err("Lore store range chunk exceeds the requested range".to_owned());
+    }
+    capture.bytes[local as usize..end as usize].copy_from_slice(bytes);
+    Ok(())
+}
+
+/// 批量区间请求中单个 item 的捕获状态；与单 item 的 `RangeGetCapture` 语义一致。
+#[derive(Default)]
+pub(super) struct BatchRangeItemCapture {
+    /// 请求区间的起始内容偏移。
+    pub(super) offset: u64,
+    /// 请求区间内已收到的连续字节。
+    pub(super) bytes: Vec<u8>,
+    /// Header 报告的完整内容大小；用于把请求区间收敛到真实内容边界。
+    pub(super) size_content: u64,
+}
+
+/// 批量区间请求的捕获状态，按调用方 id 键控。
+#[derive(Default)]
+pub(super) struct BatchRangeGetCapture {
+    pub(super) items: BTreeMap<u64, BatchRangeItemCapture>,
+    pub(super) error: Option<String>,
+}
+
+/**
+ * 一次 Store 调用批量读取多个内容区间。
+ *
+ * 与单 item 版本共享相同的 Header/Data 语义：Header 始终报告完整内容大小，区间
+ * 请求只交付触及的叶片。每个 item 独立预分配请求区间大小的缓冲，供列表阶段批量
+ * 采样分类使用，避免为整份内容复制内存。
+ */
+pub(super) fn run_storage_range_get_batch_operation(
+    handle: LoreStore,
+    items: Vec<LoreStorageGetItem>,
+) -> Result<BTreeMap<u64, Vec<u8>>, LoreCommandError> {
+    const OPERATION: &str = "storage.get";
+    let operation_id = format!(
+        "lore-operation-{}",
+        OPERATION_STREAM_COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+    emit_operation_stream(LoreOperationStreamEvent {
+        operation_id: operation_id.clone(),
+        operation: OPERATION,
+        phase: "queued",
+        event: None,
+        status: None,
+        duration_ms: None,
+        cancellable: false,
+    });
+    let started_at = Instant::now();
+    emit_operation_stream(LoreOperationStreamEvent {
+        operation_id: operation_id.clone(),
+        operation: OPERATION,
+        phase: "running",
+        event: None,
+        status: None,
+        duration_ms: None,
+        cancellable: false,
+    });
+
+    let requested = items
+        .iter()
+        .map(|item| (item.id, (item.offset, item.length)))
+        .collect::<BTreeMap<_, _>>();
+    let capture = Arc::new(Mutex::new(BatchRangeGetCapture::default()));
+    let capture_target = Arc::clone(&capture);
+    let callback: LoreEventCallback = Some(Box::new(move |event: &LoreEvent| {
+        match event {
+            LoreEvent::StorageGetHeader(data) => {
+                if let Ok(mut target) = capture_target.lock() {
+                    if target.error.is_none() {
+                        target.error = (|| {
+                            let (offset, length) = *requested.get(&data.id).ok_or_else(|| {
+                                format!(
+                                    "Storage item {} returned a header it did not request",
+                                    data.id
+                                )
+                            })?;
+                            let item = target.items.entry(data.id).or_default();
+                            item.offset = offset;
+                            prepare_batch_range_item_buffer(item, length, data.size_content)
+                        })()
+                        .err();
+                    }
+                }
+            }
+            LoreEvent::StorageGetData(data) => {
+                if let Ok(mut target) = capture_target.lock() {
+                    if target.error.is_none() {
+                        // SAFETY: Lore 明确保证该借用视图在当前 callback 调用期间有效。
+                        let bytes = unsafe { data.bytes.as_slice() };
+                        target.error = (|| {
+                            let item = target.items.get_mut(&data.id).ok_or_else(|| {
+                                format!("Storage item {} returned data before its header", data.id)
+                            })?;
+                            copy_batch_range_item_chunk(item, data.offset, bytes)
+                        })()
+                        .err();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }));
+
+    let status = lore::runtime().block_on(lore::storage::get::get(
+        LoreGlobalArgs::default(),
+        LoreStorageGetArgs {
+            handle,
+            items: LoreArray::from_vec(items),
+        },
+        callback,
+    ));
+    let capture = {
+        let mut target = capture.lock().map_err(|_| {
+            LoreCommandError::new(
+                "storage_capture_poisoned",
+                "The Lore storage payload collector state is poisoned",
+            )
+        })?;
+        std::mem::take(&mut *target)
+    };
+    if let Some(error) = capture.error {
+        return Err(LoreCommandError::new("storage_payload_invalid", error));
+    }
+
+    let duration_ms = started_at.elapsed().as_millis();
+    emit_operation_stream(LoreOperationStreamEvent {
+        operation_id,
+        operation: OPERATION,
+        phase: if status == 0 { "succeeded" } else { "failed" },
+        event: None,
+        status: Some(status),
+        duration_ms: Some(duration_ms),
+        cancellable: false,
+    });
+    if status != 0 {
+        return Err(LoreCommandError::new(
+            "storage_get_failed",
+            format!("Lore store batch range read failed with status {status}"),
+        ));
+    }
+
+    Ok(capture
+        .items
+        .into_iter()
+        .map(|(id, item)| (id, item.bytes))
+        .collect())
+}
+
+/** 按请求区间（而非完整内容）预分配批量区间读取缓冲。 */
+pub(super) fn prepare_batch_range_item_buffer(
+    item: &mut BatchRangeItemCapture,
+    length: u64,
+    size_content: u64,
+) -> Result<(), String> {
+    item.size_content = size_content;
+    if item.offset > size_content {
+        return Err("Lore store range read starts past the content end".to_owned());
+    }
+    let available = size_content - item.offset;
+    let requested = if length == 0 {
+        available
+    } else {
+        available.min(length)
+    };
+    let size = usize::try_from(requested)
+        .map_err(|_| "Lore store range read exceeds this platform's size limits")?;
+    item.bytes = vec![0; size];
+    Ok(())
+}
+
+/** 把内容内偏移换算到批量区间内写入，校验越界。 */
+pub(super) fn copy_batch_range_item_chunk(
+    item: &mut BatchRangeItemCapture,
+    offset: u64,
+    bytes: &[u8],
+) -> Result<(), String> {
+    if bytes.is_empty() {
+        return Ok(());
+    }
+    let local = offset
+        .checked_sub(item.offset)
+        .ok_or_else(|| "Lore store range chunk starts before the requested offset")?;
+    let end = local
+        .checked_add(bytes.len() as u64)
+        .ok_or_else(|| "Lore store range chunk offset overflowed")?;
+    if end > item.bytes.len() as u64 {
+        return Err("Lore store range chunk exceeds the requested range".to_owned());
+    }
+    item.bytes[local as usize..end as usize].copy_from_slice(bytes);
+    Ok(())
+}
+
 /// 从内容寻址 Store 批量读取根修订中文本文件的真实字节。
 pub(super) fn read_revision_file_contents_matching(
     repository_path: &str,
@@ -519,6 +892,9 @@ pub(super) fn read_revision_file_contents_matching(
                     id: (index + 1) as u64,
                     partition,
                     address,
+                    // 零值区间对表示读取完整对象，保持既有整读语义。
+                    offset: 0,
+                    length: 0,
                     // 直接接收 Store 叶片并写入预分配的最终 Vec。非流式模式会先在
                     // Lore 内部重组一份完整 Bytes，再由 callback 复制一次；频繁预览
                     // 二进制文件时，这套双缓冲会持续抬高原生分配器高水位。
@@ -587,6 +963,76 @@ pub(super) fn read_revision_file_content(
                 ),
             )
         })
+}
+
+/// Revision 列表批量采样的单文件预算。
+///
+/// 列表采样在单次 Store 调用中携带全部文件，总量受文件数约束，因此单文件预算
+/// 低于工作区 64 KiB 采样；4 KiB 已足以覆盖常见 BOM、magic、UTF-16 模式与控制
+/// 字符分布，分类结论与 64 KiB 采样对同一文件一致。
+const REVISION_LIST_SAMPLE_BYTES: u64 = 4 * 1024;
+
+/// 通过一次批量 Store 区间读取为 Revision 树文件采样内容前缀并分类。
+///
+/// 只有真实返回内容的文件得到结构化分类；单个 item 缺失或整体读取失败时，缺失
+/// 文件保持 `deferred`，不阻断轻量清单（列表正确性不依赖图标级分类）。
+pub(super) fn classify_revision_tree_files(
+    repository_path: &str,
+    files: &[&RevisionTreeFile],
+) -> Result<BTreeMap<String, FileContentClassification>, LoreCommandError> {
+    if files.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let store = open_revision_storage(repository_path)?;
+    let mut requested = Vec::new();
+    for (index, file) in files.iter().enumerate() {
+        let file = *file;
+        let Ok(partition) = file.repository.parse() else {
+            log::warn!(
+                "Skip revision file {} with an invalid repository ID during classification",
+                file.path
+            );
+            continue;
+        };
+        let Ok(address) = file.address.parse() else {
+            log::warn!(
+                "Skip revision file {} with an invalid content address during classification",
+                file.path
+            );
+            continue;
+        };
+        requested.push((
+            (index + 1) as u64,
+            file,
+            LoreStorageGetItem {
+                id: (index + 1) as u64,
+                partition,
+                address,
+                offset: 0,
+                length: REVISION_LIST_SAMPLE_BYTES,
+                streaming: 1,
+                local_cache: 0,
+            },
+        ));
+    }
+    let items = requested
+        .iter()
+        .map(|(_, _, item)| *item)
+        .collect::<Vec<_>>();
+    let result = run_storage_range_get_batch_operation(store, items);
+    close_revision_storage(store);
+
+    let contents = result?;
+    let mut classifications = BTreeMap::new();
+    for (id, file, _) in requested {
+        let Some(bytes) = contents.get(&id) else {
+            continue;
+        };
+        let classification =
+            classify_content_sample(bytes, file.size <= REVISION_LIST_SAMPLE_BYTES);
+        classifications.insert(file.path.clone(), classification);
+    }
+    Ok(classifications)
 }
 
 /**
@@ -662,6 +1108,184 @@ fn build_large_asset_preview_from_reader(
     })
 }
 
+/// 区间读取的最小块大小：顺序流（压缩 Blender 解压）每块才发起一次 Store 请求，
+/// 随机区间（Unreal 缩略图表、TEST 块）按实际请求长度直接拉取。
+const REVISION_RANGE_READ_BLOCK_BYTES: u64 = 64 * 1024;
+
+/// 通过内容寻址 Store 的区间读取实现的 `Read + Seek` 适配器。
+///
+/// 每个随机读请求只拉取目标区间（至少一个最小块），远端对象也只下载触及的叶片，
+/// 大型 Revision 资产因此无需物化完整对象即可提取内嵌缩略图。读取器持有打开的
+/// Store handle 并在 Drop 时尽力关闭，避免逐次 open/close 放大调用开销；`size`
+/// 使用树元数据作为权威边界，越过末尾的读请求直接按 EOF 处理。
+pub(super) struct RevisionStoreReader {
+    store: LoreStore,
+    partition: String,
+    address: String,
+    size: u64,
+    position: u64,
+    /// 最近一次区间读取的完整结果与其起始偏移；命中时避免重复请求。
+    cached: Option<(u64, Vec<u8>)>,
+}
+
+impl RevisionStoreReader {
+    pub(super) fn new(
+        repository_path: &str,
+        file: &RevisionTreeFile,
+    ) -> Result<Self, LoreCommandError> {
+        let store = open_revision_storage(repository_path)?;
+        Ok(Self {
+            store,
+            partition: file.repository.clone(),
+            address: file.address.clone(),
+            size: file.size,
+            position: 0,
+            cached: None,
+        })
+    }
+
+    /// 通过 Store 读取 `[offset, offset+length)`，返回实际到达的字节。
+    fn read_range(&mut self, offset: u64, length: u64) -> Result<Vec<u8>, LoreCommandError> {
+        let partition = self.partition.parse().map_err(|_| {
+            LoreCommandError::new(
+                "invalid_repository_id",
+                "Revision file has an invalid repository ID",
+            )
+        })?;
+        let address = self.address.parse().map_err(|_| {
+            LoreCommandError::new(
+                "invalid_file_address",
+                "Revision file has an invalid content address",
+            )
+        })?;
+        run_storage_range_get_operation(
+            self.store,
+            LoreStorageGetItem {
+                id: 1,
+                partition,
+                address,
+                offset,
+                length,
+                streaming: 1,
+                local_cache: 0,
+            },
+        )
+    }
+}
+
+impl Drop for RevisionStoreReader {
+    fn drop(&mut self) {
+        close_revision_storage(self.store);
+    }
+}
+
+impl Read for RevisionStoreReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() || self.position >= self.size {
+            return Ok(0);
+        }
+        // 命中单块缓存时直接拷贝，顺序流读取不重复发起 Store 请求。
+        if let Some((start, data)) = &self.cached {
+            if self.position >= *start
+                && self.position.saturating_sub(*start) + buf.len() as u64 <= data.len() as u64
+            {
+                let begin = (self.position - start) as usize;
+                buf.copy_from_slice(&data[begin..begin + buf.len()]);
+                self.position += buf.len() as u64;
+                return Ok(buf.len());
+            }
+        }
+        let request_start = self.position;
+        let request_length = (buf.len() as u64)
+            .max(REVISION_RANGE_READ_BLOCK_BYTES)
+            .min(self.size - request_start);
+        let data = self
+            .read_range(request_start, request_length)
+            .map_err(|error| io::Error::new(io::ErrorKind::Other, error.message))?;
+        if data.is_empty() {
+            // 树元数据与存储内容不一致时按 EOF 结束，避免无限重试。
+            return Ok(0);
+        }
+        let got = data.len().min(buf.len());
+        buf[..got].copy_from_slice(&data[..got]);
+        self.position = request_start + got as u64;
+        self.cached = Some((request_start, data));
+        Ok(got)
+    }
+}
+
+impl Seek for RevisionStoreReader {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        let new_position = match pos {
+            SeekFrom::Start(offset) => offset,
+            SeekFrom::Current(delta) => (self.position as i64)
+                .checked_add(delta)
+                .filter(|position| *position >= 0)
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "seek underflow"))?
+                as u64,
+            SeekFrom::End(delta) => (self.size as i64)
+                .checked_add(delta)
+                .filter(|position| *position >= 0)
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "seek underflow"))?
+                as u64,
+        };
+        // 目标仍落在缓存块内时保留缓存（例如读完 magic 后回卷到 0）；否则丢弃。
+        let cache_hit = self.cached.as_ref().is_some_and(|(start, data)| {
+            new_position >= *start && new_position <= *start + data.len() as u64
+        });
+        if !cache_hit {
+            self.cached = None;
+        }
+        self.position = new_position;
+        Ok(new_position)
+    }
+}
+
+/// 用 Store 区间读取为大型 Revision 资产构建有界缩略图预览。
+///
+/// 只有 `supports_large_embedded_thumbnail` 白名单内的格式走这条路径；解析失败按
+/// 与工作区相同的 `binary_preview_invalid_asset` 降级为元数据，不把存储错误伪装成
+/// 成功。调用方必须先完成仓库相对路径与大小校验。
+pub(super) fn build_revision_large_asset_preview(
+    repository_path: &str,
+    file: &RevisionTreeFile,
+    relative_path: &Path,
+    normalized_path: String,
+) -> Result<LoreFilePreview, LoreCommandError> {
+    let mut reader = RevisionStoreReader::new(repository_path, file)?;
+    build_large_asset_preview_from_reader(relative_path, normalized_path, file.size, &mut reader)
+}
+
+/// 整读单个 Revision 文件并走完整解析；作为区间缩略图失败时的回退路径。
+///
+/// 完整读取后仍按预览上限二次检查，防止树元数据与真实内容不一致时绕过内存预算；
+/// 回退只对不超过上限的文件执行，超限文件不因兜底而物化完整远端对象。
+fn build_full_revision_preview(
+    repository_path: &str,
+    file: &RevisionTreeFile,
+    relative_path: &Path,
+    normalized_path: String,
+    kind: &'static str,
+    source_mime_type: &'static str,
+    preview_limit_bytes: u64,
+) -> Result<LoreFilePreview, LoreCommandError> {
+    let bytes = read_revision_file_content(repository_path, file)?;
+    ensure_binary_preview_size(bytes.len() as u64, preview_limit_bytes)?;
+    // size 报告原始资产字节；纹理转码后的 PNG 只进入 Raw IPC data。
+    let original_size = bytes.len() as u64;
+    let prepared = prepare_file_preview_payload(relative_path, kind, source_mime_type, bytes)
+        .map_err(|error| LoreCommandError::new(error.code, error.message))?;
+    Ok(LoreFilePreview {
+        path: normalized_path,
+        kind,
+        mime_type: prepared.mime_type,
+        data: prepared.data,
+        size: original_size,
+        content_state: LoreFilePreviewContentState::Available,
+        structured_preview: prepared.structured_preview,
+    })
+}
+
 /// 构造单文件预览 DTO；内容在 Rust 边界内保持连续原始字节，不再生成 Base64。
 pub(super) fn build_file_preview(
     repository_path: &str,
@@ -690,7 +1314,7 @@ pub(super) fn build_file_preview(
         structured_preview: None,
     };
 
-    let bytes = if let Some(revision) = revision {
+    if let Some(revision) = revision {
         let files = collect_revision_tree_files_at_paths(
             repository_path,
             revision,
@@ -717,16 +1341,61 @@ pub(super) fn build_file_preview(
                 LoreFilePreviewContentState::Unsupported,
             ));
         }
+        if supports_large_embedded_thumbnail(&relative_path) {
+            /*
+             * 资产格式在 Revision 侧总是优先区间缩略图读取，避免为预览物化或下载
+             * 完整对象（远端冷缓存时只拉触及叶片）。区间读取失败——格式不兼容或
+             * 存储错误——回退完整读取以保留 GLB 模型等完整解析能力；超限文件仍
+             * 保持元数据降级，不因兜底突破完整正文内存预算。
+             */
+            return match build_revision_large_asset_preview(
+                repository_path,
+                file,
+                &relative_path,
+                normalized_path.clone(),
+            ) {
+                Ok(preview) => Ok(preview),
+                Err(interval_error) => {
+                    if binary_preview_size_exceeded(file.size, preview_limit_bytes) {
+                        return Ok(metadata_only_preview(
+                            file.size,
+                            LoreFilePreviewContentState::TooLarge,
+                        ));
+                    }
+                    match build_full_revision_preview(
+                        repository_path,
+                        file,
+                        &relative_path,
+                        normalized_path,
+                        kind,
+                        source_mime_type,
+                        preview_limit_bytes,
+                    ) {
+                        Ok(preview) => Ok(preview),
+                        // 完整读取也失败时保留区间路径的原始错误，便于诊断根因。
+                        Err(_) => Err(interval_error),
+                    }
+                }
+            };
+        }
         if binary_preview_size_exceeded(file.size, preview_limit_bytes) {
-            // 固定 Lore Store 没有区间读取接口。大型 Revision 资产必须保持元数据降级，
-            // 不能为了一个缩略图把完整远端对象下载到临时文件。
             return Ok(metadata_only_preview(
                 file.size,
                 LoreFilePreviewContentState::TooLarge,
             ));
         }
-        read_revision_file_content(repository_path, file)?
-    } else {
+        return build_full_revision_preview(
+            repository_path,
+            file,
+            &relative_path,
+            normalized_path,
+            kind,
+            source_mime_type,
+            preview_limit_bytes,
+        );
+    }
+
+    let bytes = {
         let workspace_path = validate_existing_workspace_file(repository_path, &normalized_path)?;
         let size = std::fs::metadata(&workspace_path)
             .map_err(|error| {
@@ -907,15 +1576,14 @@ pub(super) fn supplement_structural_diff_events(
                 paths.push(path.to_owned());
             }
             /*
-             * Move 事件的主 path 是目标路径，来源路径保存在补丁头。把两端都标记
-             * 为已覆盖，避免集合差再额外伪造一个 Delete 事件。
+             * Move 事件的主 path 是目标路径，真实来源路径由事件的 `fromPath` 字段
+             * 直接携带，不再解析补丁头文本。把两端都标记为已覆盖，避免集合差再
+             * 额外伪造一个 Delete 事件。
              */
-            if let Some(patch) = event["data"]["patch"].as_str() {
-                paths.extend(
-                    patch
-                        .lines()
-                        .filter_map(|line| line.strip_prefix("move from ").map(str::to_owned)),
-                );
+            if let Some(from_path) = event["data"]["fromPath"].as_str() {
+                if !from_path.is_empty() {
+                    paths.push(from_path.to_owned());
+                }
             }
             paths
         })
