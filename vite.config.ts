@@ -1,5 +1,5 @@
-import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
+import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
 // Tauri 在移动端开发时会通过环境变量注入宿主地址；桌面开发则保持本机回环地址。

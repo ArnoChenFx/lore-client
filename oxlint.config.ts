@@ -26,7 +26,6 @@ export default defineConfig({
     'react/exhaustive-deps': 'error',
     'react/no-array-index-key': 'error',
     'react/self-closing-comp': 'error',
-    'react/react-compiler': 'error',
     // anti-slop：拒绝低证据模式。分级评估（2026-08-13）：
     // - error：能发现真实问题的规则；少量生产代码命中已修复。
     // - warn：意见性强或需要大量机械注释的规则，先观察。
@@ -55,5 +54,6 @@ export default defineConfig({
   options: {
     typeAware: true,
     typeCheck: true
-  }
+  },
+  categories: { correctness: 'error' }
 })
