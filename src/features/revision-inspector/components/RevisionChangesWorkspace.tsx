@@ -252,7 +252,7 @@ export function RevisionChangesWorkspace({
       : null
   const primaryPathTransition = (primaryFile ? changeFilePathTransition(primaryFile) : null) ?? diffMoveTransition
   const primaryPatch = primaryDiff?.patch
-  // eslint-disable-next-line react-compiler/react-compiler -- patch 是不可变字符串，依赖收敛后编译器仍无法证明 find 结果不可变
+  // eslint-disable-next-line react/preserve-manual-memoization -- patch 是不可变字符串，依赖收敛后编译器仍无法证明 find 结果不可变
   const diffLines = useMemo(() => (primaryPatch ? parseUnifiedDiff(primaryPatch) : []), [primaryPatch])
   // countUnifiedDiffLines 只是轻量遍历，不单独 memo。
   const diffLineCounts = countUnifiedDiffLines(diffLines)
@@ -273,7 +273,7 @@ export function RevisionChangesWorkspace({
   useEffect(() => {
     tRef.current = t
   })
-  /* eslint-disable react-compiler/react-compiler -- 依赖均为不可变标量，编译器无法证明 find 结果与数组元素不被 mutation */
+  /* eslint-disable react/preserve-manual-memoization -- 依赖均为不可变标量，编译器无法证明 find 结果与数组元素不被 mutation */
   const loadDiffFiles = useCallback(
     async (target: TextDiffFullFileTarget) => {
       if (!onLoadRevisionText) throw new Error(tRef.current('runtimeProvideRealFileContent_aae6'))
@@ -297,7 +297,7 @@ export function RevisionChangesWorkspace({
     },
     [onLoadRevisionText, primaryFileStatus, revision.id, sourceRevision]
   )
-  /* eslint-enable react-compiler/react-compiler */
+  /* eslint-enable react/preserve-manual-memoization */
   const previewModeActive = primaryFile
     ? shouldUseRepositoryPreview(
         primaryFile,
