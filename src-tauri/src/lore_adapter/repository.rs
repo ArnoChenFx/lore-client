@@ -569,7 +569,13 @@ pub async fn lore_repository_clone(
                     direct_file_write: u8::from(direct_file_write),
                     layer: layer_repository.into(),
                     layer_metadata: layer_metadata_key.into(),
-                    use_shared_store: u8::from(use_shared_store),
+                    // Clone 只在用户显式要求时启用共享存储；未选择时沿用机器级
+                    // `use_shared_store_automatically` 配置，与上游 CLI 语义保持一致。
+                    use_shared_store: if use_shared_store {
+                        LoreSharedStoreMode::Enabled
+                    } else {
+                        LoreSharedStoreMode::Inherit
+                    },
                     shared_store_path: shared_store_path.unwrap_or_default().into(),
                     root_files: to_lore_array(dependency_root_files),
                     dependency_tags: to_lore_array(dependency_tags),

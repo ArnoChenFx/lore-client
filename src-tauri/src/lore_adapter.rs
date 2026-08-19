@@ -31,7 +31,8 @@ use lore::file::{
     LoreFileResetArgs, LoreFileStageArgs, LoreFileStageMoveArgs, LoreFileUnstageArgs,
 };
 use lore::interface::{
-    LoreArray, LoreEvent, LoreEventCallback, LoreGlobalArgs, LoreMetadataType, LoreString,
+    LoreArray, LoreEvent, LoreEventCallback, LoreGlobalArgs, LoreMetadataType, LoreSharedStoreMode,
+    LoreString,
 };
 use lore::layer::{
     LoreLayerAddArgs, LoreLayerListArgs, LoreLayerListStagedArgs, LoreLayerRemoveArgs,

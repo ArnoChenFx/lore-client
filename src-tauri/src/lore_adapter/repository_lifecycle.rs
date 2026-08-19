@@ -72,7 +72,13 @@ pub(super) fn initialize_repository(
         repository_url: repository_name.into(),
         id: LoreString::default(),
         description: description.into(),
-        use_shared_store: u8::from(use_shared_store),
+        // 初始化只在用户显式要求时启用共享存储；未选择时沿用机器级
+        // `use_shared_store_automatically` 配置，与上游 CLI 语义保持一致。
+        use_shared_store: if use_shared_store {
+            LoreSharedStoreMode::Enabled
+        } else {
+            LoreSharedStoreMode::Inherit
+        },
         shared_store_path: shared_store_path.unwrap_or_default().into(),
     };
     let result = if repository_identity.is_none() {
@@ -208,7 +214,8 @@ pub(super) fn publish_repository(
             repository_url: create_repository_url.into(),
             id: repository_id.clone().into(),
             description: description.into(),
-            use_shared_store: 0,
+            // 在线 Create 的临时仓库未携带共享存储偏好，保持默认 Inherit（沿用机器配置）。
+            use_shared_store: LoreSharedStoreMode::Inherit,
             shared_store_path: LoreString::default(),
         };
         if let Some(creator) = effective_identity {

@@ -3244,7 +3244,7 @@ fn real_lore_repository_can_be_created_and_events_read() {
                     repository_url: format!("lore://localhost/{unique}").into(),
                     description: "Lore Client smoke test".into(),
                     id: LoreString::default(),
-                    use_shared_store: 0,
+                    use_shared_store: LoreSharedStoreMode::Inherit,
                     shared_store_path: LoreString::default(),
                 },
                 callback,
