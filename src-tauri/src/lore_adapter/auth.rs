@@ -4,6 +4,31 @@
 //! 父模块统一管理，避免模块化重构改变现有 IPC 契约或 Lore 调用行为。
 
 use super::*;
+
+/// 上游 Lore manifest 的已知版本笔误修正值。
+///
+/// EpicGames/lore 固定提交 `3c8f3464` 的 workspace root 把
+/// `[workspace.package] version` 误写成 `0.8.7-nightly`（实际为 0.9.0 发布期），
+/// 而上游 `lore-base` 用 `{CARGO_PKG_VERSION}+{revision}` 生成
+/// `LORE_LIBRARY_VERSION`，错误前缀因此进入 About 页与状态栏。这里只做
+/// 显示层修正并直接展示正确版本；Cargo.lock 与依赖解析仍忠实记录上游
+/// manifest 的原始值，上游未来修正 manifest 后该映射自动失效。
+const KNOWN_LIBRARY_VERSION_TYPO: &str = "0.8.7-nightly";
+const KNOWN_LIBRARY_VERSION_FIXED: &str = "0.9.0";
+
+/// 把 Lore Core 版本字符串中的已知 manifest 笔误直接映射为正确版本。
+///
+/// 上游 `LORE_LIBRARY_VERSION` 形如 `0.8.7-nightly+<revision>`，其 `+` 后缀
+/// 在本机构建环境中没有可用语义，因此命中已知笔误时直接返回 `0.9.0`，
+/// 不保留后缀；未命中的其他版本原样返回。
+pub(super) fn display_library_version(raw: &str) -> String {
+    if raw.starts_with(KNOWN_LIBRARY_VERSION_TYPO) {
+        KNOWN_LIBRARY_VERSION_FIXED.to_owned()
+    } else {
+        raw.to_owned()
+    }
+}
+
 /// 返回已嵌入应用的 Lore Core 信息，不需要探测外部 CLI 或动态库。
 #[tauri::command]
 pub fn lore_runtime_info() -> LoreRuntimeInfo {
@@ -12,7 +37,7 @@ pub fn lore_runtime_info() -> LoreRuntimeInfo {
         available: true,
         integration_mode: "embedded-rust",
         lore_core_status: "ready",
-        library_version: lore::LORE_LIBRARY_VERSION.to_string(),
+        library_version: display_library_version(lore::LORE_LIBRARY_VERSION.as_str()),
         source_revision: LORE_SOURCE_REVISION,
     }
 }
