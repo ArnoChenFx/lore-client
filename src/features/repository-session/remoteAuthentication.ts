@@ -32,6 +32,22 @@ interface UseRemoteAuthenticationRecoveryOptions {
   snapshots: RepositorySnapshot[]
   upsertSnapshot: (snapshot: RepositorySnapshot) => void
   onEnterOfflineMode: () => void
+  /**
+   * 可注入的跨模块服务依赖；生产使用默认真实实现。
+   *
+   * Bun test 的模块级 vi.mock 会在部分平台上泄漏到其他测试文件，因此
+   * Hook 测试必须通过此契约注入替身，而不是替换整个 services 模块。
+   */
+  dependencies?: Partial<{
+    isAuthenticationRequiredError: typeof isAuthenticationRequiredError
+    listAuthIdentities: typeof listAuthIdentities
+    listRemoteRepositories: typeof listRemoteRepositories
+    loadRepositorySnapshot: typeof loadRepositorySnapshot
+    loginAuthInteractive: typeof loginAuthInteractive
+    refreshRepositoryAuthenticationContexts: typeof refreshRepositoryAuthenticationContexts
+    subscribeRemoteAuthenticationRequired: typeof subscribeRemoteAuthenticationRequired
+    confirmAuthenticationRequiredServers: typeof confirmAuthenticationRequiredServers
+  }>
 }
 
 /**
@@ -185,8 +201,20 @@ export function useRemoteAuthenticationRecovery({
   applicationMode,
   snapshots,
   upsertSnapshot,
-  onEnterOfflineMode
+  onEnterOfflineMode,
+  dependencies
 }: UseRemoteAuthenticationRecoveryOptions) {
+  // 解构到稳定名：生产时是模块级真实实现，测试注入替身后引用保持不变。
+  const {
+    isAuthenticationRequiredError: confirmsAuthenticationRequired = isAuthenticationRequiredError,
+    listAuthIdentities: listIdentities = listAuthIdentities,
+    listRemoteRepositories: listRemote = listRemoteRepositories,
+    loadRepositorySnapshot: loadSnapshot = loadRepositorySnapshot,
+    loginAuthInteractive: loginInteractive = loginAuthInteractive,
+    refreshRepositoryAuthenticationContexts: refreshContexts = refreshRepositoryAuthenticationContexts,
+    subscribeRemoteAuthenticationRequired: subscribeAuthRequired = subscribeRemoteAuthenticationRequired,
+    confirmAuthenticationRequiredServers: confirmServers = confirmAuthenticationRequiredServers
+  } = dependencies ?? {}
   const [pausedServerKeys, setPausedServerKeys] = useState<Set<string>>(() => new Set())
   const [requestedTarget, setRequestedTarget] = useState<RemoteAuthenticationTarget | null>(null)
   const [authenticationBusy, setAuthenticationBusy] = useState(false)
@@ -208,7 +236,10 @@ export function useRemoteAuthenticationRecovery({
         const key = remoteServerKey(repositoryServerUrl(snapshot.repository))
         return key && (!requestedServerKey || key === requestedServerKey)
       })
-      const refreshed = await refreshRepositoryAuthenticationState(relevantSnapshots, upsertSnapshot)
+      const refreshed = await refreshRepositoryAuthenticationState(relevantSnapshots, upsertSnapshot, {
+        refreshContexts,
+        loadSnapshot
+      })
       /*
        * 版本号必须在原生上下文失效与快照重读之后再推进，避免账户页、服务器目录和
        * 仓库工具在同一时刻抢先读取旧上下文。
@@ -229,7 +260,7 @@ export function useRemoteAuthenticationRecovery({
       })
       return refreshed
     },
-    [snapshots, upsertSnapshot]
+    [snapshots, upsertSnapshot, refreshContexts, loadSnapshot]
   )
 
   /** 服务器目录等无本地仓库入口也可以显式请求同一个全局认证对话框。 */
@@ -253,12 +284,12 @@ export function useRemoteAuthenticationRecovery({
     try {
       setAuthenticationBusy(true)
       setAuthenticationError(null)
-      await loginAuthInteractive(target.serverUrl)
+      await loginInteractive(target.serverUrl)
       /*
        * Auth List 的结果用于推动账户中心刷新；远端是否真正恢复则必须以各仓库 Status
        * 为准。显示名解析失败不会影响这里的连接验证。
        */
-      await listAuthIdentities()
+      await listIdentities()
       const refreshed = await refreshAuthenticationState(target.serverUrl)
       if (refreshed.snapshots.some((snapshot) => snapshot.repository.remoteState === 'unauthorized')) {
         setAuthenticationError('authentication_still_required')
@@ -276,7 +307,14 @@ export function useRemoteAuthenticationRecovery({
     } finally {
       setAuthenticationBusy(false)
     }
-  }, [applicationMode, authenticationBusy, authenticationTarget, refreshAuthenticationState])
+  }, [
+    applicationMode,
+    authenticationBusy,
+    authenticationTarget,
+    refreshAuthenticationState,
+    loginInteractive,
+    listIdentities
+  ])
 
   const continueOffline = useCallback(() => {
     if (!authenticationTarget || authenticationBusy) return
@@ -301,7 +339,7 @@ export function useRemoteAuthenticationRecovery({
     let disposed = false
     let lastHandledAtMs = 0
     let unlisten: (() => void) | null = null
-    void subscribeRemoteAuthenticationRequired((event) => {
+    void subscribeAuthRequired((event) => {
       if (disposed) return
       /*
        * 凭据失效会让多个命令在几百毫秒内连续失败；Rust 已做 3 秒节流，
@@ -322,8 +360,8 @@ export function useRemoteAuthenticationRecovery({
         inputs.pausedServerKeys
       )
       if (servers.length === 0) return
-      void confirmAuthenticationRequiredServers(servers, (serverUrl) =>
-        listRemoteRepositories(serverUrl)
+      void confirmServers(servers, (serverUrl) =>
+        listRemote(serverUrl)
       ).then((confirmed) => {
         if (disposed || confirmed.length === 0) return
         requestAuthentication(confirmed[0])
@@ -339,7 +377,7 @@ export function useRemoteAuthenticationRecovery({
       disposed = true
       unlisten?.()
     }
-  }, [applicationMode, requestAuthentication])
+  }, [applicationMode, requestAuthentication, subscribeAuthRequired, listRemote, confirmServers])
 
   const projectedSnapshots = useMemo(
     () => projectPausedRepositoriesOffline(snapshots, pausedServerKeys),

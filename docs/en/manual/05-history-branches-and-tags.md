@@ -68,6 +68,12 @@ Copy. It cannot merge into itself or archive the currently attached Branch. Remo
 Branch checkout creates or attaches an appropriate local working Branch. Archived
 Branches are read-only pointers with locate, Tag, and copy actions.
 
+Archiving runs through a confirmation dialog that shows the Branch name and its impact
+(Lore removes the locally visible pointer and archives the remote pointer when online),
+and provides an off-by-default **Also archive in every configured Layer** checkbox. With
+it enabled, Lore archives the same branch in every configured layer; repositories
+without layers are unaffected.
+
 ## Create a Branch
 
 The dialog displays source Branch, source Revision, and new name. Creating from history

@@ -43,6 +43,9 @@ Layer creation uses Mount path, Source repository, Source path, and optional Met
 Removing one can either keep untracked Layer files or **Purge Layer files**, which is a
 destructive local-disk action.
 
+If a Layer still carries uncommitted staged work or local modifications, Lore refuses
+the removal and explains why; commit or discard those changes first, then retry.
+
 A Layer never enters the parent history. Use it for private tools, assets, or CI overlays;
 use a Link when every collaborator must reproduce the same composition.
 
@@ -54,6 +57,15 @@ Revision.
 
 A Pin fixes an exact source Revision; a moving source Branch cannot silently upgrade the
 parent. The linked repository remains a separate permission boundary.
+
+The **Details** action on a Link row reads the full state of one link: mount and source
+paths, the follow mode (following the parent branch or pinned to an explicit branch),
+the pinned Revision, the remote latest of the pinned branch (shown as unavailable when
+the remote was not consulted), and the link's own staged state plus its staged file
+count.
+
+Lore refuses a Link removal that would destroy uncommitted local edits inside the link,
+and explains why.
 
 ## Shared Store: reuse content across Instances
 

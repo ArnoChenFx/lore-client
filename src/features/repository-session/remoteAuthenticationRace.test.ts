@@ -2,8 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RepositorySnapshot } from '../../types'
 
+/*
+ * 服务替身通过 Hook 的 dependencies 注入，而不是 vi.mock 整个 services 模块：
+ * Bun test 在部分平台上会把模块级 mock 泄漏到其他测试文件，导致那里的
+ * isAuthenticationRequiredError 恒为注入值并产生跨文件假失败。
+ */
 const serviceMocks = {
-  isAuthenticationRequiredError: vi.fn(() => false),
   listAuthIdentities: vi.fn(),
   listRemoteRepositories: vi.fn(),
   loadRepositorySnapshot: vi.fn(),
@@ -18,12 +22,6 @@ const hookState = {
 }
 const reactActual = await import('react')
 
-vi.mock('../../services/lore', () => serviceMocks)
-
-/*
- * 该用例只验证 Hook 的同步状态转换，不需要挂载 DOM。极小的 Hook 状态容器允许测试
- * 精确控制“原生认证刷新尚未完成”的时间窗，并在每次 render 时重放 React state。
- */
 vi.mock('react', () => ({
   ...reactActual,
   useCallback: <T>(callback: T) => callback,
@@ -105,7 +103,8 @@ describe('remote authentication refresh timing', () => {
         upsertSnapshot: (snapshot) => {
           snapshots = [snapshot]
         },
-        onEnterOfflineMode: vi.fn()
+        onEnterOfflineMode: vi.fn(),
+        dependencies: serviceMocks
       })
     }
 

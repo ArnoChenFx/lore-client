@@ -7,6 +7,14 @@ offline/unreachable remote, repository damage, invalid path/parameter, and confl
 state drift. Read the Toast, inline field error, and Operation History details before
 assuming repository corruption.
 
+## Sign in again after upgrading
+
+Since Lore 0.9.0, authentication tokens live in a new `tokenstore.toml`; the legacy
+`tokens.toml` is not migrated and the two generations stay independent. The first run
+after upgrading shows the account as signed out; acting on a remote repository opens
+browser-based authentication, and one sign-in restores access. Existing signed-in
+accounts do not need this step.
+
 ## Cannot open a directory
 
 Check path existence and access, `.lore` or legacy metadata in this directory or parents,

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import type { RepositoryRemoteState, RepositorySnapshot } from '../../types'
 import { LoreCommandClientError } from '../../services/lore'
@@ -64,14 +64,20 @@ describe('remote authentication recovery model', () => {
       { code: 'auth_required', message: 'The Lore server requires authentication' },
       'lore_repository_list'
     )
-    const probe = vi
-      .fn<(serverUrl: string) => Promise<unknown>>()
-      .mockResolvedValueOnce([])
-      .mockRejectedValueOnce(authenticationError)
-      .mockRejectedValueOnce(new LoreCommandClientError(
-        { code: 'server_unreachable', message: 'Connection refused' },
-        'lore_repository_list'
-      ))
+    const unreachableError = new LoreCommandClientError(
+      { code: 'server_unreachable', message: 'Connection refused' },
+      'lore_repository_list'
+    )
+    /*
+     * 用显式按 URL 分派的探测函数代替 mock once 队列：结果只取决于每个
+     * 服务器的真实失败形态，与 mock 实现的调用顺序语义解耦，避免 Bun 测试
+     * 运行器在不同平台上对 once 队列的行为差异把本测试变成 flaky。
+     */
+    const probe = async (serverUrl: string): Promise<unknown> => {
+      if (serverUrl === 'lore://auth:41337') throw authenticationError
+      if (serverUrl === 'lore://down:41337') throw unreachableError
+      return []
+    }
 
     const confirmed = await confirmAuthenticationRequiredServers(
       ['lore://ok:41337', 'lore://auth:41337', 'lore://down:41337'],

@@ -83,6 +83,9 @@ Removal first opens a confirmation area. **Purge Layer files** also removes mate
 local content; leaving it off preserves untracked files. Layers are local, not parent
 Revision data.
 
+If the Layer still carries uncommitted staged work or local modifications, Lore refuses
+the removal and explains why; commit or discard those changes first, then retry.
+
 ## 4. Links
 
 | Parameter | Input/default | Exact effect |
@@ -94,8 +97,11 @@ Revision data.
 | **Disable automatic Link branching** | Off by default | Prevents parent Branch operations from coordinating same-named linked Branches; does not make an existing pin move. |
 | **Resolved Branch/Revision** | Read-only list status | Shows what the current pin actually references. |
 | **Staged file count** | Read-only | Link changes waiting for the next parent Revision. |
+| **Details** | List action | Reads the full state of one link: mount and source paths, the follow mode (following the parent branch or pinned to an explicit branch), the pinned Revision, the remote latest of the pinned branch (shown as unavailable when the remote was not consulted), and the link's own staged state plus its staged file count. |
 
 Create, pin update, and removal are staged. **Edit Pin** does not commit automatically.
+Lore refuses a removal that would destroy uncommitted local edits inside the link, and
+explains why.
 
 ## 5. Dependencies
 
