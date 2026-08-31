@@ -39,6 +39,8 @@ pub async fn lore_branch_info(
                 globals,
                 LoreBranchInfoArgs {
                     branch: branch.into(),
+                    // 普通 Branch 信息查询不限定 Link 仓库；空值表示当前主仓库。
+                    link: LoreString::default(),
                 },
                 callback,
             ))
@@ -277,6 +279,8 @@ pub(super) fn read_branch_latest(
             globals,
             LoreBranchInfoArgs {
                 branch: branch.into(),
+                // 读取本地 Latest 指针时同样不限定 Link 仓库。
+                link: LoreString::default(),
             },
             callback,
         ))

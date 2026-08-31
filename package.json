@@ -1,6 +1,6 @@
 {
   "name": "lore-client",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "private": true,
   "type": "module",
   "scripts": {
@@ -20,19 +20,19 @@
     "format:check": "oxfmt --config .oxfmtrc.json --check src .zed package.json oxlint.config.ts .oxfmtrc.json"
   },
   "dependencies": {
-    "@pierre/diffs": "^1.3.5",
+    "@pierre/diffs": "^1.3.6",
     "@pierre/theme": "2.0.0",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-log": "^2.9.0",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
-    "i18next": "^26.3.6",
-    "lucide-react": "^1.32.0",
-    "pdfjs-dist": "^6.2.108",
+    "i18next": "^26.4.0",
+    "lucide-react": "^1.38.0",
+    "pdfjs-dist": "^6.3.289",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-i18next": "^17.0.11",
+    "react-i18next": "^17.0.12",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "three": "^0.185.1"
@@ -42,17 +42,17 @@
     "@oxlint/plugins": "1.78.0",
     "@rolldown/plugin-babel": "^0.2.3",
     "@tauri-apps/cli": "^2.11.4",
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.4.0",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
+    "@types/react-dom": "^19.2.5",
     "@types/three": "^0.185.4",
-    "@vitejs/plugin-react": "^6.0.5",
+    "@vitejs/plugin-react": "^6.1.1",
     "babel-plugin-react-compiler": "^1.0.0",
-    "oxfmt": "^0.63.0",
-    "oxlint": "^1.79.0",
+    "oxfmt": "^0.65.0",
+    "oxlint": "^1.80.0",
     "oxlint-tsgolint": "^7.0.2001",
     "typescript": "^7.0.2",
-    "vite": "^8.2.1",
+    "vite": "^8.2.2",
     "vitest": "^4.1.11"
   }
 }

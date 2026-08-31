@@ -772,6 +772,12 @@ pub async fn lore_branch_archive(
                 globals,
                 LoreBranchArchiveArgs {
                     branch: branch.into(),
+                    // 归档在本地与远端主仓库执行；空 layer/link 表示不限定
+                    // 挂载目标，include_* 为 0 表示不递归所有 Layer/Link。
+                    layer: LoreString::default(),
+                    include_layers: 0,
+                    link: LoreString::default(),
+                    include_links: 0,
                 },
                 callback,
             ))
