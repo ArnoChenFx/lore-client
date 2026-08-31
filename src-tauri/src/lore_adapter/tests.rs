@@ -3142,6 +3142,107 @@ fn repository_list_authentication_error_maps_to_stable_state() {
 }
 
 #[test]
+fn authentication_failure_with_structured_not_authenticated_code_is_recognized() {
+    // Lore 0.9.0 起认证失败以结构化 FFI 码 12 终止；事件文本不再包含旧的
+    // gRPC 认证描述，识别必须只依赖状态码。
+    let result = LoreOperationResult {
+        operation: "repository.list",
+        status: super::runtime::LORE_FFI_ERROR_NOT_AUTHENTICATED,
+        duration_ms: 1,
+        events: vec![serde_json::json!({
+            "tagName": "complete",
+            "data": {
+                "status": super::runtime::LORE_FFI_ERROR_NOT_AUTHENTICATED,
+                "error": {
+                    "errorCode": super::runtime::LORE_FFI_ERROR_NOT_AUTHENTICATED,
+                    "message": "Not authenticated"
+                }
+            }
+        })],
+    };
+
+    assert!(operation_requires_authentication(&result));
+}
+
+#[test]
+fn unrelated_structured_error_code_is_not_treated_as_authentication() {
+    // RepositoryNotFound (45) 等其他具体错误码不得被误判为需要认证，
+    // 否则远端 Create 会错误地启动交互登录并可能重复创建仓库。
+    let result = LoreOperationResult {
+        operation: "repository.create.remote",
+        status: 45,
+        duration_ms: 1,
+        events: vec![serde_json::json!({
+            "tagName": "complete",
+            "data": {
+                "status": 45,
+                "error": {
+                    "errorCode": 45,
+                    "message": "Repository not found"
+                }
+            }
+        })],
+    };
+
+    assert!(!operation_requires_authentication(&result));
+}
+
+#[test]
+fn operation_success_error_renders_known_ffi_code_name() {
+    let result = LoreOperationResult {
+        operation: "revision_tree.child",
+        status: 17,
+        duration_ms: 1,
+        events: vec![serde_json::json!({
+            "tagName": "complete",
+            "data": {
+                "status": 17,
+                "error": {
+                    "errorCode": 17,
+                    "message": "Not connected to remote: connection refused"
+                }
+            }
+        })],
+    };
+
+    let error = ensure_operation_success(&result, "Read revision tree")
+        .expect_err("A nonzero status must map to a structured error");
+    assert_eq!(error.code, "revision_tree_read_failed");
+    assert!(
+        error.message.contains("status code 17, NotConnected"),
+        "known FFI codes should render a readable name: {}",
+        error.message
+    );
+    assert!(error.message.contains("connection refused"));
+}
+
+#[test]
+fn operation_success_unknown_status_code_keeps_numeric_detail() {
+    // 未知或旧版 -1 码必须保持数字原样，绝不猜测错误语义。
+    let result = LoreOperationResult {
+        operation: "revision_tree.child",
+        status: -1,
+        duration_ms: 1,
+        events: vec![serde_json::json!({
+            "tagName": "complete",
+            "data": {
+                "status": -1,
+                "error": {
+                    "errorCode": -1,
+                    "message": "internal failure"
+                }
+            }
+        })],
+    };
+
+    let error = ensure_operation_success(&result, "Read revision tree")
+        .expect_err("A nonzero status must map to a structured error");
+    assert!(error.message.contains("status code -1"));
+    // 未知码不得附带任何错误名称。
+    assert!(!error.message.contains("status code -1,"));
+}
+
+#[test]
 fn clone_target_rejects_nonempty_directory() {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)

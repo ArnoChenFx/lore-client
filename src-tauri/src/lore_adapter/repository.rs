@@ -123,11 +123,16 @@ pub async fn lore_repository_list(
 }
 
 /**
- * 固定 Lore 版本没有把 MissingToken 保留成结构化客户端错误，只在 Complete 事件中
- * 返回协议标准描述。服务器目录与远端 Create 共用这个边界，把它收敛为稳定
- * `auth_required`；Lore 升级暴露错误枚举后应删除这个兼容分支。
+ * Lore 0.9.0 起认证失败会以结构化 `NotAuthenticated`（FFI 码 12）终止，
+ * 同步入口返回值与 `Complete.status` 携带具体码而不是笼统的 -1；旧版本只在
+ * Complete 事件的错误消息里返回 gRPC 标准描述。这里优先消费结构化码，旧文本
+ * 匹配仅作为兼容兜底。服务器目录与远端 Create 共用这个边界，把它收敛为稳定
+ * `auth_required`，让前端安全地启动交互登录并重试。
  */
 pub(super) fn operation_requires_authentication(result: &LoreOperationResult) -> bool {
+    if result.status == super::runtime::LORE_FFI_ERROR_NOT_AUTHENTICATED {
+        return true;
+    }
     result.status != 0
         && result.events.iter().any(|event| {
             event

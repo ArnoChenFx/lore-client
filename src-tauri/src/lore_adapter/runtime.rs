@@ -860,6 +860,80 @@ pub(super) fn ensure_command_success(
     ))
 }
 
+/// 上游 `lore-base` 的 `NotAuthenticated` FFI 错误码；名称见 `lore_error_code_name`。
+pub(super) const LORE_FFI_ERROR_NOT_AUTHENTICATED: i32 = 12;
+
+/**
+ * 上游 `lore-base/src/error.rs` 定义的稳定 FFI 错误码名称表。
+ *
+ * Lore 0.9.0 起 C API 失败不再返回笼统的 -1，而是携带具体错误码；客户端在
+ * 操作错误详情中把已知码渲染为名称，避免用户只看到无语义的裸数字。上游新增
+ * 错误码时必须同步此表；未知码保持原样显示数字，绝不猜测语义。
+ */
+pub(super) fn lore_error_code_name(code: i32) -> Option<&'static str> {
+    let name = match code {
+        1 => "InvalidArguments",
+        2 => "AddressNotFound",
+        3 => "FileNotFound",
+        4 => "PayloadNotFound",
+        5 => "SlowDown",
+        6 => "Disconnected",
+        7 => "NotAuthorized",
+        8 => "LockNotFound",
+        9 => "LockNotOwned",
+        10 => "SharedStoreNotFound",
+        11 => "Maintenance",
+        12 => "NotAuthenticated",
+        13 => "NotFound",
+        14 => "NoRemote",
+        15 => "NodeNotFound",
+        16 => "LinkNotFound",
+        17 => "NotConnected",
+        18 => "NotSupported",
+        19 => "AlreadyLinked",
+        20 => "LayerNotFound",
+        21 => "NothingStaged",
+        22 => "BranchAdvanced",
+        23 => "Conflict",
+        24 => "LinkPathNotFound",
+        25 => "NotALink",
+        26 => "Oversized",
+        27 => "PluginNotFound",
+        28 => "PluginConfigError",
+        29 => "PluginInitError",
+        30 => "WriteRequired",
+        31 => "InvalidPath",
+        32 => "InvalidAddress",
+        33 => "RevisionNotFound",
+        34 => "BranchNotFound",
+        35 => "IdenticalMetadata",
+        36 => "TokenNotFound",
+        37 => "NotALayer",
+        38 => "InvalidNodeHierarchy",
+        39 => "LocalModifications",
+        40 => "BranchAlreadyExists",
+        41 => "RepositoryAlreadyExists",
+        42 => "DeleteProtected",
+        43 => "DeleteCurrent",
+        44 => "DeleteDefault",
+        45 => "RepositoryNotFound",
+        46 => "Divergent",
+        47 => "MaxHistorySearchDepth",
+        48 => "MissingIdentity",
+        49 => "InefficientCompression",
+        _ => return None,
+    };
+    Some(name)
+}
+
+/// 把 Lore 终止状态码渲染为可读描述；已知 FFI 码附加名称，未知码保持旧格式。
+pub(super) fn describe_status_code(status: i32) -> String {
+    match lore_error_code_name(status) {
+        Some(name) => format!("status code {status}, {name}"),
+        None => format!("status code {status}"),
+    }
+}
+
 /// 把非零 Lore 状态统一转换为结构化命令错误。
 ///
 /// 低层 Revision Tree 与 Storage 接口会把具体失败写入事件流；客户端命令仍需要
@@ -895,6 +969,9 @@ pub(super) fn ensure_operation_success(
         .unwrap_or_else(|| "Lore did not provide additional error details".to_owned());
     Err(LoreCommandError::new(
         "revision_tree_read_failed",
-        format!("{label} failed (status code {}): {detail}", result.status),
+        format!(
+            "{label} failed ({}): {detail}",
+            describe_status_code(result.status)
+        ),
     ))
 }

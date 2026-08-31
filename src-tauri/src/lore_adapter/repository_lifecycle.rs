@@ -544,7 +544,12 @@ pub(super) fn operation_failure_message(result: &LoreOperationResult, fallback: 
                 .filter(|message| !message.trim().is_empty())
         })
         .map(str::to_owned)
-        .unwrap_or_else(|| format!("{fallback} (status code {})", result.status))
+        .unwrap_or_else(|| {
+            format!(
+                "{fallback} ({})",
+                super::runtime::describe_status_code(result.status)
+            )
+        })
 }
 
 /// 返回仓库当前格式对应的元数据目录；旧 `.urc` 优先级与 Lore 自身保持一致。
