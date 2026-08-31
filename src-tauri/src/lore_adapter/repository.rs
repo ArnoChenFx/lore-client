@@ -130,18 +130,7 @@ pub async fn lore_repository_list(
  * `auth_required`，让前端安全地启动交互登录并重试。
  */
 pub(super) fn operation_requires_authentication(result: &LoreOperationResult) -> bool {
-    if result.status == super::runtime::LORE_FFI_ERROR_NOT_AUTHENTICATED {
-        return true;
-    }
-    result.status != 0
-        && result.events.iter().any(|event| {
-            event
-                .pointer("/data/error/message")
-                .and_then(Value::as_str)
-                .is_some_and(|message| {
-                    message.contains("The request does not have valid authentication credentials")
-                })
-        })
+    super::runtime::operation_failure_indicates_unauthenticated(result.status, &result.events)
 }
 
 /// 读取设备全局配置中的 Shared Store，并补充只读磁盘占用统计。

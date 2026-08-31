@@ -37,7 +37,9 @@ use lore::interface::{
 use lore::layer::{
     LoreLayerAddArgs, LoreLayerListArgs, LoreLayerListStagedArgs, LoreLayerRemoveArgs,
 };
-use lore::link::{LoreLinkAddArgs, LoreLinkListArgs, LoreLinkRemoveArgs, LoreLinkUpdateArgs};
+use lore::link::{
+    LoreLinkAddArgs, LoreLinkInfoArgs, LoreLinkListArgs, LoreLinkRemoveArgs, LoreLinkUpdateArgs,
+};
 use lore::lock::{
     LoreLockFileAcquireArgs, LoreLockFileQueryArgs, LoreLockFileReleaseArgs, LoreLockFileStatusArgs,
 };
@@ -229,6 +231,40 @@ struct LoreRepositoryNotificationEvent {
 fn emit_operation_stream(event: LoreOperationStreamEvent) {
     if let Some(app_handle) = EVENT_APP_HANDLE.get() {
         let _ = app_handle.emit("lore://operation-stream", event);
+    }
+}
+
+/// 上次向 WebView 广播“远端需要重新认证”信号的时间（毫秒时间戳）。
+///
+/// 凭据失效会让多个命令在短时间窗口内连续失败（tag list、Revision Diff、
+/// 分类采样等各自报错）；不带节流的全局事件会形成信号风暴并让前端反复探测。
+static REMOTE_AUTH_SIGNAL_LAST_MS: AtomicU64 = AtomicU64::new(0);
+
+/// 远端认证失效信号的去重窗口；窗口内重复失败不会再次广播。
+const REMOTE_AUTH_SIGNAL_THROTTLE_MS: u64 = 3_000;
+
+/**
+ * 向 WebView 广播“某个远端操作因凭据缺失/失效而失败”。
+ *
+ * 该信号由 `run_operation` 在所有 Lore 命令的汇聚点检测并发出，与具体错误码
+ * 解耦：前端据此对已打开仓库做真实连接探测，确认后打开全局重新认证弹窗。
+ * payload 只携带操作名，避免把仓库路径或错误详情泄漏到事件层。
+ */
+fn emit_remote_authentication_required(operation: &'static str) {
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default();
+    let last_ms = REMOTE_AUTH_SIGNAL_LAST_MS.load(Ordering::Relaxed);
+    if now_ms.saturating_sub(last_ms) < REMOTE_AUTH_SIGNAL_THROTTLE_MS {
+        return;
+    }
+    REMOTE_AUTH_SIGNAL_LAST_MS.store(now_ms, Ordering::Relaxed);
+    if let Some(app_handle) = EVENT_APP_HANDLE.get() {
+        let _ = app_handle.emit(
+            "lore://remote-authentication-required",
+            serde_json::json!({ "operation": operation }),
+        );
     }
 }
 

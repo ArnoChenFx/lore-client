@@ -3188,6 +3188,76 @@ fn unrelated_structured_error_code_is_not_treated_as_authentication() {
 }
 
 #[test]
+fn connection_stage_credential_failure_is_recognized_as_authentication() {
+    // Lore 0.9.0 在连接建立阶段缺少可用凭据时以 NotConnected（码 17）终止，
+    // 详细消息带 "Not authenticated"；这是用户真实日志中的形态，必须被识别为
+    // 需要重新认证，而不是当成普通网络故障。
+    let result = LoreOperationResult {
+        operation: "revision_tree.load",
+        status: super::runtime::LORE_FFI_ERROR_NOT_CONNECTED,
+        duration_ms: 1,
+        events: vec![serde_json::json!({
+            "tagName": "complete",
+            "data": {
+                "status": super::runtime::LORE_FFI_ERROR_NOT_CONNECTED,
+                "error": {
+                    "errorCode": super::runtime::LORE_FFI_ERROR_NOT_CONNECTED,
+                    "message": "Not connected to remote: Not authenticated"
+                }
+            }
+        })],
+    };
+
+    assert!(operation_requires_authentication(&result));
+}
+
+#[test]
+fn plain_connection_refusal_is_not_treated_as_authentication() {
+    // 码 17 只有在事件文本给出认证语义时才代表凭据失效；纯网络拒绝必须保持
+    // offline 语义，避免服务器宕机被误报成“请重新登录”。
+    let result = LoreOperationResult {
+        operation: "revision_tree.load",
+        status: super::runtime::LORE_FFI_ERROR_NOT_CONNECTED,
+        duration_ms: 1,
+        events: vec![serde_json::json!({
+            "tagName": "complete",
+            "data": {
+                "status": super::runtime::LORE_FFI_ERROR_NOT_CONNECTED,
+                "error": {
+                    "errorCode": super::runtime::LORE_FFI_ERROR_NOT_CONNECTED,
+                    "message": "Not connected to remote: connection refused"
+                }
+            }
+        })],
+    };
+
+    assert!(!operation_requires_authentication(&result));
+}
+
+#[test]
+fn not_authorized_permission_error_is_not_treated_as_authentication() {
+    // NotAuthorized（码 7）是已认证但无权限，属于账户权限问题；重新登录
+    // 不会改变结果，不得触发重新认证流程。
+    let result = LoreOperationResult {
+        operation: "repository.list",
+        status: 7,
+        duration_ms: 1,
+        events: vec![serde_json::json!({
+            "tagName": "complete",
+            "data": {
+                "status": 7,
+                "error": {
+                    "errorCode": 7,
+                    "message": "Not authorized to access repository"
+                }
+            }
+        })],
+    };
+
+    assert!(!operation_requires_authentication(&result));
+}
+
+#[test]
 fn operation_success_error_renders_known_ffi_code_name() {
     let result = LoreOperationResult {
         operation: "revision_tree.child",

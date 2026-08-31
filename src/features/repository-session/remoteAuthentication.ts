@@ -1,10 +1,13 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
+  isAuthenticationRequiredError,
   listAuthIdentities,
+  listRemoteRepositories,
   loadRepositorySnapshot,
   loginAuthInteractive,
-  refreshRepositoryAuthenticationContexts
+  refreshRepositoryAuthenticationContexts,
+  subscribeRemoteAuthenticationRequired
 } from '../../services/lore'
 import { readErrorMessage } from '../../shared/lib'
 import type { ApplicationMode, Repository, RepositorySnapshot } from '../../types'
@@ -66,6 +69,49 @@ export function collectRemoteAuthenticationTargets(
     targets.set(key, target)
   }
   return [...targets.values()]
+}
+
+/**
+ * 收集需要认证探测的候选服务器。
+ *
+ * Lore 0.9.0 在凭据缺失时 Status 只返回 remoteAvailable=0，快照会被判定为
+ * offline 而不是 unauthorized，因此自动弹窗检测器拿不到证据。收到 Rust 的
+ * 全局失效信号后，改用对已打开远端仓库的服务器做真实连接探测来确认；本地
+ * 仓库、无远端地址和用户已选择离线的服务器都被排除。
+ */
+export function collectAuthenticationProbeServers(
+  snapshots: RepositorySnapshot[],
+  pausedServerKeys: ReadonlySet<string>
+): string[] {
+  const servers = new Set<string>()
+  for (const snapshot of snapshots) {
+    const { remoteState } = snapshot.repository
+    if (remoteState === 'local' || remoteState === 'online') continue
+    const serverUrl = repositoryServerUrl(snapshot.repository)
+    const key = remoteServerKey(serverUrl)
+    if (!key || pausedServerKeys.has(key)) continue
+    servers.add(serverUrl)
+  }
+  return [...servers]
+}
+
+/**
+ * 对候选服务器逐一探测，返回确认“凭据失效”的服务器。
+ *
+ * 探测是只读的服务器目录列表：认证失效返回稳定 `auth_required`，在线且授权
+ * 返回成功；网络不可达等其他失败保持静默，不把真离线误报成需要重新登录。
+ */
+export async function confirmAuthenticationRequiredServers(
+  servers: string[],
+  probe: (serverUrl: string) => Promise<unknown>
+): Promise<string[]> {
+  const results = await Promise.allSettled(
+    servers.map((serverUrl) => probe(serverUrl).then(() => null))
+  )
+  return servers.filter((_, index) => {
+    const result = results[index]
+    return result.status === 'rejected' && isAuthenticationRequiredError(result.reason)
+  })
 }
 
 /**
@@ -240,6 +286,60 @@ export function useRemoteAuthenticationRecovery({
     setAuthenticationError(null)
     onEnterOfflineMode()
   }, [authenticationBusy, authenticationTarget, onEnterOfflineMode])
+
+  /*
+   * 快照与暂停状态在探测时必须是最新的；订阅本身只随应用模式注册一次，
+   * 用 ref 在渲染提交后同步最新值，避免快照刷新反复拆卸重挂全局监听。
+   */
+  const probeInputsRef = useRef({ applicationMode, snapshots, pausedServerKeys, requestedTarget })
+  useEffect(() => {
+    probeInputsRef.current = { applicationMode, snapshots, pausedServerKeys, requestedTarget }
+  })
+
+  useEffect(() => {
+    if (applicationMode !== 'tauri') return undefined
+    let disposed = false
+    let lastHandledAtMs = 0
+    let unlisten: (() => void) | null = null
+    void subscribeRemoteAuthenticationRequired((event) => {
+      if (disposed) return
+      /*
+       * 凭据失效会让多个命令在几百毫秒内连续失败；Rust 已做 3 秒节流，
+       * 这里再收敛一次，保证一次信号只触发一轮探测与弹窗。
+       */
+      const nowMs = Date.now()
+      if (nowMs - lastHandledAtMs < 1_500) return
+      lastHandledAtMs = nowMs
+      const inputs = probeInputsRef.current
+      if (inputs.applicationMode !== 'tauri') return
+      /*
+       * 恢复对话框已经针对某台服务器打开时无需重复探测；新一轮信号只服务
+       * 尚未弹窗的会话，避免认证流程进行中的噪音探测。
+       */
+      if (inputs.requestedTarget) return
+      const servers = collectAuthenticationProbeServers(
+        inputs.snapshots,
+        inputs.pausedServerKeys
+      )
+      if (servers.length === 0) return
+      void confirmAuthenticationRequiredServers(servers, (serverUrl) =>
+        listRemoteRepositories(serverUrl)
+      ).then((confirmed) => {
+        if (disposed || confirmed.length === 0) return
+        requestAuthentication(confirmed[0])
+      })
+    }).then((dispose) => {
+      if (disposed) {
+        dispose()
+        return
+      }
+      unlisten = dispose
+    })
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [applicationMode, requestAuthentication])
 
   const projectedSnapshots = useMemo(
     () => projectPausedRepositoriesOffline(snapshots, pausedServerKeys),

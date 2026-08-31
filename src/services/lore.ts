@@ -103,6 +103,30 @@ export async function subscribeLoreOperationStream(
   return listen<LoreOperationStreamEvent>('lore://operation-stream', (event) => listener(event.payload))
 }
 
+/** Rust 侧检测到凭据缺失/失效的远端操作失败时广播的负载。 */
+export interface RemoteAuthenticationRequiredEvent {
+  /** 触发信号的 Lore 操作名，仅用于诊断展示。 */
+  operation: string
+}
+
+/**
+ * 订阅“远端需要重新认证”全局信号。
+ *
+ * Lore 0.9.0 在连接建立阶段缺凭据时把认证失败报成 `NotConnected` 加
+ * "Not authenticated" 文本，Status 又只会给出 remoteAvailable=0，前端无法从
+ * 快照区分离线与凭据失效；因此由 Rust 在 run_operation 汇聚点检测并在命中时
+ * 广播本信号，前端据此探测服务器并打开全局重新认证弹窗。
+ */
+export async function subscribeRemoteAuthenticationRequired(
+  listener: (event: RemoteAuthenticationRequiredEvent) => void
+): Promise<UnlistenFn> {
+  if (!isTauri()) return () => undefined
+  return listen<RemoteAuthenticationRequiredEvent>(
+    'lore://remote-authentication-required',
+    (event) => listener(event.payload)
+  )
+}
+
 /**
  * 连接当前仓库的真实远端通知。
  *

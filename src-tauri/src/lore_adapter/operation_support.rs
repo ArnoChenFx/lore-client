@@ -118,6 +118,15 @@ pub(super) fn run_operation(
     };
 
     let duration_ms = started_at.elapsed().as_millis();
+    /*
+     * 凭据缺失/失效的失败会让无关命令（tag list、Revision Diff、分类采样…）
+     * 各自报错而用户看不到任何恢复入口。这里在所有 Lore 命令的汇聚点统一检测
+     * 认证失效证据并广播全局信号；前端据此探测服务器并打开重新认证弹窗。
+     * 检测与错误转换解耦，emit 自带节流，不会放大重试风暴。
+     */
+    if status != 0 && operation_failure_indicates_unauthenticated(status, &events) {
+        emit_remote_authentication_required(operation);
+    }
     let terminal_event = stream_lifecycle
         .lock()
         .map_err(|_| {

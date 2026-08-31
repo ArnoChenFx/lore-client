@@ -3,10 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RepositorySnapshot } from '../../types'
 
 const serviceMocks = {
+  isAuthenticationRequiredError: vi.fn(() => false),
   listAuthIdentities: vi.fn(),
+  listRemoteRepositories: vi.fn(),
   loadRepositorySnapshot: vi.fn(),
   loginAuthInteractive: vi.fn(),
-  refreshRepositoryAuthenticationContexts: vi.fn()
+  refreshRepositoryAuthenticationContexts: vi.fn(),
+  subscribeRemoteAuthenticationRequired: vi.fn(() => Promise.resolve(() => undefined))
 }
 
 const hookState = {
@@ -25,6 +28,16 @@ vi.mock('react', () => ({
   ...reactActual,
   useCallback: <T>(callback: T) => callback,
   useMemo: <T>(factory: () => T) => factory(),
+  /** 副作用在无真实挂载的 Hook 调用容器里不可执行，直接跳过。 */
+  useEffect: () => undefined,
+  useRef: <T>(initial: T) => {
+    const index = hookState.cursor
+    hookState.cursor += 1
+    if (hookState.values.length <= index) {
+      hookState.values[index] = { current: initial }
+    }
+    return hookState.values[index] as { current: T }
+  },
   useState: <T>(initial: T | (() => T)) => {
     const index = hookState.cursor
     hookState.cursor += 1

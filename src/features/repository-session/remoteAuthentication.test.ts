@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { RepositoryRemoteState, RepositorySnapshot } from '../../types'
+import { LoreCommandClientError } from '../../services/lore'
 import {
+  collectAuthenticationProbeServers,
   collectRemoteAuthenticationTargets,
+  confirmAuthenticationRequiredServers,
   projectPausedRepositoriesOffline,
   refreshRepositoryAuthenticationState,
   remoteServerKey,
@@ -41,6 +44,43 @@ function createSnapshot(
 }
 
 describe('remote authentication recovery model', () => {
+  it('collects probe servers from remote snapshots while excluding local and paused servers', () => {
+    const servers = collectAuthenticationProbeServers(
+      [
+        createSnapshot('one', 'alpha', 'offline'),
+        createSnapshot('two', 'beta', 'unauthorized', 'lore://other:41337/beta'),
+        createSnapshot('three', 'gamma', 'online'),
+        createSnapshot('four', 'delta', 'local', ''),
+        createSnapshot('five', 'epsilon', 'offline', 'lore://paused:41337/epsilon')
+      ],
+      new Set(['lore://paused:41337'])
+    )
+
+    expect(servers).toEqual(['lore://server:41337', 'lore://other:41337'])
+  })
+
+  it('confirms only servers whose probe fails with a structured authentication error', async () => {
+    const authenticationError = new LoreCommandClientError(
+      { code: 'auth_required', message: 'The Lore server requires authentication' },
+      'lore_repository_list'
+    )
+    const probe = vi
+      .fn<(serverUrl: string) => Promise<unknown>>()
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(authenticationError)
+      .mockRejectedValueOnce(new LoreCommandClientError(
+        { code: 'server_unreachable', message: 'Connection refused' },
+        'lore_repository_list'
+      ))
+
+    const confirmed = await confirmAuthenticationRequiredServers(
+      ['lore://ok:41337', 'lore://auth:41337', 'lore://down:41337'],
+      probe
+    )
+
+    expect(confirmed).toEqual(['lore://auth:41337'])
+  })
+
   it('groups unauthorized repositories by server root', () => {
     const targets = collectRemoteAuthenticationTargets(
       [

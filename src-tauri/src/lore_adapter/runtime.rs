@@ -863,6 +863,49 @@ pub(super) fn ensure_command_success(
 /// 上游 `lore-base` 的 `NotAuthenticated` FFI 错误码；名称见 `lore_error_code_name`。
 pub(super) const LORE_FFI_ERROR_NOT_AUTHENTICATED: i32 = 12;
 
+/// 上游 `lore-base` 的 `NotConnected` FFI 错误码。
+///
+/// Lore 0.9.0 在**连接建立阶段**缺少可用凭据时会直接以 `NotConnected` 终止
+/// （如 Revision Diff 报 "Not connected to remote: Not authenticated"），
+/// 而不是已连接后的 `NotAuthenticated`；恢复流程必须同时识别两种形态。
+pub(super) const LORE_FFI_ERROR_NOT_CONNECTED: i32 = 17;
+
+/**
+ * 判定一次失败操作的错误流是否携带“凭据缺失或失效”证据。
+ *
+ * 识别三种形态：
+ * 1. Lore 0.9.0 结构化 `NotAuthenticated`（码 12），无需文本佐证；
+ * 2. `NotConnected`（码 17）或旧格式的笼统 `-1`，此时必须由事件文本中的
+ *    "Not authenticated" 或旧 gRPC 认证描述佐证，避免把服务器宕机等纯网络
+ *    失败误判成需要重新登录；
+ * 3. 文本匹配大小写不敏感，覆盖上游不同版本的大小写变体。
+ *
+ * `NotAuthorized`（码 7）是“已认证但无权限”，属于账户权限问题而不是凭据
+ * 失效，绝不触发重新认证流程。
+ */
+pub(super) fn operation_failure_indicates_unauthenticated(status: i32, events: &[Value]) -> bool {
+    if status == LORE_FFI_ERROR_NOT_AUTHENTICATED {
+        return true;
+    }
+    if status != LORE_FFI_ERROR_NOT_CONNECTED && status != -1 {
+        return false;
+    }
+    events.iter().any(|event| {
+        ["/data/error/message", "/data/message", "/data/errorInner"]
+            .iter()
+            .any(|pointer| {
+                event
+                    .pointer(pointer)
+                    .and_then(Value::as_str)
+                    .is_some_and(|message| {
+                        let lowered = message.to_ascii_lowercase();
+                        lowered.contains("not authenticated")
+                            || lowered.contains("does not have valid authentication credentials")
+                    })
+            })
+    })
+}
+
 /**
  * 上游 `lore-base/src/error.rs` 定义的稳定 FFI 错误码名称表。
  *
