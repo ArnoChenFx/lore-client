@@ -759,10 +759,14 @@ pub(super) fn contains_conflict_markers(content: &str) -> bool {
 }
 
 /// 归档指定本地 Branch；联网模式下 Lore Core 同步归档其远端指针。
+///
+/// `include_layers` 请求同时归档仓库中每个已配置 Layer 里的同名 Branch；
+/// 由用户在确认弹窗中显式选择，适配层不会默认递归。
 #[tauri::command]
 pub async fn lore_branch_archive(
     repository_path: String,
     branch: String,
+    include_layers: bool,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let branch = validate_branch_name(&branch)?;
     run_lore_task(move || {
@@ -773,9 +777,11 @@ pub async fn lore_branch_archive(
                 LoreBranchArchiveArgs {
                     branch: branch.into(),
                     // 归档在本地与远端主仓库执行；空 layer/link 表示不限定
-                    // 挂载目标，include_* 为 0 表示不递归所有 Layer/Link。
+                    // 挂载目标。include_layers 由前端确认弹窗决定，
+                    // include_links 始终为 0：Link 子仓库的分支不属于
+                    // 本仓库的归档语义。
                     layer: LoreString::default(),
-                    include_layers: 0,
+                    include_layers: u8::from(include_layers),
                     link: LoreString::default(),
                     include_links: 0,
                 },

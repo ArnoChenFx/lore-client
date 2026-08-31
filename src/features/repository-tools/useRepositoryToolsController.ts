@@ -23,6 +23,7 @@ import {
   loadBranchDiff,
   loadFileDependencyGraph,
   loadFileLockStatus,
+  loadLinkInfo,
   loadMetadata,
   loadRepositoryView,
   loadRevisionInfo,
@@ -63,6 +64,7 @@ import type {
   LoreLayerRemoveRequest,
   LoreLink,
   LoreLinkAddRequest,
+  LoreLinkDetails,
   LoreLinkUpdateRequest,
   RepositoryAuthAccountBinding,
   RepositoryConfiguration,
@@ -833,6 +835,25 @@ export function useRepositoryToolsController({
     [activeSnapshot, refreshCompositionResources, runRepositoryMutation]
   )
 
+  /**
+   * 读取单条 Link 的完整详情。
+   *
+   * 详情读取是只读操作，失败时只弹提示并返回 null；不经过仓库写队列，
+   * 也不改变 busyAction，避免阻塞其他面板操作。
+   */
+  const loadActiveLinkInfo = useCallback(
+    async (linkPath: string): Promise<LoreLinkDetails | null> => {
+      if (!activeSnapshot || applicationMode !== 'tauri') return null
+      try {
+        return await loadLinkInfo(activeSnapshot.repository.path, linkPath)
+      } catch (error) {
+        notify(t('linkInfoUnavailable'), readErrorMessage(error), 'warning')
+        return null
+      }
+    },
+    [activeSnapshot, applicationMode, notify]
+  )
+
   const previewActiveRepositoryView = useCallback(
     async (content: string): Promise<RepositoryViewPreview> => {
       const revision = activeSnapshot?.repository.revision
@@ -1061,6 +1082,7 @@ export function useRepositoryToolsController({
       onAddLink: addActiveLink,
       onUpdateLink: updateActiveLink,
       onRemoveLink: removeActiveLink,
+      onLoadLinkInfo: loadActiveLinkInfo,
       onAcquireLock: (path) => acquireActiveFileLocks([path]),
       onReleaseLock: (path) => releaseActiveFileLocks([path]),
       onQueryDependencies: queryActiveDependencies,
@@ -1222,6 +1244,7 @@ export function useRepositoryToolsController({
     links,
     loading,
     locateRevision,
+    loadActiveLinkInfo,
     notify,
     onAuthAccountBindingsChange,
     onAuthStateChange,

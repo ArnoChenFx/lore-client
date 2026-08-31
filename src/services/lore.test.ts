@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import i18n from '../i18n'
-import type { LoreEvent } from '../types'
+import type { LoreEvent, LoreLinkDetails } from '../types'
 import {
   DEFAULT_SERVER_URL,
   isAuthenticationRequiredError,
@@ -17,6 +17,8 @@ import {
 } from './lore'
 
 const repositoryPath = 'E:\\Worlds\\RealLore'
+/** Lore 零哈希的十六进制形态；用于模拟“远端未查询”。 */
+const ZERO_HASH = '0'.repeat(64)
 
 describe('Lore event adapter', () => {
   beforeEach(async () => {
@@ -1093,6 +1095,72 @@ describe('Lore event adapter', () => {
         stagedFileCount: 5
       })
     ])
+  })
+
+  it('parses link info details and clears the remote latest when the hash is zero', () => {
+    const events: LoreEvent[] = [
+      {
+        tagName: 'linkInfo',
+        data: {
+          entry: {
+            link: 'repository-tools',
+            linkPath: 'Tools',
+            sourcePath: 'Editor',
+            branchName: 'main',
+            tracking: true,
+            revision: 'link-revision',
+            flags: 0
+          },
+          remoteRevision: ZERO_HASH,
+          stagedState: 'modified',
+          stagedFileCount: 7
+        }
+      }
+    ]
+
+    expect(loreEventParsers.parseLinkInfo(events)).toEqual({
+      linkPath: 'Tools',
+      repository: 'repository-tools',
+      sourcePath: 'Editor',
+      branchName: 'main',
+      tracking: true,
+      revision: 'link-revision',
+      remoteRevision: '',
+      stagedState: 'modified',
+      stagedFileCount: 7,
+      disableAutoFollow: false
+    } satisfies LoreLinkDetails)
+  })
+
+  it('keeps a real remote latest and rejects unknown staged states', () => {
+    const events: LoreEvent[] = [
+      {
+        tagName: 'linkInfo',
+        data: {
+          entry: {
+            link: 'repository-tools',
+            linkPath: 'Tools',
+            sourcePath: 'Editor',
+            branch: 'main',
+            tracking: false,
+            revision: 'link-pin-revision',
+            flags: 1
+          },
+          remoteRevision: 'remote-latest-hash',
+          stagedState: 'future-enum-value',
+          stagedFileCount: 2
+        }
+      }
+    ]
+
+    const details = loreEventParsers.parseLinkInfo(events)
+    expect(details?.remoteRevision).toBe('remote-latest-hash')
+    expect(details?.stagedState).toBeNull()
+    expect(details?.disableAutoFollow).toBe(true)
+  })
+
+  it('returns null when the link info event is missing', () => {
+    expect(loreEventParsers.parseLinkInfo([{ tagName: 'complete', data: { status: 0 } }])).toBeNull()
   })
 
   it('preserves irreversible remote publication stages and provides safe retry guidance', () => {

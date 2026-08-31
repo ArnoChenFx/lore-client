@@ -68,6 +68,12 @@ export function HistoryPanel({
   onTagContextMenu,
   onHistoryQuery
 }: HistoryPanelProps) {
+  /*
+   * 面板文案必须用 useTranslation 的响应式 t：模块级 t 不订阅语言变化，
+   * 若首帧渲染早于 setAppLanguage 生效，aria-label/title 会永久冻结为
+   * 默认语言，且后续任何 state 变化都不会再读取当前语言。
+   */
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
   const [columnsOpen, setColumnsOpen] = useState(false)

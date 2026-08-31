@@ -4,6 +4,7 @@ import {
   Database,
   FileSearch,
   History,
+  Info,
   Layers3,
   Link2,
   LockKeyhole,
@@ -28,6 +29,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useAdjustFromProps } from '../../../hooks/useAdjustFromProps'
+import { t } from '../../../i18n'
 import {
   fileLockOwnerLabel,
   formatCommitIdentity,
@@ -50,6 +52,7 @@ import type {
   LoreLink,
   LoreLinkAddRequest,
   LoreLinkUpdateRequest,
+  LoreLinkDetails,
   LoreRevisionInfo,
   LoreMetadataEntry,
   LoreMetadataScope,
@@ -102,6 +105,7 @@ export function RepositoryToolsDialog({
   onAddLink,
   onUpdateLink,
   onRemoveLink,
+  onLoadLinkInfo,
   onAcquireLock = async () => false,
   onReleaseLock = async () => false,
   onQueryDependencies = async () => null,
@@ -209,6 +213,9 @@ export function RepositoryToolsDialog({
   const [linkDisableBranching, setLinkDisableBranching] = useState(false)
   const [editingLink, setEditingLink] = useState<LoreLink | null>(null)
   const [editingLinkPin, setEditingLinkPin] = useState('')
+  // Link 详情弹层：只读读取不占用 resourcePending，避免阻塞其他面板操作。
+  const [linkDetails, setLinkDetails] = useState<LoreLinkDetails | null>(null)
+  const [linkDetailsLoading, setLinkDetailsLoading] = useState(false)
   const [lockPath, setLockPath] = useState('')
   const [lockFilter, setLockFilter] = useState('')
   const identity = formatCommitIdentity(identityName, identityEmail)
@@ -473,6 +480,19 @@ export function RepositoryToolsDialog({
       await onRemoveLink(link.linkPath)
     } finally {
       setResourcePending(false)
+    }
+  }
+
+  /** 打开 Link 详情：事件缺失或读取失败时由控制器提示，本地只负责展示。 */
+  const openLinkDetails = async (link: LoreLink) => {
+    if (!onLoadLinkInfo) return
+    setLinkDetails(null)
+    setLinkDetailsLoading(true)
+    try {
+      const details = await onLoadLinkInfo(link.linkPath)
+      if (details) setLinkDetails(details)
+    } finally {
+      setLinkDetailsLoading(false)
     }
   }
 
@@ -1292,6 +1312,50 @@ export function RepositoryToolsDialog({
                   </form>
                 )}
 
+                {(linkDetailsLoading || linkDetails) && (
+                  <section className="composition-removal link-details" aria-live="polite">
+                    <span>
+                      <Info size={16} />
+                    </span>
+                    <div>
+                      <strong>{linkDetails?.linkPath || t('linkDetails')}</strong>
+                      {linkDetailsLoading && <small>{t('linkDetailsLoading')}</small>}
+                      {linkDetails && (
+                        <>
+                          <small>
+                            {linkDetails.repository}:{linkDetails.sourcePath}
+                          </small>
+                          <small>
+                            {linkDetails.tracking === false
+                              ? t('linkPinnedToBranch', { branch: linkDetails.branchName || '—' })
+                              : linkDetails.tracking === true
+                                ? t('linkFollowsParentBranch', { branch: linkDetails.branchName || '—' })
+                                : t('linkPinUnknown')}
+                            {' · '}
+                            {t('linkPinnedRevision', { revision: displayLinkRevision(linkDetails.revision) })}
+                          </small>
+                          <small>
+                            {linkDetails.remoteRevision
+                              ? t('linkRemoteLatest', { revision: displayLinkRevision(linkDetails.remoteRevision) })
+                              : t('linkRemoteLatestUnavailable')}
+                          </small>
+                          <small>
+                            {linkStagedStateLabel(linkDetails.stagedState)}
+                            {' · '}
+                            {t('status.linkStagedFileCount', { count: linkDetails.stagedFileCount })}
+                          </small>
+                          {linkDetails.disableAutoFollow && <small>{t('automaticLinkBranchingDisabled')}</small>}
+                        </>
+                      )}
+                    </div>
+                    <span>
+                      <button type="button" onClick={() => setLinkDetails(null)} disabled={dialogBusy}>
+                        {t('close')}
+                      </button>
+                    </span>
+                  </section>
+                )}
+
                 <CompositionResourceList
                   empty={t('thisRepositoryHasNoLinks')}
                   icon={<Link2 size={17} />}
@@ -1304,6 +1368,14 @@ export function RepositoryToolsDialog({
                     badges: link.disableAutoFollow ? [t('automaticLinkBranchingDisabled')] : [],
                     actions: (
                       <>
+                        <button
+                          type="button"
+                          onClick={() => void openLinkDetails(link)}
+                          disabled={dialogBusy || !onLoadLinkInfo || linkDetailsLoading}
+                        >
+                          <Info size={13} />
+                          {t('linkDetails')}
+                        </button>
                         <button
                           type="button"
                           onClick={() => {
@@ -1549,6 +1621,27 @@ function formatViewBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`
+}
+
+/** Link 详情中的 Revision 短显示；空值保留破折号，绝不伪造哈希。 */
+function displayLinkRevision(revision: string): string {
+  return revision ? revision.slice(0, 8) : '—'
+}
+
+/** Link 自身暂存状态的可读文案；未知状态不猜测语义。 */
+function linkStagedStateLabel(state: LoreLinkDetails['stagedState']): string {
+  switch (state) {
+    case 'none':
+      return t('linkStagedStateNone')
+    case 'added':
+      return t('linkStagedStateAdded')
+    case 'removed':
+      return t('linkStagedStateRemoved')
+    case 'modified':
+      return t('linkStagedStateModified')
+    default:
+      return t('linkStagedStateUnknown')
+  }
 }
 
 function CompositionResourceList({

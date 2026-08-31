@@ -38,6 +38,8 @@ import type {
   LoreLayerRemoveRequest,
   LoreLink,
   LoreLinkAddRequest,
+  LoreLinkDetails,
+  LoreLinkStagedState,
   LoreLinkUpdateRequest,
   LoreMetadataEntry,
   LoreMetadataScope,
@@ -902,6 +904,41 @@ function parseLinks(events: LoreEvent[], stagedEvents: LoreEvent[] = []): LoreLi
         stagedFileCount: stagedCounts.get(id) ?? 0
       }
     })
+}
+
+const LINK_STAGED_STATES = new Set<LoreLinkStagedState>(['none', 'added', 'removed', 'modified'])
+
+/**
+ * 从 `link info` 事件解析 Link 完整详情。
+ *
+ * `stagedState` 上游序列化为 camelCase 字符串，只有白名单内的值才会被接受；
+ * remoteRevision 为零哈希（远端未查询）时置为空串，避免渲染无意义的全零 ID。
+ * 事件缺失时返回 null，调用方据此提示“详情不可用”而不是伪造字段。
+ */
+function parseLinkInfo(events: LoreEvent[]): LoreLinkDetails | null {
+  const event = events.find((candidate) => candidate.tagName === 'linkInfo')
+  if (!event || !isRecord(event.data)) return null
+
+  const data = event.data
+  const entry = isRecord(data.entry) ? data.entry : {}
+  const flags = readNumber(entry.flags)
+  const rawStagedState = typeof data.stagedState === 'string' ? data.stagedState : ''
+  const stagedState = (LINK_STAGED_STATES as ReadonlySet<string>).has(rawStagedState)
+    ? (rawStagedState as LoreLinkStagedState)
+    : null
+  const remoteRevision = readString(data.remoteRevision, '')
+  return {
+    linkPath: readString(entry.linkPath ?? entry.path, ''),
+    repository: readString(entry.link ?? entry.repository, ''),
+    sourcePath: readString(entry.sourcePath, '/'),
+    branchName: readString(entry.branchName ?? entry.branch, ''),
+    tracking: typeof entry.tracking === 'boolean' ? entry.tracking : null,
+    revision: readString(entry.revision, ''),
+    remoteRevision: remoteRevision && !ZERO_HASH_PATTERN.test(remoteRevision) ? remoteRevision : '',
+    stagedState,
+    stagedFileCount: readNumber(data.stagedFileCount),
+    disableAutoFollow: (flags & 1) !== 0
+  }
 }
 
 /**
@@ -1984,8 +2021,12 @@ export async function writeConflictResolution(
 }
 
 /** 归档本地 Branch；联网模式下 Lore 会同步归档远端指针。 */
-export async function archiveBranch(repositoryPath: string, branch: string): Promise<LoreOperationResult> {
-  return runOperation('lore_branch_archive', { repositoryPath, branch })
+export async function archiveBranch(
+  repositoryPath: string,
+  branch: string,
+  includeLayers = false
+): Promise<LoreOperationResult> {
+  return runOperation('lore_branch_archive', { repositoryPath, branch, includeLayers })
 }
 
 export async function listLayers(repositoryPath: string): Promise<LoreLayer[]> {
@@ -2035,6 +2076,24 @@ export async function addLink(repositoryPath: string, request: LoreLinkAddReques
     pin: request.pin?.trim() || null,
     disableBranching: request.disableBranching
   })
+}
+
+/**
+ * 读取单条 Link 的完整详情。
+ *
+ * 仅消费 Lore 的 `linkInfo` 专用事件；事件缺失时抛出结构化错误，
+ * 绝不用列表 DTO 字段伪造详情。
+ */
+export async function loadLinkInfo(repositoryPath: string, linkPath: string): Promise<LoreLinkDetails> {
+  const result = await runOperation('lore_link_info', { repositoryPath, linkPath })
+  const details = parseLinkInfo(result.events)
+  if (!details) {
+    throw new LoreCommandClientError(
+      { code: 'link_info_unavailable' },
+      'lore_link_info'
+    )
+  }
+  return details
 }
 
 export async function updateLink(repositoryPath: string, request: LoreLinkUpdateRequest): Promise<LoreOperationResult> {
@@ -2488,6 +2547,18 @@ function localizeCommandError(error: Partial<LoreCommandError>, command: string)
   return error.message ?? t('status.commandFailed', { command })
 }
 
+/**
+ * 结构化 FFI 错误码 → 本地化语义键。
+ *
+ * Lore 0.9.0 起 Complete 事件携带具体错误码而非笼统的 -1；这里只覆盖用户可以
+ * 自行恢复的错误，其余码继续保留上游详情。新增码时同步 zh-CN 与 en-US。
+ */
+function localizedLoreErrorCodeKey(code: number): 'loreErrorLocalModifications' | null {
+  // LocalModifications：Layer/Link 移除、同步等在存在暂存工作或本地修改时拒绝。
+  if (code === 39) return 'loreErrorLocalModifications'
+  return null
+}
+
 function readLoreErrorMessage(result: LoreOperationResult): string {
   const errorEvent = result.events.find((event) => event.tagName === 'error')
   if (typeof errorEvent?.data.errorInner === 'string') {
@@ -2496,12 +2567,24 @@ function readLoreErrorMessage(result: LoreOperationResult): string {
 
   const complete = result.events.find((event) => event.tagName === 'complete')
   const detail = complete?.data.error
-  if (isRecord(detail)) {
-    for (const key of ['message', 'inner', 'context']) {
-      if (typeof detail[key] === 'string' && detail[key]) {
-        return detail[key]
-      }
-    }
+  const detailMessage = isRecord(detail)
+    ? ['message', 'inner', 'context']
+        .map((key) => (typeof detail[key] === 'string' && detail[key] ? String(detail[key]) : ''))
+        .find(Boolean)
+    : undefined
+
+  /*
+   * 已知 FFI 码优先渲染为本地化主文案，后面保留上游详情：拒绝类错误（如 Layer
+   * 移除拒绝时的 staged 文件数）仍有诊断价值，但裸英文 Display 不适合作为
+   * 长期界面文案。未知码保持既有行为，不猜测语义。
+   */
+  const localizedKey = localizedLoreErrorCodeKey(result.status)
+  if (localizedKey) {
+    return detailMessage ? `${t(localizedKey)}\n${detailMessage}` : t(localizedKey)
+  }
+
+  if (detailMessage) {
+    return detailMessage
   }
   return t('status.operationFailedWithStatus', {
     operation: result.operation,
@@ -3359,6 +3442,7 @@ export const loreEventParsers = {
   parseRemoteRepositories,
   parseLayers,
   parseLinks,
+  parseLinkInfo,
   parseRepositoryConfigValue,
   serverUrlFromRepositoryUrl,
   normalizeDisplayPath

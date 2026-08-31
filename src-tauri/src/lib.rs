@@ -139,6 +139,7 @@ pub fn run() {
             lore_adapter::composition::lore_layer_remove,
             lore_adapter::composition::lore_link_list,
             lore_adapter::composition::lore_link_list_staged,
+            lore_adapter::composition::lore_link_info,
             lore_adapter::composition::lore_link_add,
             lore_adapter::composition::lore_link_remove,
             lore_adapter::composition::lore_link_update,

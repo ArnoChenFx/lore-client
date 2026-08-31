@@ -34,6 +34,7 @@ import type {
 
 interface VersionActionState {
   branchCreateSource: BranchCreationSource | null
+  branchArchiveTarget: Branch | null
   tagCreateSource: TagCreationSource | null
   editingTag: LoreTag | null
   tagDetails: LoreTag | null
@@ -44,6 +45,8 @@ interface VersionActionState {
 type VersionActionStateAction =
   | { type: 'openBranchCreate'; source: BranchCreationSource }
   | { type: 'closeBranchCreate' }
+  | { type: 'openBranchArchive'; branch: Branch }
+  | { type: 'closeBranchArchive' }
   | { type: 'openTagCreate'; source: TagCreationSource }
   | { type: 'openTagEdit'; tag: LoreTag }
   | { type: 'closeTagDialog' }
@@ -55,6 +58,7 @@ type VersionActionStateAction =
 
 export const INITIAL_VERSION_ACTION_STATE: VersionActionState = {
   branchCreateSource: null,
+  branchArchiveTarget: null,
   tagCreateSource: null,
   editingTag: null,
   tagDetails: null,
@@ -77,6 +81,12 @@ export function versionActionStateReducer(
   }
   if (action.type === 'closeBranchCreate') {
     return { ...state, branchCreateSource: null }
+  }
+  if (action.type === 'openBranchArchive') {
+    return { ...state, branchArchiveTarget: action.branch, versionMenu: null }
+  }
+  if (action.type === 'closeBranchArchive') {
+    return { ...state, branchArchiveTarget: null }
   }
   if (action.type === 'openTagCreate') {
     return { ...state, tagCreateSource: action.source, editingTag: null }
@@ -152,6 +162,10 @@ export function useAppVersionActions({
 
   const closeBranchCreateDialog = useCallback(() => {
     dispatch({ type: 'closeBranchCreate' })
+  }, [])
+
+  const closeBranchArchiveDialog = useCallback(() => {
+    dispatch({ type: 'closeBranchArchive' })
   }, [])
 
   const openTagCreateDialog = useCallback((source: TagCreationSource) => {
@@ -615,30 +629,42 @@ export function useAppVersionActions({
   )
 
   const archiveBranchFromMenu = useCallback(
-    async (branch: Branch) => {
+    (branch: Branch) => {
       if (applicationMode !== 'tauri') {
         notify(t('browserDemoMode'), t('status.demoWouldArchiveBranch', { name: branch.name }), 'warning')
         return
       }
-      const confirmed = confirmLocalized(
-        [t('confirm.archiveBranch', { name: branch.name }), '', t('loreRemovesLocallyVisiblePointer_bb62')].join('\n')
-      )
-      if (!confirmed) return
+      // 归档范围（是否同时归档 Layer）在正式弹层中决定，不使用 window.confirm，
+      // 否则无法承载“同时归档所有 Layer”的显式选择。
+      dispatch({ type: 'openBranchArchive', branch })
+    },
+    [applicationMode, notify]
+  )
 
-      await runRepositoryMutation(
+  const confirmBranchArchive = useCallback(
+    async (branch: Branch, includeLayers: boolean) => {
+      if (applicationMode !== 'tauri') return
+      const succeeded = await runRepositoryMutation(
         'archiveBranch',
-        (repository) => archiveBranch(repository.path, branch.name),
-        operationMessage('status.archived', { name: branch.name }),
+        (repository) => archiveBranch(repository.path, branch.name, includeLayers),
+        operationMessage(
+          includeLayers ? 'status.archivedWithLayers' : 'status.archived',
+          { name: branch.name }
+        ),
         'branches'
       )
+      // 与创建分支一致：仅在真实成功后关闭弹层，失败时保留上下文供用户重试。
+      if (succeeded) closeBranchArchiveDialog()
     },
-    [applicationMode, notify, runRepositoryMutation]
+    [applicationMode, closeBranchArchiveDialog, runRepositoryMutation]
   )
 
   return {
     ...state,
     openBranchCreateDialog,
     closeBranchCreateDialog,
+    closeBranchArchiveDialog,
+    confirmBranchArchive,
     openTagCreateDialog,
     closeTagDialog,
     showTagDetails,

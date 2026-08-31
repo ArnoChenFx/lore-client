@@ -13,6 +13,7 @@ import type {
   LoreLayerRemoveRequest,
   LoreLink,
   LoreLinkAddRequest,
+  LoreLinkDetails,
   LoreLinkUpdateRequest,
   LoreMetadataEntry,
   LoreMetadataScope,
@@ -91,6 +92,8 @@ export interface RepositoryToolsDialogProps {
   onAddLink: (request: LoreLinkAddRequest) => Promise<boolean>
   onUpdateLink: (request: LoreLinkUpdateRequest) => Promise<boolean>
   onRemoveLink: (linkPath: string) => Promise<boolean>
+  /** 读取单条 Link 的完整详情；失败时控制器负责提示并返回 null。 */
+  onLoadLinkInfo?: (linkPath: string) => Promise<LoreLinkDetails | null>
   onAcquireLock?: (path: string) => Promise<boolean>
   onReleaseLock?: (path: string) => Promise<boolean>
   onQueryDependencies?: (

@@ -467,6 +467,7 @@ function App() {
 
   const {
     branchCreateSource,
+    branchArchiveTarget,
     tagCreateSource,
     editingTag,
     tagDetails,
@@ -474,6 +475,8 @@ function App() {
     versionMenu,
     openBranchCreateDialog,
     closeBranchCreateDialog,
+    closeBranchArchiveDialog,
+    confirmBranchArchive,
     openTagCreateDialog,
     closeTagDialog,
     showTagDetails,
@@ -779,6 +782,18 @@ function App() {
               }
             : null
         }
+        branchArchive={
+          branchArchiveTarget
+            ? {
+                busy: busyAction === 'archiveBranch',
+                branch: branchArchiveTarget,
+                onConfirm: (includeLayers) => {
+                  confirmBranchArchive(branchArchiveTarget, includeLayers)
+                },
+                onClose: closeBranchArchiveDialog
+              }
+            : null
+        }
         tagEditor={
           tagCreateSource || editingTag
             ? {
@@ -844,7 +859,7 @@ function App() {
                 onSwitchBranch: (branch) => void switchBranchFromMenu(branch),
                 onPushBranch: (branch) => void pushBranchFromMenu(branch),
                 onMergeBranch: (branch) => void mergeBranchFromMenu(branch),
-                onArchiveBranch: (branch) => void archiveBranchFromMenu(branch),
+                onArchiveBranch: (branch) => archiveBranchFromMenu(branch),
                 onOpenBranchRevision: locateArchivedBranchRevision,
                 onCreateBranch: openBranchCreateDialog,
                 onCreateTag: openTagCreateDialog,

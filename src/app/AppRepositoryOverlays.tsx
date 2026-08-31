@@ -1,6 +1,6 @@
 import type { ComponentProps } from 'react'
 
-import { BranchCreateDialog } from '../features/branches'
+import { BranchArchiveDialog, BranchCreateDialog } from '../features/branches'
 import { RepositoryToolsOverlay } from '../features/repository-tools'
 import { FileHistoryDialog } from '../features/revision-inspector'
 import { TagContextMenu, TagDetailsDialog, TagDialog } from '../features/tags'
@@ -8,6 +8,7 @@ import { VersionContextMenu } from '../shared/ui'
 
 interface AppRepositoryOverlaysProps {
   branchCreate: ComponentProps<typeof BranchCreateDialog> | null
+  branchArchive: ComponentProps<typeof BranchArchiveDialog> | null
   tagEditor: ComponentProps<typeof TagDialog> | null
   tagDetails: ComponentProps<typeof TagDetailsDialog> | null
   fileHistory: ComponentProps<typeof FileHistoryDialog> | null
@@ -24,6 +25,7 @@ interface AppRepositoryOverlaysProps {
  */
 export function AppRepositoryOverlays({
   branchCreate,
+  branchArchive,
   tagEditor,
   tagDetails,
   fileHistory,
@@ -34,6 +36,7 @@ export function AppRepositoryOverlays({
   return (
     <>
       {branchCreate && <BranchCreateDialog {...branchCreate} />}
+      {branchArchive && <BranchArchiveDialog {...branchArchive} />}
       {tagEditor && <TagDialog {...tagEditor} />}
       {tagDetails && <TagDetailsDialog {...tagDetails} />}
       {fileHistory && <FileHistoryDialog {...fileHistory} />}

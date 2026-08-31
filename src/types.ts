@@ -927,6 +927,30 @@ export interface LoreLinkUpdateRequest {
   pin?: string
 }
 
+/** Link 自身的暂存状态；来自 Lore 0.9.0 `link info` 专用事件。 */
+export type LoreLinkStagedState = 'none' | 'added' | 'removed' | 'modified'
+
+/**
+ * 单条 Link 的完整详情。
+ *
+ * 仅 `link info` 报告的字段（远端 Latest、Link 自身暂存状态）与列表字段并存，
+ * 用于 Link 管理面板的详情弹层；字段缺失时保留空串/未知，不做前端猜测。
+ */
+export interface LoreLinkDetails {
+  linkPath: string
+  repository: string
+  sourcePath: string
+  branchName: string
+  /** Link 是否跟随父仓库分支（true）或固定到显式分支（false）。 */
+  tracking: boolean | null
+  revision: string
+  /** pinned branch 的远端 Latest；零哈希或不可读时为空串。 */
+  remoteRevision: string
+  stagedState: LoreLinkStagedState | null
+  stagedFileCount: number
+  disableAutoFollow: boolean
+}
+
 export interface OperationRecord {
   id: number
   /** 操作名称语义键；面板渲染时再翻译，避免语言切换后仍显示旧文案。 */

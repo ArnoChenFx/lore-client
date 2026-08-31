@@ -233,6 +233,12 @@ export function InspectorTabs({
   onTabChange: (tab: InspectorTab) => void
   onToggleDiff: () => void
 }) {
+  /*
+   * 标签文案必须用 useTranslation 的响应式 t：模块级 t 不订阅语言变化，
+   * React Compiler 记忆化下若首帧早于 setAppLanguage 生效，标签会冻结为
+   * 默认语言，且 props 不变时永远不会重读当前语言。
+   */
+  const { t } = useTranslation()
   const tabs: Array<{ id: InspectorTab; label: string; count?: number }> = [
     { id: 'overview', label: t('overview') },
     { id: 'changes', label: t('changes'), count: filesChanged },
@@ -675,6 +681,8 @@ export function Inspector({
   onExternalDiff = () => undefined,
   onOpenOperations
 }: InspectorProps) {
+  /* 与 InspectorTabs 一致：组件文案必须响应语言变化，不用冻结的模块级 t。 */
+  const { t } = useTranslation()
   const { preferences, update: updatePreferences } = useClientPreferences()
   const [contextMenu, setContextMenu] = useState<RevisionFileMenuRequest | null>(null)
   const [selectionRequest, setSelectionRequest] = useState<RevisionWorkspaceSelectionRequest | null>(null)
@@ -773,7 +781,7 @@ export function Inspector({
         anchorId: result.primaryId
       })
     },
-    [onNotify]
+    [onNotify, t]
   )
 
   const showFileInTree = useCallback(

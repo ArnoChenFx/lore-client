@@ -112,6 +112,7 @@ const LORE_OPERATION_LABEL_KEYS = {
   'layer.remove': 'removeLayer',
   'link.list': 'listLinks',
   'link.list-staged': 'listStagedLinks',
+  'link.info': 'listLinks',
   'link.add': 'addLink',
   'link.remove': 'removeLink',
   'link.update': 'updateLink',

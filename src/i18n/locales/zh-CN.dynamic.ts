@@ -130,6 +130,8 @@ const zhCNDynamic = {
     linkAdded: '已在 {{path}} 添加并暂存 Link',
     linkRemoved: '已从 {{path}} 移除并暂存 Link',
     linkPinUpdated: '已更新并暂存 {{path}} 的 Link Pin',
+    linkStagedFileCount_one: '{{count}} 个文件已暂存',
+    linkStagedFileCount_other: '{{count}} 个文件已暂存',
     openRepositoryReorder: '打开仓库 {{name}}；拖动排序，Alt+左右方向键调整顺序',
     tabReorderHint: '{{name}}\n拖动排序；按 Alt+左右方向键调整顺序',
     repositoryTabContextActions: '{{name}} 的项目标签快捷操作',
@@ -207,6 +209,7 @@ const zhCNDynamic = {
     namedSelectLocateRevision: '{{name}} · {{hint}}',
     pushedToRemote: '{{name}} 已推送到远端',
     archived: '{{name}} 已归档',
+    archivedWithLayers: '{{name}} 已归档（含所有 Layer）',
     mergedInto: '{{source}} 已合并到 {{target}}',
     workspaceSwitchedTo: '当前工作区已切换到 {{name}}',
     workspaceAttachedRemote: '工作区已附着到远程分支 {{name}}',
@@ -299,11 +302,11 @@ const zhCNDynamic = {
     applyRepositoryView:
       '确定应用这组选择性同步规则？Lore 将物化 {{materialize}} 个文件，并从工作区移除 {{dematerialize}} 个已排除文件。',
     removeLayer:
-      '确定从仓库 {{repository}} 的 {{path}} 移除来源 Layer {{source}}？受跟踪文件会解除挂载，未跟踪文件会保留。',
+      '确定从仓库 {{repository}} 的 {{path}} 移除来源 Layer {{source}}？受跟踪文件会解除挂载，未跟踪文件会保留。若该 Layer 仍有未提交的暂存工作或本地修改，Lore 会拒绝本次移除。',
     purgeLayer:
-      '确定从仓库 {{repository}} 的 {{path}} 移除来源 Layer {{source}} 并清除挂载目录？所有未跟踪文件和目录都会被递归删除，且无法从 Lore 恢复。',
+      '确定从仓库 {{repository}} 的 {{path}} 移除来源 Layer {{source}} 并清除挂载目录？所有未跟踪文件和目录都会被递归删除，且无法从 Lore 恢复。若该 Layer 仍有未提交的暂存工作或本地修改，Lore 会拒绝本次移除。',
     removeLink:
-      '确定从仓库 {{repository}} 移除 {{path}} 的 Link？该删除会暂存到父仓库，创建下一次 Revision 后才会固化。',
+      '确定从仓库 {{repository}} 移除 {{path}} 的 Link？该删除会暂存到父仓库，创建下一次 Revision 后才会固化。若移除会破坏 Link 内未提交的本地编辑，Lore 会拒绝本次操作。',
     updateLinkPin: '确定把仓库 {{repository}} 中 {{path}} 的 Link Pin 更新为 {{pin}}？该变更会暂存到父仓库。',
     releaseCollaborativeLock: '确定释放当前分支中 {{path}} 的协作锁？',
     acquireCollaborativeLocks_one: '确定为所选 {{count}} 个文件获取协作锁？这些锁只用于声明编辑意图。',

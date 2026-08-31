@@ -310,6 +310,28 @@ pub async fn lore_link_list(
     .await
 }
 
+/// 读取单条 Link 的完整详情。
+///
+/// Lore 0.9.0 的 `link info` 会额外报告仅列表不可见的字段：pinned branch 的
+/// 远端 Latest（未查询时为零哈希）、Link 自身的暂存状态与内部暂存文件数；
+/// 事件流保持原样返回，由前端解析成稳定 DTO。
+#[tauri::command]
+pub async fn lore_link_info(
+    repository_path: String,
+    link_path: String,
+) -> Result<LoreOperationResult, LoreCommandError> {
+    let args = LoreLinkInfoArgs {
+        link_path: required_composition_value(link_path, "Link mount path")?.into(),
+    };
+    run_lore_task(move || {
+        let globals = global_args(&repository_path)?;
+        run_operation("link.info", move |callback| {
+            lore::runtime().block_on(lore::link::info(globals, args, callback))
+        })
+    })
+    .await
+}
+
 /// 列出当前 Repository 中具有已暂存文件的 Link。
 #[tauri::command]
 pub async fn lore_link_list_staged(

@@ -136,6 +136,8 @@ const enUSDynamic = {
     linkAdded: 'Added and staged Link at {{path}}',
     linkRemoved: 'Removed and staged Link from {{path}}',
     linkPinUpdated: 'Updated and staged the Link pin at {{path}}',
+    linkStagedFileCount_one: '{{count}} file staged',
+    linkStagedFileCount_other: '{{count}} files staged',
     openRepositoryReorder: 'Open repository {{name}}; drag to reorder, Alt+Left/Right to move',
     tabReorderHint: '{{name}}\nDrag to reorder; press Alt+Left/Right to move',
     repositoryTabContextActions: 'Project tab actions for {{name}}',
@@ -215,6 +217,7 @@ const enUSDynamic = {
     namedSelectLocateRevision: '{{name}} · {{hint}}',
     pushedToRemote: '{{name}} was pushed to the remote',
     archived: '{{name}} was archived',
+    archivedWithLayers: '{{name}} was archived (including every layer)',
     mergedInto: '{{source}} was merged into {{target}}',
     workspaceSwitchedTo: 'The workspace switched to {{name}}',
     workspaceAttachedRemote: 'The workspace attached to remote branch {{name}}',
@@ -313,11 +316,11 @@ const enUSDynamic = {
     applyRepositoryView:
       'Apply these selective sync rules? Lore will materialize {{materialize}} files and remove {{dematerialize}} excluded files from the workspace.',
     removeLayer:
-      'Remove source Layer {{source}} from {{path}} in repository {{repository}}? Tracked files will be unmounted and untracked files will be kept.',
+      'Remove source Layer {{source}} from {{path}} in repository {{repository}}? Tracked files will be unmounted and untracked files will be kept. Lore refuses the removal while the layer still carries uncommitted staged work or local modifications.',
     purgeLayer:
-      'Remove source Layer {{source}} from {{path}} in repository {{repository}} and purge the mount directory? All untracked files and directories will be recursively deleted and cannot be restored by Lore.',
+      'Remove source Layer {{source}} from {{path}} in repository {{repository}} and purge the mount directory? All untracked files and directories will be recursively deleted and cannot be restored by Lore. Lore refuses the removal while the layer still carries uncommitted staged work or local modifications.',
     removeLink:
-      'Remove the Link at {{path}} from repository {{repository}}? The removal will be staged in the parent repository and becomes permanent with its next revision.',
+      'Remove the Link at {{path}} from repository {{repository}}? The removal will be staged in the parent repository and becomes permanent with its next revision. Lore refuses the removal when it would destroy uncommitted local edits inside the link.',
     updateLinkPin:
       'Update the Link pin at {{path}} in repository {{repository}} to {{pin}}? The change will be staged in the parent repository.',
     releaseCollaborativeLock: 'Release the collaborative lock for {{path}} on the current branch?',
