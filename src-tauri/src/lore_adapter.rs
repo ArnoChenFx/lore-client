@@ -51,6 +51,7 @@ use lore::repository::{
     LoreRepositoryListArgs, LoreRepositoryMetadataClearArgs, LoreRepositoryMetadataGetArgs,
     LoreRepositoryMetadataSetArgs, LoreRepositoryReleaseArgs, LoreRepositoryStatusArgs,
     LoreRepositoryUpdatePathArgs, LoreRepositoryVerifyFragmentArgs, LoreRepositoryVerifyStateArgs,
+    LoreVfsType,
 };
 use lore::revision::{
     LoreRevisionAmendArgs, LoreRevisionBisectArgs, LoreRevisionCherryPickAbortArgs,
@@ -68,7 +69,8 @@ use lore::revision_tree::handle::LoreRevisionTree;
 use lore::revision_tree::list_children::LoreRevisionTreeListChildrenArgs;
 use lore::revision_tree::load::LoreRevisionTreeLoadArgs;
 use lore::shared_store::{
-    LoreSharedStoreCreateArgs, LoreSharedStoreInfoArgs, LoreSharedStoreSetUseAutomaticallyArgs,
+    LoreSharedStoreCreateArgs, LoreSharedStoreInfoArgs, LoreSharedStoreListArgs,
+    LoreSharedStoreSetUseAutomaticallyArgs,
 };
 use lore::storage::close::LoreStorageCloseArgs;
 use lore::storage::get::{LoreStorageGetArgs, LoreStorageGetItem};
@@ -410,6 +412,37 @@ pub struct LoreSharedStoreInfo {
     pub total_size_bytes: u64,
     /// 固定 Lore 版本没有可用于重建“未去重基线”的统计接口，必须明确为 false。
     pub exact_savings_available: bool,
+}
+
+/// Lore 自身 Shared Store 注册表中的一项。
+///
+/// 与 `LoreSharedStoreEntry` 不同，这里不含客户端磁盘扫描，数据完全来自 Lore
+/// 注册表。`container_path` 是**容器目录**（创建 Store 时选择的父目录）：注册表
+/// 存的就是这一层，Lore 读取时再自行拼接 `shared_store` 子目录，因此适配层必须
+/// 原样透传，不得再取父目录。
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoreSharedStoreRegistryEntry {
+    pub remote_url: String,
+    /// Store 容器目录，也是 Clone 显式参数所需的路径。
+    pub container_path: String,
+    /// 使用该 Store 的仓库实例路径；未请求实例搜索时为空数组。
+    pub instance_paths: Vec<String>,
+    /// 与 `instance_paths` 逐项对应的仓库实例 ID。
+    pub instance_ids: Vec<String>,
+}
+
+/// Shared Store 注册表的稳定投影。
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoreSharedStoreRegistry {
+    pub stores: Vec<LoreSharedStoreRegistryEntry>,
+    /// 本次查询是否请求了仓库实例搜索。
+    ///
+    /// 必须由调用参数决定，不能从事件推断：Lore 无论是否搜索实例都会发送
+    /// `instancePaths` / `instanceIds`（未搜索时为空数组），因此“空数组”同时
+    /// 对应“确无实例”和“未查询”两种含义，只有请求参数能区分它们。
+    pub instances_requested: bool,
 }
 
 /// 用户所选目录与实际 Lore 仓库根目录之间的稳定探测结果。

@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { open, save } from '@tauri-apps/plugin-dialog'
 
 import { t } from '../i18n'
-import { repositoryAccentFromIndex, revisionAuthorFromIdentity } from '../shared/lib'
+import { repositoryAccentFromIndex, readMoveSourceFromPatch, revisionAuthorFromIdentity } from '../shared/lib'
 import type {
   BinaryFilePreview,
   Branch,
@@ -55,6 +55,9 @@ import type {
   LoreRevisionInfo,
   LoreRuntimeInfo,
   LoreSharedStoreInfo,
+  LoreSharedStoreRegistry,
+  LoreSharedStoreRegistryEntry,
+  LoreRepositoryInstanceStaleness,
   LoreCloneOptions,
   LoreTag,
   Repository,
@@ -114,7 +117,7 @@ export interface RemoteAuthenticationRequiredEvent {
 /**
  * 订阅“远端需要重新认证”全局信号。
  *
- * Lore 0.9.0 在连接建立阶段缺凭据时把认证失败报成 `NotConnected` 加
+ * 远端在连接建立阶段缺凭据时会把认证失败报成 `NotConnected` 加
  * "Not authenticated" 文本，Status 又只会给出 remoteAvailable=0，前端无法从
  * 快照区分离线与凭据失效；因此由 Rust 在 run_operation 汇聚点检测并在命中时
  * 广播本信号，前端据此探测服务器并打开全局重新认证弹窗。
@@ -123,9 +126,8 @@ export async function subscribeRemoteAuthenticationRequired(
   listener: (event: RemoteAuthenticationRequiredEvent) => void
 ): Promise<UnlistenFn> {
   if (!isTauri()) return () => undefined
-  return listen<RemoteAuthenticationRequiredEvent>(
-    'lore://remote-authentication-required',
-    (event) => listener(event.payload)
+  return listen<RemoteAuthenticationRequiredEvent>('lore://remote-authentication-required', (event) =>
+    listener(event.payload)
   )
 }
 
@@ -395,6 +397,20 @@ export async function selectSharedStoreParentDirectory(): Promise<string | null>
 /** 读取设备级 Shared Store 配置和 Rust 端只读占用统计。 */
 export async function loadSharedStoreInfo(): Promise<LoreSharedStoreInfo> {
   return invokeCommand<LoreSharedStoreInfo>('lore_shared_store_info', {})
+}
+
+/**
+ * 读取设备级 Shared Store 注册表。
+ *
+ * `includeInstances` 会逐个加载每个 Store 搜索使用它的仓库实例，成本随 Store
+ * 数量增长，因此只在用户主动展开清单时开启，不进入设置页默认刷新路径。
+ *
+ * 注册表由 Rust 适配层解析为稳定 DTO；`instancesRequested` 会原样回传本次请求
+ * 是否搜索了实例——Lore 无论是否搜索都会发送实例数组，空数组无法区分
+ * “确无实例”与“未查询”。
+ */
+export async function loadSharedStoreRegistry(includeInstances = false): Promise<LoreSharedStoreRegistry> {
+  return invokeCommand<LoreSharedStoreRegistry>('lore_shared_store_list', { includeInstances })
 }
 
 /** 创建远端对应的 Shared Store；不传 force，已有 Store 永远不会被覆盖。 */
@@ -788,7 +804,6 @@ export async function cloneRepository(
     viewPath: viewPath || null,
     targetRevision: options.revision?.trim() || null,
     bare: options.bare ?? false,
-    virtually: options.virtually ?? false,
     directFileWrite: options.directFileWrite ?? false,
     layerRepository: options.layer?.repository.trim() || null,
     layerMetadataKey: options.layer?.metadataKey?.trim() || null,
@@ -2088,10 +2103,7 @@ export async function loadLinkInfo(repositoryPath: string, linkPath: string): Pr
   const result = await runOperation('lore_link_info', { repositoryPath, linkPath })
   const details = parseLinkInfo(result.events)
   if (!details) {
-    throw new LoreCommandClientError(
-      { code: 'link_info_unavailable' },
-      'lore_link_info'
-    )
+    throw new LoreCommandClientError({ code: 'link_info_unavailable' }, 'lore_link_info')
   }
   return details
 }
@@ -2171,8 +2183,25 @@ export async function listRepositoryInstances(repositoryPath: string): Promise<L
       branchName: readString(event.data.branchName),
       branchId: readString(event.data.branch),
       revision: readString(event.data.revision),
-      stale: readBoolean(event.data.stale)
+      stale: readInstanceStaleness(event.data.stale)
     }))
+}
+
+/**
+ * 把 Lore 的 `stale` 字段归一化为稳定三态。
+ *
+ * Lore 0.10.0 把该字段从布尔值细化为原因码：
+ * `1` 路径已不存在、`2` 该路径的 `.lore/instance` 指向另一个 Instance（被重建或
+ * 重新 Clone 取代）、`3` 该路径下读不到 `.lore/instance`。无法识别的数值仍算失效，
+ * 但归入 `unknown`，不得编造原因。
+ */
+function readInstanceStaleness(value: unknown): LoreRepositoryInstanceStaleness {
+  if (typeof value !== 'number') return readBoolean(value) ? 'unknown' : null
+  if (value === 0) return null
+  if (value === 2) return 'superseded'
+  if (value === 3) return 'no-checkout'
+  if (value === 1) return 'path-missing'
+  return 'unknown'
 }
 
 export async function pruneRepositoryInstances(repositoryPath: string): Promise<LoreOperationResult> {
@@ -2550,12 +2579,13 @@ function localizeCommandError(error: Partial<LoreCommandError>, command: string)
 /**
  * 结构化 FFI 错误码 → 本地化语义键。
  *
- * Lore 0.9.0 起 Complete 事件携带具体错误码而非笼统的 -1；这里只覆盖用户可以
- * 自行恢复的错误，其余码继续保留上游详情。新增码时同步 zh-CN 与 en-US。
+ * Lore 0.10.0 起 Complete 事件携带具体错误码（错误码已按失败类别整体重排，旧版
+ * 的“遇到顺序”编号不再适用）；这里只覆盖用户可以自助恢复的错误，其余码继续保留
+ * 上游详情。新增码时同步 zh-CN 与 en-US。
  */
 function localizedLoreErrorCodeKey(code: number): 'loreErrorLocalModifications' | null {
   // LocalModifications：Layer/Link 移除、同步等在存在暂存工作或本地修改时拒绝。
-  if (code === 39) return 'loreErrorLocalModifications'
+  if (code === 44) return 'loreErrorLocalModifications'
   return null
 }
 
@@ -2844,6 +2874,8 @@ function parseRevisionInfo(events: LoreEvent[]): LoreRevisionInfo {
       .filter((event) => event.tagName === 'revisionInfoDelta')
       .map((event) => ({
         path: readString(event.data.path),
+        // Lore 0.10.0 新增的来源路径；移动/重命名时才有值。
+        fromPath: readString(event.data.fromPath),
         size: readNumber(event.data.size),
         action: readString(event.data.action, 'modify').toLowerCase(),
         modified: readBoolean(event.data.flagModify),
@@ -2943,7 +2975,11 @@ function parseWorkingTreeDiffs(events: LoreEvent[]): WorkingTreeDiff[] {
         path: readString(event.data.path),
         patch,
         action: readString(event.data.action, 'keep').toLowerCase(),
-        previousPath: readString(event.data.fromPath).replaceAll('\\', '/') || undefined,
+        /*
+         * 移动来源只在补丁头的 `move from <路径>` 行里，事件本身没有该字段；
+         * 非移动/重命名动作没有这一行，因此 `undefined` 就是准确的“没有来源”。
+         */
+        previousPath: readMoveSourceFromPatch(patch),
         contentClassification: {
           kind: patch.includes('Binary files differ') ? 'binary' : 'text',
           source: 'loreDiff'
@@ -2958,6 +2994,12 @@ function parseFileHistory(events: LoreEvent[]): FileHistoryEntry[] {
     .filter((event) => event.tagName === 'fileHistory')
     .map((event): FileHistoryEntry => ({
       path: readString(event.data.path),
+      /*
+       * `fileHistory` 是 0.10.0 真正新增 `fromPath` 的事件（上游
+       * `LoreFileHistoryEventData`），移动/重命名时给出真实来源路径，
+       * 新增/修改/删除为空。空值不得回退成 `path`，否则会把普通修改伪装成移动。
+       */
+      fromPath: readString(event.data.fromPath),
       revision: readString(event.data.revision),
       revisionNumber: readNumber(event.data.revisionNumber),
       parent: Array.isArray(event.data.parent)

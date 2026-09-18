@@ -909,6 +909,7 @@ pub(super) fn read_revision_file_contents_matching(
                     // 二进制文件时，这套双缓冲会持续抬高原生分配器高水位。
                     streaming: 1,
                     local_cache: 0,
+                    data_out: lore_revision::event::LoreBytesMut::default(),
                 },
             ))
         })
@@ -1031,6 +1032,7 @@ pub(super) fn classify_revision_tree_files(
                 length: REVISION_LIST_SAMPLE_BYTES,
                 streaming: 1,
                 local_cache: 0,
+                data_out: lore_revision::event::LoreBytesMut::default(),
             },
         ));
     }
@@ -1186,6 +1188,9 @@ impl RevisionStoreReader {
                 length,
                 streaming: 1,
                 local_cache: 0,
+                // 空 `data_out` 表示继续使用 GET_DATA 流式投递；客户端靠 Lore 内部
+                // 大块缓存拼装完整正文，交给调用方自备缓冲反而要求提前知道精确长度。
+                data_out: lore_revision::event::LoreBytesMut::default(),
             },
         )
     }
@@ -1616,14 +1621,22 @@ pub(super) fn supplement_structural_diff_events(
                 paths.push(path.to_owned());
             }
             /*
-             * Move 事件的主 path 是目标路径，真实来源路径由事件的 `fromPath` 字段
-             * 直接携带，不再解析补丁头文本。把两端都标记为已覆盖，避免集合差再
-             * 额外伪造一个 Delete 事件。
+             * Move 事件的主 path 是目标路径，来源路径只能从 Lore 的补丁头
+             * `move from <path>` 读取。
+             *
+             * `fileDiff` 事件结构（`LoreFileDiffEventData`）只有 `path` / `patch` /
+             * `action`，从来没有 `fromPath` 字段——上游只为 Revision 差异事件
+             * （`LoreRevisionDiffFileEventData`）和状态事件提供了该字段，而本模块
+             * 处理的是 `file::diff` 的 `fileDiff`。读一个不存在的键会恒得空值，
+             * 来源路径因而不在 `existing` 里，集合差就会给每个移动额外伪造一个
+             * Delete。把两端都标记为已覆盖，避免这个幽灵事件。
              */
-            if let Some(from_path) = event["data"]["fromPath"].as_str() {
-                if !from_path.is_empty() {
-                    paths.push(from_path.to_owned());
-                }
+            if let Some(patch) = event["data"]["patch"].as_str() {
+                paths.extend(
+                    patch
+                        .lines()
+                        .filter_map(|line| line.strip_prefix("move from ").map(str::to_owned)),
+                );
             }
             paths
         })

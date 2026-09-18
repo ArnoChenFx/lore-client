@@ -232,7 +232,7 @@ export function RevisionChangesWorkspace({
     : null
   /**
    * 移动来源优先使用轻量清单的已确认转换；清单的哈希配对因同内容文件歧义而失败时，
-   * 右侧真实 Diff 事件的 `fromPath` 是权威来源，标题仍显示“旧 → 新”。同目录只改
+   * 右侧真实 Diff 补丁头的 `move from` 行是权威来源，标题仍显示“旧 → 新”。同目录只改
    * 文件名按重命名展示，父目录变化才属于移动，与清单转换的 kind 判定一致。
    */
   const diffMoveTransition =

@@ -89,6 +89,16 @@ The summary shows Store count and current unique Fragment usage. Lore Client doe
 display invented savings without a reliable non-deduplicated baseline. Each row reports
 remote, local path, size/file count, missing directory, and scan errors.
 
+### Read registry
+
+Lore keeps its own registry of Shared Stores, separate from the size scan above. **Read
+registry** lists every registered store with its remote and local path.
+
+**Also list the repositories using each store** is off by default: Lore has to load every
+store to search for the instances using it, so the query slows down as stores accumulate.
+Leave it off for a quick registry read, or turn it on to see which repositories back each
+store (each row then lists instance paths, or states that none are using it).
+
 ## 5. Maintenance
 
 ### Workspace panes

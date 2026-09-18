@@ -5,6 +5,7 @@
 
 use super::*;
 use super::{
+    auth::display_library_version,
     auth::invalidate_authentication_connections_with,
     composition::{
         build_layer_add_args, build_layer_remove_args, build_link_add_args, build_link_update_args,
@@ -875,6 +876,7 @@ fn failed_branch_list_does_not_skip_publish_push() {
     assert!(!published_branch_tips_are_zero(&result, "main"));
 }
 use lore::repository::LoreRepositoryCreateArgs;
+use lore::repository::LoreVfsType;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
@@ -1009,6 +1011,72 @@ fn shared_store_info_maps_parallel_arrays_and_container_path() {
 }
 
 #[test]
+fn shared_store_registry_passes_the_container_path_through_unchanged() {
+    let separator = std::path::MAIN_SEPARATOR;
+    /*
+     * 注册表存的就是容器目录（Lore 读取时再自行拼 `shared_store` 子目录），
+     * 适配层必须原样透传，不得再取父目录。
+     */
+    let container = format!("{separator}device{separator}LoreStore");
+    let registry = parse_shared_store_registry(
+        &[serde_json::json!({
+            "tagName": "sharedStoreList",
+            "data": {
+                "stores": [{
+                    "remoteUrl": "lore://127.0.0.1:41337",
+                    "storePath": container,
+                    "instancePaths": ["E:\\Worlds\\a"],
+                    "instanceIds": ["instance-a"]
+                }]
+            }
+        })],
+        true,
+    )
+    .expect("Shared Store registry event should parse");
+
+    assert!(registry.instances_requested);
+    assert_eq!(registry.stores.len(), 1);
+    assert_eq!(registry.stores[0].container_path, container);
+    assert_eq!(registry.stores[0].instance_paths, vec!["E:\\Worlds\\a"]);
+    assert_eq!(registry.stores[0].instance_ids, vec!["instance-a"]);
+}
+
+#[test]
+fn shared_store_registry_separates_not_queried_from_no_instances() {
+    /*
+     * 上游无论是否搜索实例都会发送 `instancePaths` / `instanceIds`（未搜索时为空
+     * 数组），因此空数组不能推断出“未查询”；该标志只能来自请求参数。
+     */
+    let events = [serde_json::json!({
+        "tagName": "sharedStoreList",
+        "data": {
+            "stores": [{
+                "remoteUrl": "lore://127.0.0.1:41337",
+                "storePath": "/device/LoreStore",
+                "instancePaths": [],
+                "instanceIds": []
+            }]
+        }
+    })];
+
+    let not_queried = parse_shared_store_registry(&events, false).expect("registry should parse");
+    assert!(!not_queried.instances_requested);
+    assert!(not_queried.stores[0].instance_paths.is_empty());
+
+    let queried = parse_shared_store_registry(&events, true).expect("registry should parse");
+    assert!(queried.instances_requested);
+    assert!(queried.stores[0].instance_paths.is_empty());
+}
+
+#[test]
+fn shared_store_registry_requires_the_protocol_event() {
+    // 缺少协议事件属于不兼容，不得伪装成空注册表。
+    let error = parse_shared_store_registry(&[], false)
+        .expect_err("a missing registry event must fail explicitly");
+    assert_eq!(error.code, "shared_store_list_event_missing");
+}
+
+#[test]
 fn shared_store_usage_counts_files_without_following_directories_outside_root() {
     let root = std::env::temp_dir().join(format!(
         "lore-client-shared-store-{}",
@@ -1039,6 +1107,38 @@ fn shared_store_path_is_ignored_when_the_option_is_disabled() {
             .expect("disabled Shared Store should not validate an unused path"),
         None
     );
+}
+
+#[test]
+fn library_version_display_drops_local_build_metadata() {
+    /*
+     * 上游把 `{CARGO_PKG_VERSION}+{本地构建标识}` 作为 `LORE_LIBRARY_VERSION`，
+     * 该标识在非官方流水线中是不可用的本地探测结果。显示层只保留发布版本，
+     * 且不得回退到硬编码的上游版本号。
+     */
+    assert_eq!(
+        display_library_version("0.10.1-nightly+0"),
+        "0.10.1-nightly"
+    );
+    assert_eq!(display_library_version("0.10.0"), "0.10.0");
+    assert_eq!(display_library_version("+0"), "+0");
+}
+
+#[test]
+fn ffi_error_code_table_covers_the_relocated_code_blocks() {
+    /*
+     * Lore 0.10.0 按失败类别重新分配了错误码，旧编号不再成立。这里固定几个
+     * 跨版本迁移中实际使用的码，避免将来只改常量而漏改展示映射。
+     */
+    assert_eq!(lore_error_code_name(16), Some("NotAuthenticated"));
+    assert_eq!(lore_error_code_name(17), Some("NotAuthorized"));
+    assert_eq!(lore_error_code_name(29), Some("NotConnected"));
+    assert_eq!(lore_error_code_name(44), Some("LocalModifications"));
+    assert_eq!(lore_error_code_name(89), Some("RepositoryNotFound"));
+    assert_eq!(lore_error_code_name(193), Some("ShutDown"));
+    // 旧编号在 0.10.0 含义已变或已废弃；未使用的新码必须保持未命名。
+    assert_eq!(lore_error_code_name(1), None);
+    assert_eq!(lore_error_code_name(200), None);
 }
 
 #[test]
@@ -2411,7 +2511,7 @@ fn revision_diff_adds_empty_new_files_without_text_hunks() {
 }
 
 #[test]
-fn revision_diff_supplement_uses_event_from_path_for_moves() {
+fn revision_diff_supplement_reads_move_source_from_patch_header() {
     let file = |path: &str| RevisionTreeFile {
         path: path.to_owned(),
         size: 1,
@@ -2420,25 +2520,56 @@ fn revision_diff_supplement_uses_event_from_path_for_moves() {
     };
     let source = vec![file("old.txt")];
     let target = vec![file("new.txt")];
+    /*
+     * 这是上游 `emit_move_diff` 真实发出的形态：`fileDiff` 事件只有
+     * `path` / `patch` / `action`，来源路径只在补丁头的 `move from` 行里。
+     */
     let mut events = vec![serde_json::json!({
         "tagName": "fileDiff",
         "data": {
             "path": "new.txt",
-            "patch": "diff --git a/old.txt b/new.txt\nmove from old.txt\n",
-            "action": "move",
-            "fromPath": "old.txt"
+            "patch": "move from old.txt\nmove to new.txt\ndiff --git a/old.txt b/new.txt\n",
+            "action": "move"
         }
     })];
 
     supplement_structural_diff_events(&mut events, &source, &target, &[]);
 
-    // 来源路径由事件 fromPath 覆盖，集合差不得再伪造一个 Delete。
+    // 来源路径由补丁头覆盖，集合差不得再伪造一个 Delete。
     assert_eq!(events.len(), 1);
     assert_eq!(events[0]["data"]["path"], "new.txt");
 }
 
 #[test]
-fn revision_diff_supplement_keeps_moves_without_patch_header_parsing() {
+fn revision_diff_supplement_keeps_binary_moves_without_hunks() {
+    let file = |path: &str| RevisionTreeFile {
+        path: path.to_owned(),
+        size: 1,
+        address: String::new(),
+        repository: String::new(),
+    };
+    let source = vec![file("old.bin")];
+    let target = vec![file("new.bin")];
+    // 二进制移动仍然带补丁头，只是没有正文 hunk。
+    let mut events = vec![serde_json::json!({
+        "tagName": "fileDiff",
+        "data": {
+            "path": "new.bin",
+            "patch": "move from old.bin\nmove to new.bin\nBinary files differ\n",
+            "action": "move"
+        }
+    })];
+
+    supplement_structural_diff_events(&mut events, &source, &target, &[]);
+
+    assert_eq!(events.len(), 1);
+    assert!(events
+        .iter()
+        .all(|event| event["data"]["path"] != "old.bin"));
+}
+
+#[test]
+fn revision_diff_supplement_reports_move_source_without_a_from_path_field() {
     let file = |path: &str| RevisionTreeFile {
         path: path.to_owned(),
         size: 1,
@@ -2447,24 +2578,28 @@ fn revision_diff_supplement_keeps_moves_without_patch_header_parsing() {
     };
     let source = vec![file("old.txt")];
     let target = vec![file("new.txt")];
+    /*
+     * 回归：`fileDiff` 从来没有 `fromPath` 字段（那是 Revision 差异事件与状态事件才
+     * 有的）。曾一度改读该键，导致来源路径恒为空、移动被额外补出一个幽灵 Delete。
+     */
     let mut events = vec![serde_json::json!({
         "tagName": "fileDiff",
         "data": {
             "path": "new.txt",
-            "patch": "Binary files differ\n",
+            "patch": "move from old.txt\nmove to new.txt\n",
             "action": "move",
-            "fromPath": "old.txt"
+            "fromPath": ""
         }
     })];
 
     supplement_structural_diff_events(&mut events, &source, &target, &[]);
 
-    // 补丁头不携带 "move from " 时，事件 fromPath 仍是来源路径的唯一可靠来源。
+    // 空的 fromPath 不得取代补丁头成为来源路径。
     assert_eq!(events.len(), 1);
 }
 
 #[test]
-fn revision_diff_supplement_ignores_empty_from_path() {
+fn revision_diff_supplement_adds_delete_when_no_move_source_is_reported() {
     let file = |path: &str| RevisionTreeFile {
         path: path.to_owned(),
         size: 1,
@@ -2478,14 +2613,13 @@ fn revision_diff_supplement_ignores_empty_from_path() {
         "data": {
             "path": "new.txt",
             "patch": "",
-            "action": "add",
-            "fromPath": ""
+            "action": "add"
         }
     })];
 
     supplement_structural_diff_events(&mut events, &source, &target, &[]);
 
-    // 空 fromPath 不覆盖任何路径；new.txt 已有事件，集合差只补 old.txt 的 Delete。
+    // 没有来源证据时，集合差仍要补出 old.txt 的 Delete，不得静默吞掉删除。
     assert_eq!(events.len(), 2);
     assert!(events
         .iter()
@@ -2881,17 +3015,19 @@ fn server_url_validates_scheme_and_removes_trailing_slash() {
 
 #[test]
 fn revision_history_args_preserve_branch_date_and_only_branch_filter() {
+    // `date` 是 Unix 纪元毫秒（与 Revision 时间戳同一单位）；适配置原样透传，
+    // 不得做单位换算，否则阈值会偏移 1000 倍。
     let args = build_revision_history_args(
         Some("revision-123".to_owned()),
         Some("main".to_owned()),
-        1_743_724_799,
+        1_743_724_799_999,
         250,
         true,
     );
 
     assert_eq!(args.revision.as_str(), "revision-123");
     assert_eq!(args.branch.as_str(), "main");
-    assert_eq!(args.date, 1_743_724_799);
+    assert_eq!(args.date, 1_743_724_799_999);
     assert_eq!(args.length, 250);
     assert_eq!(args.only_branch, 1);
 }
@@ -3075,17 +3211,11 @@ fn clone_target_and_layer_options_enforce_stable_boundaries() {
 
 #[test]
 fn bare_clone_rejects_options_that_lore_would_ignore() {
-    validate_bare_clone_options(true, None, false, false, "", &[], &[], false, 0)
+    validate_bare_clone_options(true, None, false, "", &[], &[], false, 0)
         .expect("A plain Bare Clone should remain valid");
 
-    let virtual_error =
-        validate_bare_clone_options(true, None, true, false, "", &[], &[], false, 0)
-            .expect_err("A Bare Clone must reject virtual cloning");
-    assert_eq!(virtual_error.code, "clone_bare_materialization_options");
-
-    let direct_write_error =
-        validate_bare_clone_options(true, None, false, true, "", &[], &[], false, 0)
-            .expect_err("A Bare Clone must reject direct file writing");
+    let direct_write_error = validate_bare_clone_options(true, None, true, "", &[], &[], false, 0)
+        .expect_err("A Bare Clone must reject direct file writing");
     assert_eq!(
         direct_write_error.code,
         "clone_bare_materialization_options"
@@ -3094,7 +3224,6 @@ fn bare_clone_rejects_options_that_lore_would_ignore() {
     let error = validate_bare_clone_options(
         true,
         Some("C:\\views\\world.view"),
-        false,
         false,
         "",
         &[],
@@ -3108,7 +3237,6 @@ fn bare_clone_rejects_options_that_lore_would_ignore() {
     let dependency_error = validate_bare_clone_options(
         true,
         None,
-        false,
         false,
         "",
         &["Content/World.umap".to_owned()],
@@ -3143,8 +3271,8 @@ fn repository_list_authentication_error_maps_to_stable_state() {
 
 #[test]
 fn authentication_failure_with_structured_not_authenticated_code_is_recognized() {
-    // Lore 0.9.0 起认证失败以结构化 FFI 码 12 终止；事件文本不再包含旧的
-    // gRPC 认证描述，识别必须只依赖状态码。
+    // Lore 0.10.0 把错误码重排后，认证失败以结构化 FFI 码 16 终止；事件文本
+    // 不再包含旧的 gRPC 认证描述，识别必须只依赖状态码。
     let result = LoreOperationResult {
         operation: "repository.list",
         status: super::runtime::LORE_FFI_ERROR_NOT_AUTHENTICATED,
@@ -3166,18 +3294,18 @@ fn authentication_failure_with_structured_not_authenticated_code_is_recognized()
 
 #[test]
 fn unrelated_structured_error_code_is_not_treated_as_authentication() {
-    // RepositoryNotFound (45) 等其他具体错误码不得被误判为需要认证，
-    // 否则远端 Create 会错误地启动交互登录并可能重复创建仓库。
+    // RepositoryNotFound（码 89）等具体错误码不得被误判为需要认证，否则远端
+    // Create 会错误地启动交互登录并可能重复创建仓库。
     let result = LoreOperationResult {
         operation: "repository.create.remote",
-        status: 45,
+        status: 89,
         duration_ms: 1,
         events: vec![serde_json::json!({
             "tagName": "complete",
             "data": {
-                "status": 45,
+                "status": 89,
                 "error": {
-                    "errorCode": 45,
+                    "errorCode": 89,
                     "message": "Repository not found"
                 }
             }
@@ -3189,7 +3317,7 @@ fn unrelated_structured_error_code_is_not_treated_as_authentication() {
 
 #[test]
 fn connection_stage_credential_failure_is_recognized_as_authentication() {
-    // Lore 0.9.0 在连接建立阶段缺少可用凭据时以 NotConnected（码 17）终止，
+    // Lore 在连接建立阶段缺少可用凭据时以 NotConnected（码 29）终止，
     // 详细消息带 "Not authenticated"；这是用户真实日志中的形态，必须被识别为
     // 需要重新认证，而不是当成普通网络故障。
     let result = LoreOperationResult {
@@ -3213,7 +3341,7 @@ fn connection_stage_credential_failure_is_recognized_as_authentication() {
 
 #[test]
 fn plain_connection_refusal_is_not_treated_as_authentication() {
-    // 码 17 只有在事件文本给出认证语义时才代表凭据失效；纯网络拒绝必须保持
+    // 码 29 只有在事件文本给出认证语义时才代表凭据失效；纯网络拒绝必须保持
     // offline 语义，避免服务器宕机被误报成“请重新登录”。
     let result = LoreOperationResult {
         operation: "revision_tree.load",
@@ -3236,18 +3364,18 @@ fn plain_connection_refusal_is_not_treated_as_authentication() {
 
 #[test]
 fn not_authorized_permission_error_is_not_treated_as_authentication() {
-    // NotAuthorized（码 7）是已认证但无权限，属于账户权限问题；重新登录
-    // 不会改变结果，不得触发重新认证流程。
+    // NotAuthorized 是已认证但无权限，属于账户权限问题；重新登录不会改变结果，
+    // 不得触发重新认证流程。该码跨版本发生过变化，因此测试覆盖当前取值。
     let result = LoreOperationResult {
         operation: "repository.list",
-        status: 7,
+        status: 17,
         duration_ms: 1,
         events: vec![serde_json::json!({
             "tagName": "complete",
             "data": {
-                "status": 7,
+                "status": 17,
                 "error": {
-                    "errorCode": 7,
+                    "errorCode": 17,
                     "message": "Not authorized to access repository"
                 }
             }
@@ -3261,14 +3389,14 @@ fn not_authorized_permission_error_is_not_treated_as_authentication() {
 fn operation_success_error_renders_known_ffi_code_name() {
     let result = LoreOperationResult {
         operation: "revision_tree.child",
-        status: 17,
+        status: 29,
         duration_ms: 1,
         events: vec![serde_json::json!({
             "tagName": "complete",
             "data": {
-                "status": 17,
+                "status": 29,
                 "error": {
-                    "errorCode": 17,
+                    "errorCode": 29,
                     "message": "Not connected to remote: connection refused"
                 }
             }
@@ -3279,7 +3407,7 @@ fn operation_success_error_renders_known_ffi_code_name() {
         .expect_err("A nonzero status must map to a structured error");
     assert_eq!(error.code, "revision_tree_read_failed");
     assert!(
-        error.message.contains("status code 17, NotConnected"),
+        error.message.contains("status code 29, NotConnected"),
         "known FFI codes should render a readable name: {}",
         error.message
     );
@@ -3417,6 +3545,7 @@ fn real_lore_repository_can_be_created_and_events_read() {
                     id: LoreString::default(),
                     use_shared_store: LoreSharedStoreMode::Inherit,
                     shared_store_path: LoreString::default(),
+                    vfs: LoreVfsType::None,
                 },
                 callback,
             ))

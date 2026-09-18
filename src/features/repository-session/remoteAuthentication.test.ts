@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import type { RepositoryRemoteState, RepositorySnapshot } from '../../types'
 import { LoreCommandClientError } from '../../services/lore'
+import type { RepositoryRemoteState, RepositorySnapshot } from '../../types'
 import {
   collectAuthenticationProbeServers,
   collectRemoteAuthenticationTargets,

@@ -4,11 +4,12 @@ import { t } from '../../i18n'
 import {
   createSharedStore,
   loadSharedStoreInfo,
+  loadSharedStoreRegistry,
   selectSharedStoreParentDirectory,
   setSharedStoreUseAutomatically
 } from '../../services/lore'
 import { readErrorMessage } from '../../shared/lib'
-import type { ApplicationMode, LoreSharedStoreInfo, OperationDetail } from '../../types'
+import type { ApplicationMode, LoreSharedStoreInfo, LoreSharedStoreRegistry, OperationDetail } from '../../types'
 import { operationMessage, type ActiveOperation } from '../operations'
 import type { AppNotify } from './controllerTypes'
 
@@ -37,6 +38,10 @@ export function useSharedStoreController({
   notify
 }: UseSharedStoreControllerOptions) {
   const [info, setInfo] = useState<LoreSharedStoreInfo | null>(null)
+  const [registry, setRegistry] = useState<LoreSharedStoreRegistry | null>(null)
+  const [registryBusy, setRegistryBusy] = useState(false)
+  const [registryError, setRegistryError] = useState<string | null>(null)
+  const [listInstances, setListInstances] = useState(false)
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -65,6 +70,33 @@ export function useSharedStoreController({
     // 弹窗打开时刷新 Store 信息，用户感知与同步刷新一致。
     if (settingsOpen) queueMicrotask(() => void refresh())
   }, [refresh, settingsOpen])
+
+  /**
+   * 按需读取 Lore 自己的 Shared Store 注册表。
+   *
+   * 不进入弹窗打开路径：`includeInstances` 会逐个加载每个 Store 去搜索仓库
+   * 实例，成本随 Store 数量增长，因此只由用户显式触发。
+   *
+   * 实例开关作为依赖：复选框变更会先重渲染再传递新的回调，因而这里拿到的总是
+   * 当次点击时的开关；响应回传的 `instancesRequested` 与它同源，空态文案不会再
+   * 把“未查询”误报成“确无实例”。
+   */
+  const loadRegistry = useCallback(async () => {
+    if (applicationMode !== 'tauri') {
+      setRegistry(null)
+      setRegistryError(t('startDesktopAppManageSharedStores'))
+      return
+    }
+    setRegistryBusy(true)
+    setRegistryError(null)
+    try {
+      setRegistry(await loadSharedStoreRegistry(listInstances))
+    } catch (registryFailure) {
+      setRegistryError(readErrorMessage(registryFailure))
+    } finally {
+      setRegistryBusy(false)
+    }
+  }, [applicationMode, listInstances])
 
   /** 创建成功后重读 Lore 全局配置，不在前端局部伪造 Store 列表。 */
   const create = useCallback(
@@ -127,6 +159,12 @@ export function useSharedStoreController({
     refresh,
     create,
     setAutomatic,
-    chooseParent: selectSharedStoreParentDirectory
+    chooseParent: selectSharedStoreParentDirectory,
+    registry,
+    registryBusy,
+    registryError,
+    listInstances,
+    setListInstances,
+    loadRegistry
   }
 }

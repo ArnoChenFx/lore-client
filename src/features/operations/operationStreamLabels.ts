@@ -37,6 +37,7 @@ const LORE_OPERATION_LABEL_KEYS = {
   'repository.view-rollback': 'restoreSelectiveSyncView',
   'repository.status.revision': 'readRevisionStatus',
   'shared_store.info': 'readSharedStore',
+  'shared_store.list': 'readSharedStoreRegistry',
   'shared_store.create': 'createSharedStore',
   'shared_store.set_use_automatically': 'updateSharedStorePolicy',
   'lock.file-query': 'queryFileLocks',

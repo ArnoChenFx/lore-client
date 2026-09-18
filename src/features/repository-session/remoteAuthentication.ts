@@ -121,9 +121,7 @@ export async function confirmAuthenticationRequiredServers(
   servers: string[],
   probe: (serverUrl: string) => Promise<unknown>
 ): Promise<string[]> {
-  const results = await Promise.allSettled(
-    servers.map((serverUrl) => probe(serverUrl).then(() => null))
-  )
+  const results = await Promise.allSettled(servers.map((serverUrl) => probe(serverUrl).then(() => null)))
   return servers.filter((_, index) => {
     const result = results[index]
     return result.status === 'rejected' && isAuthenticationRequiredError(result.reason)
@@ -355,14 +353,9 @@ export function useRemoteAuthenticationRecovery({
        * 尚未弹窗的会话，避免认证流程进行中的噪音探测。
        */
       if (inputs.requestedTarget) return
-      const servers = collectAuthenticationProbeServers(
-        inputs.snapshots,
-        inputs.pausedServerKeys
-      )
+      const servers = collectAuthenticationProbeServers(inputs.snapshots, inputs.pausedServerKeys)
       if (servers.length === 0) return
-      void confirmServers(servers, (serverUrl) =>
-        listRemote(serverUrl)
-      ).then((confirmed) => {
+      void confirmServers(servers, (serverUrl) => listRemote(serverUrl)).then((confirmed) => {
         if (disposed || confirmed.length === 0) return
         requestAuthentication(confirmed[0])
       })

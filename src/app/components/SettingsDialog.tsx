@@ -4,6 +4,7 @@ import {
   FolderOpen,
   GitCompareArrows,
   Languages,
+  ListTree,
   LoaderCircle,
   Monitor,
   Moon,
@@ -38,6 +39,7 @@ import type {
   ExternalDiffToolPreference,
   LanguagePreference,
   LoreSharedStoreInfo,
+  LoreSharedStoreRegistry,
   ThemePreference
 } from '../../types'
 import { isUpdateBusy, type AppUpdateState } from '../appUpdater'
@@ -70,6 +72,13 @@ interface SettingsDialogProps {
   onChooseSharedStoreParent?: () => Promise<string | null>
   onCreateSharedStore?: (remoteUrl: string, parentPath: string) => void
   onSharedStoreAutomaticChange?: (enabled: boolean) => void
+  /** Shared Store 注册表（`shared_store list`）快照与按需读取状态。 */
+  sharedStoreRegistry?: LoreSharedStoreRegistry | null
+  sharedStoreRegistryBusy?: boolean
+  sharedStoreRegistryError?: string | null
+  sharedStoreListInstances?: boolean
+  onSharedStoreListInstancesChange?: (enabled: boolean) => void
+  onLoadSharedStoreRegistry?: () => void
   onResetLayout: () => void
   updateState?: AppUpdateState
   onCheckForUpdates?: () => void
@@ -107,6 +116,12 @@ export function SettingsDialog({
   onChooseSharedStoreParent = async () => null,
   onCreateSharedStore = () => undefined,
   onSharedStoreAutomaticChange = () => undefined,
+  sharedStoreRegistry = null,
+  sharedStoreRegistryBusy = false,
+  sharedStoreRegistryError = null,
+  sharedStoreListInstances = false,
+  onSharedStoreListInstancesChange = () => undefined,
+  onLoadSharedStoreRegistry = () => undefined,
   onResetLayout,
   updateState,
   onCheckForUpdates,
@@ -709,14 +724,10 @@ export function SettingsDialog({
                       <small>{t('sharedStoreAutomaticDescription')}</small>
                     </span>
                   </label>
-                  <button
-                    type="button"
-                    disabled={sharedStoreLoading || sharedStoreBusy}
-                    onClick={onRefreshSharedStores}
-                  >
+                  <TextButton disabled={sharedStoreLoading || sharedStoreBusy} onClick={onRefreshSharedStores}>
                     <RefreshCw className={sharedStoreLoading ? 'is-spinning' : ''} size={14} />
                     {t('refresh')}
-                  </button>
+                  </TextButton>
                 </div>
 
                 {sharedStoreError && (
@@ -747,12 +758,11 @@ export function SettingsDialog({
                     <div className="path-picker">
                       <code title={sharedStoreParent}>{sharedStoreParent || t('useLoreDefaultLocation')}</code>
                       {sharedStoreParent && (
-                        <button type="button" disabled={sharedStoreBusy} onClick={() => setSharedStoreParent('')}>
+                        <TextButton disabled={sharedStoreBusy} onClick={() => setSharedStoreParent('')}>
                           {t('clear')}
-                        </button>
+                        </TextButton>
                       )}
-                      <button
-                        type="button"
+                      <TextButton
                         disabled={sharedStoreBusy}
                         onClick={() =>
                           void onChooseSharedStoreParent().then((path) => path && setSharedStoreParent(path))
@@ -760,18 +770,17 @@ export function SettingsDialog({
                       >
                         <FolderOpen size={14} />
                         {t('choose')}
-                      </button>
+                      </TextButton>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="is-primary"
+                  <TextButton
+                    variant="primary"
                     disabled={sharedStoreBusy || !sharedStoreRemoteUrl.trim()}
                     onClick={() => onCreateSharedStore(sharedStoreRemoteUrl.trim(), sharedStoreParent)}
                   >
                     {sharedStoreBusy ? <LoaderCircle className="is-spinning" size={14} /> : <Database size={14} />}
                     {t('createSharedStore')}
-                  </button>
+                  </TextButton>
                 </div>
 
                 <div className="settings-shared-store__summary">
@@ -811,6 +820,75 @@ export function SettingsDialog({
                   ))}
                   {!sharedStoreLoading && !sharedStoreInfo?.stores.length && (
                     <small className="settings-shared-store__empty">{t('noSharedStoresConfigured')}</small>
+                  )}
+                </div>
+
+                {/*
+                 * 注册表清单与上方“当前用量”是两份不同数据：上方来自客户端对默认
+                 * 配置路径的磁盘扫描，这里来自 Lore 自己的 Shared Store 注册表，
+                 * 并且可以按需列出正在使用每个 Store 的仓库实例。实例搜索会逐个
+                 * 加载 Store，因此默认关闭，由用户显式开启。
+                 */}
+                <div className="settings-shared-store__registry">
+                  <div className="settings-shared-store__toolbar">
+                    <label>
+                      <CheckboxInput
+                        checked={sharedStoreListInstances}
+                        disabled={sharedStoreRegistryBusy}
+                        onChange={(event) => onSharedStoreListInstancesChange(event.target.checked)}
+                      />
+                      <span>
+                        <strong>{t('sharedStoreListInstances')}</strong>
+                        <small>{t('sharedStoreListInstancesDescription')}</small>
+                      </span>
+                    </label>
+                    <TextButton disabled={sharedStoreRegistryBusy} onClick={onLoadSharedStoreRegistry}>
+                      {sharedStoreRegistryBusy ? (
+                        <LoaderCircle className="is-spinning" size={14} />
+                      ) : (
+                        <ListTree size={14} />
+                      )}
+                      {t('sharedStoreLoadRegistry')}
+                    </TextButton>
+                  </div>
+
+                  {sharedStoreRegistryError && (
+                    <div className="settings-shared-store__error">
+                      <AlertTriangle size={14} />
+                      <span>{sharedStoreRegistryError}</span>
+                    </div>
+                  )}
+
+                  {sharedStoreRegistry && (
+                    <div className="settings-shared-store__list">
+                      {sharedStoreRegistry.stores.map((store) => (
+                        <div className="settings-shared-store__entry" key={store.containerPath}>
+                          <span className="is-healthy" aria-hidden="true" />
+                          <span>
+                            <strong>{store.remoteUrl || t('noSharedStoreRemote')}</strong>
+                            <code title={store.containerPath}>{store.containerPath}</code>
+                            {store.instancePaths.length ? (
+                              <ul className="settings-shared-store__instances">
+                                {store.instancePaths.map((instancePath, index) => (
+                                  <li key={store.instanceIds[index] ?? instancePath}>
+                                    <code title={instancePath}>{instancePath}</code>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <small>
+                                {sharedStoreRegistry.instancesRequested
+                                  ? t('sharedStoreNoInstances')
+                                  : t('sharedStoreInstancesNotRequested')}
+                              </small>
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                      {!sharedStoreRegistry.stores.length && (
+                        <small className="settings-shared-store__empty">{t('noSharedStoresConfigured')}</small>
+                      )}
+                    </div>
                   )}
                 </div>
               </fieldset>

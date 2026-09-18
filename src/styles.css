@@ -4926,6 +4926,29 @@ button.sidebar__repo-mark:focus-visible {
   font-size: 10px;
 }
 
+/*
+ * 移动/重命名的来源路径行：仅在 Lore 真实报告 fromPath 时渲染。
+ * 两侧路径用中性色，箭头用弱化色，不能与 Revision 内联 code 的品牌蓝混淆。
+ */
+.file-history-row__move {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.file-history-row__move code {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-history-row__move svg {
+  flex: 0 0 auto;
+  color: var(--faint);
+}
+
 .file-history-row em {
   color: var(--success);
   font-size: 10px;
@@ -8220,6 +8243,39 @@ body.is-resizing-panes {
   margin-top: 8px;
 }
 
+/*
+ * Shared Store 注册表区块：与上方客户端用量扫描结果保持视觉同族，
+ * 但用上边界分割线说明两者数据来源不同。
+ */
+.settings-shared-store__registry {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.settings-shared-store__instances {
+  display: grid;
+  gap: 2px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-shared-store__instances li {
+  min-width: 0;
+}
+
+.settings-shared-store__instances code {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .settings-shared-store__entry {
   display: grid;
   grid-template-columns: 8px minmax(0, 1fr);
@@ -8308,32 +8364,19 @@ body.is-resizing-panes {
   grid-column: 1 / -1;
 }
 
+/*
+ * 创建按钮复用共享 TextButton；这里只固定本面板需要的尺寸、不换行与右对齐位置，
+ * 主操作与 hover 颜色由 `.control-button.is-primary` 提供。
+ */
 .settings-shared-store__create > button {
-  display: inline-flex;
   min-width: 166px;
   height: 34px;
-  align-items: center;
-  justify-content: center;
   justify-self: end;
-  gap: 5px;
-  padding: 0 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 4px;
-  background: var(--bg-control);
-  color: var(--text-soft);
-  font-size: 11px;
   white-space: nowrap;
 }
 
 .settings-shared-store__create > button.is-primary {
-  border-color: var(--button-primary-border);
-  background: var(--button-primary-bg);
-  color: var(--button-primary-text);
   font-weight: 650;
-}
-
-.settings-shared-store__create > button:hover:not(:disabled) {
-  background: var(--button-primary-bg-hover);
 }
 
 .clone-options {

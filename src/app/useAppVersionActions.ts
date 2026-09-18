@@ -647,10 +647,7 @@ export function useAppVersionActions({
       const succeeded = await runRepositoryMutation(
         'archiveBranch',
         (repository) => archiveBranch(repository.path, branch.name, includeLayers),
-        operationMessage(
-          includeLayers ? 'status.archivedWithLayers' : 'status.archived',
-          { name: branch.name }
-        ),
+        operationMessage(includeLayers ? 'status.archivedWithLayers' : 'status.archived', { name: branch.name }),
         'branches'
       )
       // 与创建分支一致：仅在真实成功后关闭弹层，失败时保留上下文供用户重试。

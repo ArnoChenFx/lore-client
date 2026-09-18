@@ -91,6 +91,27 @@ Keep the integration path consistent:
 
 Desktop mode must show real failures. Do not substitute sample data or report success when a Lore operation fails.
 
+### Upgrade the pinned Lore version
+
+An upstream upgrade usually changes the C API, the FFI error codes, and protocol
+semantics at once. Work through it in this order:
+
+1. Point both `lore` and `lore-revision` in `src-tauri/Cargo.toml` at the commit the
+   target tag resolves to (both `rev` values must match, or the protocol
+   implementations drift apart).
+2. Diff the upstream root `Cargo.toml` `[patch.crates-io]` section. Upstream path
+   patches do not propagate through an external Git dependency, so every entry needs
+   the same vendored crate on the client side plus a local patch entry. Today that is
+   `vendor/quinn-proto` and `vendor/glob-match`.
+3. Compare the `#[ffi_code(N)]` allocation table in `lore-base/src/error.rs` against
+   `lore_error_code_name` in `src-tauri/src/lore_adapter/runtime.rs`, plus the
+   `LORE_FFI_ERROR_NOT_AUTHENTICATED` / `LORE_FFI_ERROR_NOT_CONNECTED` constants and
+   the frontend `localizedLoreErrorCodeKey`. Relocated codes do not break the build,
+   they silently break error classification.
+4. `cargo check` reports struct fields that were added or removed. Decide each new
+   field's value from its documented semantics rather than defaulting to whatever
+   compiles, especially for switches that change behavior.
+
 ### Change persisted settings
 
 Use the preferences service and `client-preferences.json` flow for durable settings. Do not add runtime `localStorage` writes.

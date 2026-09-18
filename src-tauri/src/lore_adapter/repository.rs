@@ -123,11 +123,11 @@ pub async fn lore_repository_list(
 }
 
 /**
- * Lore 0.9.0 起认证失败会以结构化 `NotAuthenticated`（FFI 码 12）终止，
- * 同步入口返回值与 `Complete.status` 携带具体码而不是笼统的 -1；旧版本只在
- * Complete 事件的错误消息里返回 gRPC 标准描述。这里优先消费结构化码，旧文本
- * 匹配仅作为兼容兜底。服务器目录与远端 Create 共用这个边界，把它收敛为稳定
- * `auth_required`，让前端安全地启动交互登录并重试。
+ * 认证失败会以结构化 `NotAuthenticated`（FFI 码 16）终止，同步入口返回值与
+ * `Complete.status` 携带具体码而不是笼统的 -1；更早的版本只在 Complete 事件的
+ * 错误消息里返回 gRPC 标准描述。这里优先消费结构化码，旧文本匹配仅作为兼容
+ * 兜底。服务器目录与远端 Create 共用这个边界，把它收敛为稳定 `auth_required`，
+ * 让前端安全地启动交互登录并重试。
  */
 pub(super) fn operation_requires_authentication(result: &LoreOperationResult) -> bool {
     super::runtime::operation_failure_indicates_unauthenticated(result.status, &result.events)
@@ -205,6 +205,40 @@ pub async fn lore_shared_store_set_use_automatically(
                 callback,
             ))
         })
+    })
+    .await
+}
+
+/**
+ * 读取设备级 Shared Store 注册表，包含每个 Store 服务的仓库实例。
+ *
+ * Lore 0.10.0 新增 `shared_store::list`：除了默认 Store 之外，它还报告已登记的
+ * 全部 Store、各自的远端与（可选）正在使用它的仓库实例 ID 与路径。`include_instances`
+ * 会逐个加载 Store 去搜索实例，成本随 Store 数量增长，因此由调用方显式开启：
+ * 设置页只在用户主动查看清单时读取，不进入启动路径。
+ *
+ * 与其余只读命令一致，事件在适配层就解析为稳定 DTO，React 不接触 Lore 事件形状。
+ */
+#[tauri::command]
+pub async fn lore_shared_store_list(
+    include_instances: bool,
+) -> Result<LoreSharedStoreRegistry, LoreCommandError> {
+    run_lore_task(move || {
+        let result = run_operation("shared_store.list", move |callback| {
+            lore::runtime().block_on(lore::shared_store::list(
+                LoreGlobalArgs::default(),
+                LoreSharedStoreListArgs {
+                    include_instances: u8::from(include_instances),
+                },
+                callback,
+            ))
+        })?;
+        ensure_command_success(
+            &result,
+            "shared_store_list_failed",
+            "Read Shared Store registry",
+        )?;
+        parse_shared_store_registry(&result.events, include_instances)
     })
     .await
 }
@@ -504,7 +538,6 @@ pub async fn lore_repository_clone(
     view_path: Option<String>,
     target_revision: Option<String>,
     bare: bool,
-    virtually: bool,
     direct_file_write: bool,
     layer_repository: Option<String>,
     layer_metadata_key: Option<String>,
@@ -530,7 +563,6 @@ pub async fn lore_repository_clone(
     validate_bare_clone_options(
         bare,
         view_path.as_deref(),
-        virtually,
         direct_file_write,
         &layer_repository,
         &dependency_root_files,
@@ -559,7 +591,6 @@ pub async fn lore_repository_clone(
                     revision: target_revision.into(),
                     view: view_path.unwrap_or_default().into(),
                     bare: u8::from(bare),
-                    virtually: u8::from(virtually),
                     direct_file_write: u8::from(direct_file_write),
                     layer: layer_repository.into(),
                     layer_metadata: layer_metadata_key.into(),

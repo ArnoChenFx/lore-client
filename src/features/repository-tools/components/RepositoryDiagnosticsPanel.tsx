@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { useAdjustFromProps } from '../../../hooks/useAdjustFromProps'
 import { confirmLocalized } from '../../../i18n'
 import { NumberInput, TextButton, TextInput } from '../../../shared/ui'
-import type { LoreDiagnosticReport, LoreRepositoryInstance } from '../../../types'
+import type { LoreDiagnosticReport, LoreRepositoryInstance, LoreRepositoryInstanceStaleness } from '../../../types'
 
 interface RepositoryDiagnosticsPanelProps {
   repositoryName: string
@@ -16,6 +16,21 @@ interface RepositoryDiagnosticsPanelProps {
   onListInstances: () => Promise<LoreRepositoryInstance[]>
   onPruneInstances: () => Promise<boolean>
   onUpdateInstancePath: () => Promise<boolean>
+}
+
+/**
+ * Instance 失效原因 → 双语资源键。
+ *
+ * 原因是稳定枚举而不是自由文本；`unknown` 保留未来可能新增的原因码，
+ * 不得把它渲染成某个具体原因。
+ */
+function instanceStalenessLabelKey(
+  staleness: Exclude<LoreRepositoryInstanceStaleness, null>
+): 'instanceStalePathMissing' | 'instanceStaleSuperseded' | 'instanceStaleNoCheckout' | 'instanceStaleUnknown' {
+  if (staleness === 'path-missing') return 'instanceStalePathMissing'
+  if (staleness === 'superseded') return 'instanceStaleSuperseded'
+  if (staleness === 'no-checkout') return 'instanceStaleNoCheckout'
+  return 'instanceStaleUnknown'
 }
 
 /** 只读诊断、受控 Heal 与 Instance 维护的统一高级工作区。 */
@@ -263,7 +278,8 @@ export function RepositoryDiagnosticsPanel({
                 <small>
                   {instance.branchName || '—'} · {instance.revision.slice(0, 8) || '—'}
                 </small>
-                {instance.stale && <em>{t('stale')}</em>}
+                {/* 失效原因由 Lore `stale` 原因码决定，不在界面自行推测。 */}
+                {instance.stale && <em>{t(instanceStalenessLabelKey(instance.stale))}</em>}
               </li>
             ))}
           </ul>

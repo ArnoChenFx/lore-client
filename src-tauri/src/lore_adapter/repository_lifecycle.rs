@@ -80,6 +80,12 @@ pub(super) fn initialize_repository(
             LoreSharedStoreMode::Inherit
         },
         shared_store_path: shared_store_path.unwrap_or_default().into(),
+        /*
+         * Lore 0.10.0 用 VFS 枚举取代了旧的 `virtually` 布尔值。SWFS 驱动尚未随
+         * 上游公开发布，且需要额外的 `swfs` 编译特性，因此客户端只能创建普通文件
+         * 系统仓库；这里明确传 `None`，不依赖上游默认值演变。
+         */
+        vfs: LoreVfsType::None,
     };
     let result = if repository_identity.is_none() {
         if let Some(default_identity) = default_identity {
@@ -217,6 +223,8 @@ pub(super) fn publish_repository(
             // 在线 Create 的临时仓库未携带共享存储偏好，保持默认 Inherit（沿用机器配置）。
             use_shared_store: LoreSharedStoreMode::Inherit,
             shared_store_path: LoreString::default(),
+            // 发布用的临时仓库同样只支持普通文件系统（见 initialize_repository）。
+            vfs: LoreVfsType::None,
         };
         if let Some(creator) = effective_identity {
             let metadata = LoreRepositoryCreateMetadata {

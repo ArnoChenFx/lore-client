@@ -314,6 +314,13 @@ export interface Revision {
 /** Revision Info 的文件级父子变化。 */
 export interface LoreRevisionInfoDelta {
   path: string
+  /**
+   * 移动/重命名时的来源路径；新增/修改/删除为空字符串。
+   *
+   * 来自 Lore 0.10.0 新增的 `fromPath` 字段；早期事件缺失该字段时保持空值，
+   * 不得用 `path` 回填。
+   */
+  fromPath: string
   size: number
   action: string
   modified: boolean
@@ -570,6 +577,11 @@ export interface BinaryDiffPreview {
 /** 文件历史事件只保存 Lore 能稳定提供的字段，展示层再关联 Revision 元数据。 */
 export interface FileHistoryEntry {
   path: string
+  /**
+   * 移动/重命名时的来源路径；其他动作与早期 Lore 事件下为空字符串。
+   * 界面必须在非空时才展示 `旧 → 新`。
+   */
+  fromPath: string
   revision: string
   revisionNumber: number
   parent: string[]
@@ -684,8 +696,12 @@ export interface LoreCloneOptions {
   revision?: string
   /** 只创建本地仓库状态与 Revision Tree，不物化工作区文件。 */
   bare?: boolean
-  /** 使用 Lore 的 split-write 文件系统执行虚拟克隆。 */
-  virtually?: boolean
+  /*
+   * 此处曾有一个 `virtually` 选项（Lore 的 split-write 虚拟克隆）。Lore 0.10.0
+   * 把它换成了 `LoreVfsType` 枚举，而 SWFS 驱动尚未随上游公开发布，需要额外的
+   * `swfs` 编译特性；客户端不保留一个注定失败的入口。上游驱动可用后，再由
+   * 适配层按其 VFS 语义重新暴露（包括仓库的 VFS 类型归属）。
+   */
   /**
    * 让 Lore 直接写入目标文件，而不是先写入临时文件再移动到目标位置。
    * 该选项会改变 Clone 物化阶段的落盘原子替换策略。
@@ -788,6 +804,38 @@ export interface LoreSharedStoreInfo {
 }
 
 /**
+ * Shared Store 注册表中的一项，及其正在服务的仓库实例。
+ *
+ * 与 `LoreSharedStoreEntry` 不同，这里的数据完全来自 Lore `shared_store list`
+ * 注册表，不含客户端磁盘扫描结果。Rust 适配层直接输出该 DTO，前端不再解析事件。
+ *
+ * 注意字段语义差异：本接口的 `containerPath` 是 **容器目录**（创建 Store 时选择的
+ * 父目录），而 `LoreSharedStoreEntry.path` 是完整数据目录。Lore 注册表存的就是
+ * 容器这一层，读取时它再自行拼接 `shared_store` 子目录，因此不得再取父目录。
+ */
+export interface LoreSharedStoreRegistryEntry {
+  remoteUrl: string
+  /** Store 容器目录，也是 Clone 显式参数所需的路径。 */
+  containerPath: string
+  /** 使用该 Store 的仓库实例路径；未请求实例搜索时为空数组。 */
+  instancePaths: string[]
+  /** 与 `instancePaths` 逐项对应的仓库实例 ID。 */
+  instanceIds: string[]
+}
+
+/** `shared_store list` 的稳定投影。 */
+export interface LoreSharedStoreRegistry {
+  stores: LoreSharedStoreRegistryEntry[]
+  /**
+   * 本次是否请求了仓库实例搜索，直接取自请求参数。
+   *
+   * 不得从 `instancePaths` 是否为空反推：Lore 无论是否搜索实例都会发送该数组，
+   * 空数组同时对应“确无实例”与“未查询”，只有请求参数能区分。
+   */
+  instancesRequested: boolean
+}
+
+/**
  * 固定 Lore 文件锁的稳定只读投影。
  *
  * `owner` 是服务端返回的 Owner ID；账户能力可在展示时解析名称，但不得改写锁
@@ -841,13 +889,23 @@ export interface LoreMetadataEntry {
 }
 
 /** Lore 记录的一个本地仓库 Instance。 */
+/**
+ * Instance 注册记录的失效原因。
+ *
+ * `null` 表示注册仍然描述一个真实检出；其余取值对应 Lore `stale` 字段：
+ * `path-missing`（1）路径已不存在、`superseded`（2）该路径的 `.lore/instance`
+ * 指向另一个 Instance、`no-checkout`（3）该路径下读不到 `.lore/instance`；
+ * `unknown` 保留未来可能出现的新原因码，不得编造语义。
+ */
+export type LoreRepositoryInstanceStaleness = null | 'path-missing' | 'superseded' | 'no-checkout' | 'unknown'
+
 export interface LoreRepositoryInstance {
   id: string
   path: string
   branchName: string
   branchId: string
   revision: string
-  stale: boolean
+  stale: LoreRepositoryInstanceStaleness
 }
 
 /** 高级诊断页显示的单条结构化事件摘要。 */
@@ -868,6 +926,12 @@ export interface LoreDiagnosticReport {
 export interface RevisionHistoryQuery {
   revision?: string
   branch?: string
+  /**
+   * 只显示早于该时刻（含当日本地日末）的 Revision，单位为**毫秒**。
+   *
+   * Lore 的 `LoreRevisionHistoryArgs.date` 与 Revision 元数据时间戳同为 Unix
+   * 纪元毫秒；不能用秒，否则阈值会比真实时间早 1000 倍，过滤永远不会命中。
+   */
   beforeDate?: number
   onlyBranch: boolean
   limit: number

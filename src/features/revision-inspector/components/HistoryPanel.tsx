@@ -89,7 +89,8 @@ export function HistoryPanel({
   const [historyRevision, setHistoryRevision] = useState(historyQuery.revision ?? '')
   const [historyBranch, setHistoryBranch] = useState(historyQuery.branch ?? '')
   const [historyBeforeDate, setHistoryBeforeDate] = useState(() =>
-    historyQuery.beforeDate ? new Date(historyQuery.beforeDate * 1_000).toISOString().slice(0, 10) : ''
+    // `beforeDate` 是 Unix 纪元毫秒，直接交给 Date 即可，不得再乘 1_000。
+    historyQuery.beforeDate ? new Date(historyQuery.beforeDate).toISOString().slice(0, 10) : ''
   )
   const [historyOnlyBranch, setHistoryOnlyBranch] = useState(historyQuery.onlyBranch)
   const [historyLimit, setHistoryLimit] = useState(historyQuery.limit)
@@ -100,9 +101,7 @@ export function HistoryPanel({
   useAdjustFromProps(historyQueryKey, () => {
     setHistoryRevision(historyQuery.revision ?? '')
     setHistoryBranch(historyQuery.branch ?? '')
-    setHistoryBeforeDate(
-      historyQuery.beforeDate ? new Date(historyQuery.beforeDate * 1_000).toISOString().slice(0, 10) : ''
-    )
+    setHistoryBeforeDate(historyQuery.beforeDate ? new Date(historyQuery.beforeDate).toISOString().slice(0, 10) : '')
     setHistoryOnlyBranch(historyQuery.onlyBranch)
     setHistoryLimit(historyQuery.limit)
   })
@@ -285,7 +284,7 @@ export function HistoryPanel({
                             revision: historyRevision.trim() || undefined,
                             branch: historyBranch || undefined,
                             beforeDate: historyBeforeDate
-                              ? Math.floor(new Date(`${historyBeforeDate}T23:59:59`).getTime() / 1_000)
+                              ? new Date(`${historyBeforeDate}T23:59:59.999`).getTime()
                               : undefined,
                             onlyBranch: historyOnlyBranch,
                             limit: historyLimit

@@ -270,7 +270,7 @@ unknown. Verify Fragment is read-only and does not automatically Heal.
 | **Instance ID** | Stable identity of one peer working directory. |
 | **Path** | Recorded working-directory location, which can become stale after a move. |
 | **Branch/Revision** | That Instance’s independent last state. |
-| **stale** | Unreachable/invalid record; verify disk before pruning. |
+| **stale** | The failure reason comes from Lore and is shown as reported rather than guessed: path no longer exists, superseded by another Instance at that path, no checkout at that path, or an unknown reason (new codes are never relabelled as a known one). Verify disk before pruning. |
 | **Update current Instance path** | Re-registers only the currently open Instance. |
 | **Prune stale Instances** | Removes listed stale metadata records after confirmation. |
 

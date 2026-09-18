@@ -97,6 +97,7 @@ pub fn run() {
             lore_adapter::maintenance::lore_repository_info_remote,
             lore_adapter::repository::lore_repository_clone,
             lore_adapter::repository::lore_shared_store_info,
+            lore_adapter::repository::lore_shared_store_list,
             lore_adapter::repository::lore_shared_store_create,
             lore_adapter::repository::lore_shared_store_set_use_automatically,
             lore_adapter::repository::lore_lock_file_query,

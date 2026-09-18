@@ -5,27 +5,19 @@
 
 use super::*;
 
-/// 上游 Lore manifest 的已知版本笔误修正值。
-///
-/// EpicGames/lore 固定提交 `3c8f3464` 的 workspace root 把
-/// `[workspace.package] version` 误写成 `0.8.7-nightly`（实际为 0.9.0 发布期），
-/// 而上游 `lore-base` 用 `{CARGO_PKG_VERSION}+{revision}` 生成
-/// `LORE_LIBRARY_VERSION`，错误前缀因此进入 About 页与状态栏。这里只做
-/// 显示层修正并直接展示正确版本；Cargo.lock 与依赖解析仍忠实记录上游
-/// manifest 的原始值，上游未来修正 manifest 后该映射自动失效。
-const KNOWN_LIBRARY_VERSION_TYPO: &str = "0.8.7-nightly";
-const KNOWN_LIBRARY_VERSION_FIXED: &str = "0.9.0";
-
-/// 把 Lore Core 版本字符串中的已知 manifest 笔误直接映射为正确版本。
-///
-/// 上游 `LORE_LIBRARY_VERSION` 形如 `0.8.7-nightly+<revision>`，其 `+` 后缀
-/// 在本机构建环境中没有可用语义，因此命中已知笔误时直接返回 `0.9.0`，
-/// 不保留后缀；未命中的其他版本原样返回。
+/**
+ * 把 Lore Core 版本字符串归一化为可展示的语义版本。
+ *
+ * 上游 `lore-base` 的构建脚本用 `{CARGO_PKG_VERSION}+{构建标识}` 生成
+ * `LORE_LIBRARY_VERSION`，该标识在非官方流水线中是本地 CLI 探测结果（无法探测时
+ * 为字面量 `0`），属于构建元数据而不是版本号；About 页与状态栏只需发布版本。
+ * 因此这里只保留 `+` 之前的 workspace 版本，不在客户端硬编码任何上游版本号，
+ * 以后升级 Lore 时显示值自动跟随 Cargo 解析结果。
+ */
 pub(super) fn display_library_version(raw: &str) -> String {
-    if raw.starts_with(KNOWN_LIBRARY_VERSION_TYPO) {
-        KNOWN_LIBRARY_VERSION_FIXED.to_owned()
-    } else {
-        raw.to_owned()
+    match raw.split_once('+') {
+        Some((version, _build)) if !version.is_empty() => version.to_owned(),
+        _ => raw.to_owned(),
     }
 }
 
@@ -49,6 +41,8 @@ pub async fn lore_auth_list() -> Result<LoreOperationResult, LoreCommandError> {
         run_operation("auth.list", move |callback| {
             lore::runtime().block_on(lore::auth::list(
                 LoreGlobalArgs::default(),
+                // 上游 `LoreAuthListArgs` 仍沿用旧的 `with_token` 命名（本地身份列表接口）；
+                // 只有 `local_user_info` 在 0.10.0 改名为 `with_identity_token`。
                 LoreAuthListArgs { with_token: 0 },
                 callback,
             ))
@@ -60,7 +54,7 @@ pub async fn lore_auth_list() -> Result<LoreOperationResult, LoreCommandError> {
 /**
  * 从 Auth 服务签发并保存在 Lore Token Store 中的 JWT 解析账户显示名。
  *
- * 该命令固定关闭 `with_token`：Lore 只跨 IPC 返回 `AuthUserInfo` 中的用户 ID 与
+ * 该命令固定关闭 `with_identity_token`：Lore 只跨 IPC 返回 `AuthUserInfo` 中的用户 ID 与
  * 显示名，JWT 原文、首选用户名等完整 Token 信息始终留在 Rust/Lore 边界内。
  */
 #[tauri::command]
@@ -77,7 +71,8 @@ pub async fn lore_auth_local_user_info(
                     auth_endpoint: auth_url.into(),
                     user_ids: to_lore_array(user_ids),
                     // 账户页只需要显示名，任何 Token 内容都不得进入事件流或 IPC。
-                    with_token: 0,
+                    with_identity_token: 0,
+                    with_access_token: 0,
                 },
                 callback,
             ))
@@ -153,7 +148,8 @@ pub async fn lore_auth_repository_local_user_info(
                     auth_endpoint: auth_url.into(),
                     user_ids: to_lore_array(bound_user_ids),
                     // 本地缓存降级只需要显示名，Token 内容永远不能进入事件流。
-                    with_token: 0,
+                    with_identity_token: 0,
+                    with_access_token: 0,
                 },
                 callback,
             ))

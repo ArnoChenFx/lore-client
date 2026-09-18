@@ -685,9 +685,21 @@ describe('Lore event adapter', () => {
           tagName: 'revisionInfoDelta',
           data: {
             path: 'Source/App.tsx',
+            fromPath: 'Source/Main.tsx',
             size: 512,
             action: 'modify',
             flagModify: true,
+            flagMerged: false,
+            flagFile: true
+          }
+        },
+        {
+          tagName: 'revisionInfoDelta',
+          data: {
+            path: 'Source/Added.tsx',
+            size: 128,
+            action: 'add',
+            flagModify: false,
             flagMerged: false,
             flagFile: true
           }
@@ -705,9 +717,20 @@ describe('Lore event adapter', () => {
       deltas: [
         {
           path: 'Source/App.tsx',
+          fromPath: 'Source/Main.tsx',
           size: 512,
           action: 'modify',
           modified: true,
+          merged: false,
+          file: true
+        },
+        {
+          // 新增文件没有来源路径：不得用 path 回填。
+          path: 'Source/Added.tsx',
+          fromPath: '',
+          size: 128,
+          action: 'add',
+          modified: false,
           merged: false,
           file: true
         }
@@ -1246,24 +1269,26 @@ describe('Lore event adapter', () => {
   })
 
   it('carries the real move source path from fileDiff events', () => {
+    /*
+     * `fileDiff` 没有来源路径字段；旧路径只能从上游 `emit_move_diff` 写入的
+     * `move from <路径>` 补丁头读出。二进制移动同样带该头部，只是没有正文 hunk。
+     */
     const events: LoreEvent[] = [
       {
         tagName: 'fileDiff',
         data: {
           path: 'Content/World/New.uasset',
           action: 'move',
-          fromPath: 'Content/World/Old.uasset',
-          patch: 'Binary files differ\n'
+          patch: 'move from Content/World/Old.uasset\nmove to Content/World/New.uasset\nBinary files differ\n'
         }
       },
       {
-        // 空 fromPath 与缺失字段都不产生 previousPath。
+        // 新增文件没有 `move from` 头，不得凭空得出 previousPath。
         tagName: 'fileDiff',
         data: {
           path: 'Content/World/Added.uasset',
           action: 'add',
-          fromPath: '',
-          patch: '+payload'
+          patch: 'diff --git a/Content/World/Added.uasset b/Content/World/Added.uasset\n+payload'
         }
       }
     ]
@@ -1273,29 +1298,43 @@ describe('Lore event adapter', () => {
         path: 'Content/World/New.uasset',
         action: 'move',
         previousPath: 'Content/World/Old.uasset',
-        patch: 'Binary files differ\n',
+        patch: 'move from Content/World/Old.uasset\nmove to Content/World/New.uasset\nBinary files differ\n',
         contentClassification: { kind: 'binary', source: 'loreDiff' }
       },
       {
         path: 'Content/World/Added.uasset',
         action: 'add',
-        patch: '+payload',
+        patch: 'diff --git a/Content/World/Added.uasset b/Content/World/Added.uasset\n+payload',
         contentClassification: { kind: 'text', source: 'loreDiff' }
       }
     ])
   })
 
   it('creates a file revision timeline from fileHistory events', () => {
+    // Lore 0.10.0 起 fileHistory 事件带 `fromPath`：移动/重命名才有值，
+    // 其他动作为空字符串。解析必须区分“真实来源路径”与“没有来源路径”。
     const events: LoreEvent[] = [
       {
         tagName: 'fileHistory',
         data: {
           path: 'Content/World.umap',
+          fromPath: 'Content/OldWorld.umap',
           revision: 'abcdef1234567890',
           revisionNumber: 42,
           parent: ['1234567890abcdef'],
           size: 8192,
           action: 'move'
+        }
+      },
+      {
+        tagName: 'fileHistory',
+        data: {
+          path: 'Content/World.umap',
+          revision: '1234567890abcdef',
+          revisionNumber: 41,
+          parent: [],
+          size: 4096,
+          action: 'modify'
         }
       }
     ]
@@ -1303,11 +1342,21 @@ describe('Lore event adapter', () => {
     expect(loreEventParsers.parseFileHistory(events)).toEqual([
       {
         path: 'Content/World.umap',
+        fromPath: 'Content/OldWorld.umap',
         revision: 'abcdef1234567890',
         revisionNumber: 42,
         parent: ['1234567890abcdef'],
         size: 8192,
         action: 'move'
+      },
+      {
+        path: 'Content/World.umap',
+        fromPath: '',
+        revision: '1234567890abcdef',
+        revisionNumber: 41,
+        parent: [],
+        size: 4096,
+        action: 'modify'
       }
     ])
   })

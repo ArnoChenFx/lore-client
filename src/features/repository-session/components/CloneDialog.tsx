@@ -52,7 +52,6 @@ interface CloneSubmissionInput {
   viewPath: string
   targetRevision: string
   bare: boolean
-  virtually: boolean
   directFileWrite: boolean
   layerRepository: string
   layerMetadataKey: string
@@ -67,8 +66,8 @@ interface CloneSubmissionInput {
 /**
  * 将 Clone 表单压缩成稳定 DTO，并主动移除不会生效的参数组合。
  *
- * Bare 不物化文件，因此 View、虚拟克隆、直接文件写入、Layer 和依赖闭包都必须
- * 从请求中消失；没有根文件时标签、递归和深度同样没有语义，不能把它们传给 Lore 后再
+ * Bare 不物化文件，因此 View、直接文件写入、Layer 和依赖闭包都必须从请求中
+ * 消失；没有根文件时标签、递归和深度同样没有语义，不能把它们传给 Lore 后再
  * 让用户误以为筛选已经生效。
  */
 export function buildCloneSubmission(input: CloneSubmissionInput) {
@@ -87,7 +86,6 @@ export function buildCloneSubmission(input: CloneSubmissionInput) {
       sharedStorePath: input.useSharedStore ? input.sharedStorePath?.trim() || undefined : undefined,
       revision: targetRevision || undefined,
       bare: input.bare,
-      virtually: materializeFiles && input.virtually,
       directFileWrite: materializeFiles && input.directFileWrite,
       layer:
         materializeFiles && layerRepository
@@ -136,7 +134,6 @@ export function CloneDialog({
   const [viewPath, setViewPath] = useState('')
   const [targetRevision, setTargetRevision] = useState('')
   const [bare, setBare] = useState(false)
-  const [virtually, setVirtually] = useState(false)
   const [directFileWrite, setDirectFileWrite] = useState(false)
   const [layerRepository, setLayerRepository] = useState('')
   const [layerMetadataKey, setLayerMetadataKey] = useState('')
@@ -209,7 +206,6 @@ export function CloneDialog({
               viewPath,
               targetRevision,
               bare,
-              virtually,
               directFileWrite,
               layerRepository,
               layerMetadataKey,
@@ -398,17 +394,6 @@ export function CloneDialog({
                     <span>
                       <strong>{t('cloneBare')}</strong>
                       <small>{t('cloneBareDescription')}</small>
-                    </span>
-                  </label>
-                  <label className={`clone-advanced__option${bare ? ' is-disabled' : ''}`} aria-disabled={bare}>
-                    <CheckboxInput
-                      checked={virtually}
-                      disabled={bare}
-                      onChange={(event) => setVirtually(event.target.checked)}
-                    />
-                    <span>
-                      <strong>{t('cloneVirtually')}</strong>
-                      <small>{bare ? t('cloneBareDisablesMaterialization') : t('cloneVirtuallyDescription')}</small>
                     </span>
                   </label>
                   <label className={`clone-advanced__option${bare ? ' is-disabled' : ''}`} aria-disabled={bare}>

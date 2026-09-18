@@ -49,6 +49,8 @@ const {
   loadWorkspaceText,
   listAuthIdentities,
   listRemoteRepositories,
+  listRepositoryInstances,
+  loadSharedStoreRegistry,
   loreEventParsers,
   publishRepository,
   runConflictAction,
@@ -597,7 +599,8 @@ describe('repository snapshot branch loading', () => {
     await loadRevisionHistory(snapshot.repository, snapshot.branches, {
       revision: 'history-start',
       branch: 'main',
-      beforeDate: 1_743_724_799,
+      // Lore 的 `date` 与 Revision 时间戳同为 Unix 纪元毫秒。
+      beforeDate: 1_743_724_799_999,
       onlyBranch: true,
       limit: 250
     })
@@ -607,7 +610,7 @@ describe('repository snapshot branch loading', () => {
       limit: 250,
       revision: 'history-start',
       branch: 'main',
-      date: 1_743_724_799,
+      date: 1_743_724_799_999,
       onlyBranch: true
     })
   })
@@ -1044,7 +1047,6 @@ describe('repository snapshot branch loading', () => {
       sharedStorePath: 'D:\\LoreStore',
       revision: 'release/1.0',
       bare: false,
-      virtually: true,
       directFileWrite: true,
       layer: {
         repository: 'world-lighting',
@@ -1066,7 +1068,6 @@ describe('repository snapshot branch loading', () => {
       viewPath: 'C:\\views\\world.view',
       targetRevision: 'release/1.0',
       bare: false,
-      virtually: true,
       directFileWrite: true,
       layerRepository: 'world-lighting',
       layerMetadataKey: 'build-id',
@@ -1115,6 +1116,85 @@ describe('repository snapshot branch loading', () => {
         bare: true
       })
     ).rejects.toThrow('Bare 克隆不能同时使用选择性同步、直接文件 I/O、Layer 或依赖物化选项。')
+  })
+
+  it('consumes the Shared Store registry DTO returned by the adapter', async () => {
+    /*
+     * 注册表由 Rust 适配层解析为稳定 DTO，前端不再看到 `sharedStoreList` 事件；
+     * `instancesRequested` 也从适配层原样回传。
+     */
+    invokeMock.mockResolvedValueOnce({
+      stores: [
+        {
+          remoteUrl: 'lore://127.0.0.1:41337',
+          // 注册表存的就是容器目录，不得再往上剥一层父目录。
+          containerPath: 'D:\\LoreStore',
+          instancePaths: ['E:\\Worlds\\a', 'E:\\Worlds\\b'],
+          instanceIds: ['instance-a', 'instance-b']
+        },
+        { remoteUrl: '', containerPath: 'D:\\OtherStore', instancePaths: [], instanceIds: [] }
+      ],
+      instancesRequested: true
+    })
+
+    const registry = await loadSharedStoreRegistry(true)
+
+    expect(invokeMock).toHaveBeenCalledWith('lore_shared_store_list', { includeInstances: true })
+    expect(registry.instancesRequested).toBe(true)
+    expect(registry.stores).toEqual([
+      {
+        remoteUrl: 'lore://127.0.0.1:41337',
+        containerPath: 'D:\\LoreStore',
+        instancePaths: ['E:\\Worlds\\a', 'E:\\Worlds\\b'],
+        instanceIds: ['instance-a', 'instance-b']
+      },
+      { remoteUrl: '', containerPath: 'D:\\OtherStore', instancePaths: [], instanceIds: [] }
+    ])
+  })
+
+  it('keeps not-queried and no-instances distinguishable in the registry', async () => {
+    /*
+     * Lore 无论是否搜索实例都会发送 `instancePaths`（未搜索时为空数组），因此
+     * 空数组本身无法区分“确无实例”与“未查询”；只有响应回传的请求标志能区分，
+     * 界面空态文案依赖它。
+     */
+    invokeMock.mockResolvedValueOnce({
+      stores: [
+        { remoteUrl: 'lore://127.0.0.1:41337', containerPath: 'D:\\LoreStore', instancePaths: [], instanceIds: [] }
+      ],
+      instancesRequested: false
+    })
+
+    const registry = await loadSharedStoreRegistry(false)
+
+    expect(registry.instancesRequested).toBe(false)
+    expect(registry.stores[0].instancePaths).toEqual([])
+  })
+
+  it('reports the exact stale reason for a repository instance instead of a boolean', async () => {
+    invokeMock.mockResolvedValueOnce({
+      operation: 'repository.instance-list',
+      status: 0,
+      durationMs: 1,
+      events: [
+        { tagName: 'repositoryInstance', data: { instanceId: 'a', path: 'E:\\a', stale: 0 } },
+        { tagName: 'repositoryInstance', data: { instanceId: 'b', path: 'E:\\b', stale: 1 } },
+        { tagName: 'repositoryInstance', data: { instanceId: 'c', path: 'E:\\c', stale: 2 } },
+        { tagName: 'repositoryInstance', data: { instanceId: 'd', path: 'E:\\d', stale: 3 } },
+        // 未来新增的原因码只能归入 unknown，不得冒充某个已知原因。
+        { tagName: 'repositoryInstance', data: { instanceId: 'e', path: 'E:\\e', stale: 9 } }
+      ]
+    })
+
+    const instances = await listRepositoryInstances('E:\\Worlds\\RealLore')
+
+    expect(instances.map((instance) => instance.stale)).toEqual([
+      null,
+      'path-missing',
+      'superseded',
+      'no-checkout',
+      'unknown'
+    ])
   })
 
   it('passes stable conflict kind, action, and repository-relative paths to Rust', async () => {

@@ -121,6 +121,17 @@ export function FileHistoryDialog({
                         {revision?.author ?? t('authorInformationUnavailable')} ·{' '}
                         {revision?.relativeTime ?? entry.revision.slice(0, 8)}
                       </small>
+                      {/* 只有 Lore 真实报告来源路径的移动/重命名才展示旧 → 新。 */}
+                      {entry.fromPath && entry.fromPath !== entry.path && (
+                        <small
+                          className="file-history-row__move"
+                          title={t('status.pathTransition', { source: entry.fromPath, target: entry.path })}
+                        >
+                          <code>{entry.fromPath}</code>
+                          <ArrowRight size={11} />
+                          <code>{entry.path}</code>
+                        </small>
+                      )}
                     </span>
                     <code>{entry.revision.slice(0, 8)}</code>
                     <em>{actionLabels[entry.action] ?? entry.action}</em>

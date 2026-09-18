@@ -48,7 +48,6 @@ describe('Clone option availability', () => {
     expect(html.indexOf('目标修订或分支（可选）')).toBeGreaterThan(html.indexOf('<details class="clone-options">'))
     expect(html).toContain('目标修订或分支（可选）')
     expect(html).toContain('Bare 克隆')
-    expect(html).toContain('虚拟克隆')
     expect(html).toContain('直接文件写入')
     expect(html).toContain('共享内容存储路径（可选）')
     expect(html).toContain('初始 Layer')
@@ -108,7 +107,6 @@ describe('Clone submission normalization', () => {
         viewPath: ' C:\\views\\game.view ',
         targetRevision: ' release/1.0 ',
         bare: false,
-        virtually: true,
         directFileWrite: true,
         layerRepository: ' world-lighting ',
         layerMetadataKey: ' build-id ',
@@ -126,7 +124,6 @@ describe('Clone submission normalization', () => {
         sharedStorePath: 'C:\\LoreStore',
         revision: 'release/1.0',
         bare: false,
-        virtually: true,
         directFileWrite: true,
         layer: {
           repository: 'world-lighting',
@@ -148,7 +145,6 @@ describe('Clone submission normalization', () => {
         viewPath: 'C:\\views\\game.view',
         targetRevision: 'main',
         bare: true,
-        virtually: true,
         directFileWrite: true,
         layerRepository: 'world-lighting',
         layerMetadataKey: 'build-id',
@@ -165,7 +161,6 @@ describe('Clone submission normalization', () => {
         sharedStorePath: undefined,
         revision: 'main',
         bare: true,
-        virtually: false,
         directFileWrite: false,
         layer: undefined,
         dependency: undefined

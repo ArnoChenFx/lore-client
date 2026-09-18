@@ -435,7 +435,6 @@ pub(super) fn validate_clone_layer(
 pub(super) fn validate_bare_clone_options(
     bare: bool,
     view_path: Option<&str>,
-    virtually: bool,
     direct_file_write: bool,
     layer_repository: &str,
     dependency_root_files: &[String],
@@ -445,7 +444,6 @@ pub(super) fn validate_bare_clone_options(
 ) -> Result<(), LoreCommandError> {
     if bare
         && (view_path.is_some()
-            || virtually
             || direct_file_write
             || !layer_repository.is_empty()
             || !dependency_root_files.is_empty()
@@ -749,6 +747,71 @@ pub(super) fn parse_shared_store_info(
     })
 }
 
+/**
+ * 从 Lore `shared_store list` 事件构建稳定 Shared Store 注册表 DTO。
+ *
+ * 注册表值本身就是容器目录，这里只做原样透传：Lore 注册的是
+ * `directory_containing_shared_store`，读取时再自行拼接 `shared_store` 子目录，
+ * 多取一级父目录会得到盘符根或空串，使 Clone 路径校验失败。
+ *
+ * `instances_requested` 取自调用参数而不是事件：Lore 无论是否搜索实例都会发送
+ * `instancePaths` / `instanceIds`（未搜索时为空数组），空数组因此无法区分
+ * “确无实例”与“未查询”。
+ *
+ * 缺少 `sharedStoreList` 事件属于协议不兼容，必须明确失败，不得伪装成空注册表。
+ */
+pub(super) fn parse_shared_store_registry(
+    events: &[Value],
+    instances_requested: bool,
+) -> Result<LoreSharedStoreRegistry, LoreCommandError> {
+    let stores = events
+        .iter()
+        .find(|event| event["tagName"] == "sharedStoreList")
+        .and_then(|event| event["data"]["stores"].as_array())
+        .ok_or_else(|| {
+            LoreCommandError::new(
+                "shared_store_list_event_missing",
+                "Lore did not return the Shared Store registry",
+            )
+        })?;
+
+    Ok(LoreSharedStoreRegistry {
+        stores: stores
+            .iter()
+            .filter_map(|store| {
+                let container_path = display_path_without_windows_verbatim_prefix(Path::new(
+                    store["storePath"].as_str()?,
+                ));
+                if container_path.is_empty() {
+                    return None;
+                }
+                Some(LoreSharedStoreRegistryEntry {
+                    remote_url: store["remoteUrl"].as_str().unwrap_or_default().to_owned(),
+                    container_path,
+                    instance_paths: read_lore_string_array(&store["instancePaths"]),
+                    instance_ids: read_lore_string_array(&store["instanceIds"]),
+                })
+            })
+            .collect(),
+        instances_requested,
+    })
+}
+
+/// 只接受非空字符串元素，保持与其它事件解析相同的降级语义。
+pub(super) fn read_lore_string_array(value: &Value) -> Vec<String> {
+    value
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .filter(|item| !item.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// 统计 Store 当前可验证的实际磁盘占用。
 ///
 /// 使用 `symlink_metadata` 且跳过所有符号链接，不跟随 Store 外路径；遇到权限或
@@ -860,28 +923,33 @@ pub(super) fn ensure_command_success(
     ))
 }
 
-/// 上游 `lore-base` 的 `NotAuthenticated` FFI 错误码；名称见 `lore_error_code_name`。
-pub(super) const LORE_FFI_ERROR_NOT_AUTHENTICATED: i32 = 12;
-
-/// 上游 `lore-base` 的 `NotConnected` FFI 错误码。
+/// 上游 `lore-base` 的 `NotAuthenticated` FFI 错误码。
 ///
-/// Lore 0.9.0 在**连接建立阶段**缺少可用凭据时会直接以 `NotConnected` 终止
+/// Lore 0.10.0 把 `lore-base/src/error.rs` 的错误码按失败类别重新分块编号
+/// （输入校验 3–15、认证鉴权 16–27、连接与可用性 28–39、仓库状态 40–55、
+/// 已存在 56–63、未找到 79–99、配置 110–117、资源限制 118–125、生命周期 193–200）。
+/// 旧版本的 `NotAuthenticated` 是 12，现在是 16，名称见 `lore_error_code_name`。
+pub(super) const LORE_FFI_ERROR_NOT_AUTHENTICATED: i32 = 16;
+
+/// 上游 `lore-base` 的 `NotConnected` FFI 错误码（旧版本为 17）。
+///
+/// Lore 在**连接建立阶段**缺少可用凭据时会直接以 `NotConnected` 终止
 /// （如 Revision Diff 报 "Not connected to remote: Not authenticated"），
 /// 而不是已连接后的 `NotAuthenticated`；恢复流程必须同时识别两种形态。
-pub(super) const LORE_FFI_ERROR_NOT_CONNECTED: i32 = 17;
+pub(super) const LORE_FFI_ERROR_NOT_CONNECTED: i32 = 29;
 
 /**
  * 判定一次失败操作的错误流是否携带“凭据缺失或失效”证据。
  *
  * 识别三种形态：
- * 1. Lore 0.9.0 结构化 `NotAuthenticated`（码 12），无需文本佐证；
- * 2. `NotConnected`（码 17）或旧格式的笼统 `-1`，此时必须由事件文本中的
+ * 1. 结构化 `NotAuthenticated`（码 16），无需文本佐证；
+ * 2. `NotConnected`（码 29）或旧格式的笼统 `-1`，此时必须由事件文本中的
  *    "Not authenticated" 或旧 gRPC 认证描述佐证，避免把服务器宕机等纯网络
  *    失败误判成需要重新登录；
  * 3. 文本匹配大小写不敏感，覆盖上游不同版本的大小写变体。
  *
- * `NotAuthorized`（码 7）是“已认证但无权限”，属于账户权限问题而不是凭据
- * 失效，绝不触发重新认证流程。
+ * `NotAuthorized`（已认证但无权限）属于账户权限问题而不是凭据失效，
+ * 绝不触发重新认证流程；它的取值跨版本发生过变化，因此这里不按码判定。
  */
 pub(super) fn operation_failure_indicates_unauthenticated(status: i32, events: &[Value]) -> bool {
     if status == LORE_FFI_ERROR_NOT_AUTHENTICATED {
@@ -909,61 +977,75 @@ pub(super) fn operation_failure_indicates_unauthenticated(status: i32, events: &
 /**
  * 上游 `lore-base/src/error.rs` 定义的稳定 FFI 错误码名称表。
  *
- * Lore 0.9.0 起 C API 失败不再返回笼统的 -1，而是携带具体错误码；客户端在
- * 操作错误详情中把已知码渲染为名称，避免用户只看到无语义的裸数字。上游新增
- * 错误码时必须同步此表；未知码保持原样显示数字，绝不猜测语义。
+ * 错误码本身就是进程退出状态，上游把它们按失败类别分块编号，且**从不**为了
+ * 补齐空隙而重新编号，因此这里的映射是稳定的。
+ *
+ * 表已整体对齐 Lore 0.10.0：旧版按“遇到顺序”分配的 1–49 已全部重排，不能继续
+ * 沿用。仅供展示：未知码保持原样显示数字，绝不猜测语义。升级 Lore 时必须同步
+ * 核对上游 `lore-base/src/error.rs` 的 `#[ffi_code(N)]` 分配表。
  */
 pub(super) fn lore_error_code_name(code: i32) -> Option<&'static str> {
     let name = match code {
-        1 => "InvalidArguments",
-        2 => "AddressNotFound",
-        3 => "FileNotFound",
-        4 => "PayloadNotFound",
-        5 => "SlowDown",
-        6 => "Disconnected",
-        7 => "NotAuthorized",
-        8 => "LockNotFound",
-        9 => "LockNotOwned",
-        10 => "SharedStoreNotFound",
-        11 => "Maintenance",
-        12 => "NotAuthenticated",
-        13 => "NotFound",
-        14 => "NoRemote",
-        15 => "NodeNotFound",
-        16 => "LinkNotFound",
-        17 => "NotConnected",
-        18 => "NotSupported",
-        19 => "AlreadyLinked",
-        20 => "LayerNotFound",
-        21 => "NothingStaged",
-        22 => "BranchAdvanced",
-        23 => "Conflict",
-        24 => "LinkPathNotFound",
-        25 => "NotALink",
-        26 => "Oversized",
-        27 => "PluginNotFound",
-        28 => "PluginConfigError",
-        29 => "PluginInitError",
-        30 => "WriteRequired",
-        31 => "InvalidPath",
-        32 => "InvalidAddress",
-        33 => "RevisionNotFound",
-        34 => "BranchNotFound",
-        35 => "IdenticalMetadata",
-        36 => "TokenNotFound",
-        37 => "NotALayer",
-        38 => "InvalidNodeHierarchy",
-        39 => "LocalModifications",
-        40 => "BranchAlreadyExists",
-        41 => "RepositoryAlreadyExists",
-        42 => "DeleteProtected",
-        43 => "DeleteCurrent",
-        44 => "DeleteDefault",
-        45 => "RepositoryNotFound",
-        46 => "Divergent",
-        47 => "MaxHistorySearchDepth",
-        48 => "MissingIdentity",
-        49 => "InefficientCompression",
+        // 输入与校验（3–15）
+        3 => "InvalidArguments",
+        4 => "InvalidPath",
+        5 => "InvalidAddress",
+        6 => "NotALink",
+        7 => "NotALayer",
+        8 => "InvalidNodeHierarchy",
+        9 => "NotSupported",
+        // 认证与鉴权（16–27）
+        16 => "NotAuthenticated",
+        17 => "NotAuthorized",
+        18 => "TokenNotFound",
+        19 => "WriteRequired",
+        // 连接与可用性（28–39）
+        28 => "Disconnected",
+        29 => "NotConnected",
+        30 => "Maintenance",
+        31 => "SlowDown",
+        32 => "ServiceUnavailable",
+        // 仓库状态（40–55）
+        40 => "NothingStaged",
+        41 => "BranchAdvanced",
+        42 => "Divergent",
+        43 => "Conflict",
+        44 => "LocalModifications",
+        45 => "LockNotOwned",
+        46 => "IdenticalMetadata",
+        47 => "DeleteProtected",
+        48 => "DeleteCurrent",
+        49 => "DeleteDefault",
+        // 已存在（56–63）
+        56 => "AlreadyLinked",
+        57 => "BranchAlreadyExists",
+        58 => "RepositoryAlreadyExists",
+        // 未找到（79–99）
+        79 => "NotFound",
+        80 => "AddressNotFound",
+        81 => "PayloadNotFound",
+        82 => "FileNotFound",
+        83 => "NodeNotFound",
+        84 => "LinkNotFound",
+        85 => "LinkPathNotFound",
+        86 => "LayerNotFound",
+        87 => "BranchNotFound",
+        88 => "RevisionNotFound",
+        89 => "RepositoryNotFound",
+        90 => "SharedStoreNotFound",
+        91 => "LockNotFound",
+        92 => "PluginNotFound",
+        // 配置（110–117）
+        110 => "MissingIdentity",
+        111 => "NoRemote",
+        112 => "PluginConfigError",
+        113 => "PluginInitError",
+        // 资源限制（118–125）
+        118 => "Oversized",
+        119 => "MaxHistorySearchDepth",
+        120 => "InefficientCompression",
+        // 库生命周期（193–200）
+        193 => "ShutDown",
         _ => return None,
     };
     Some(name)

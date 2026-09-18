@@ -185,6 +185,13 @@ pub async fn lore_revision_cherry_pick(
                     // 空说明会由 Lore Core 复用源 Revision 的提交说明。
                     message: LoreString::default(),
                     no_commit: 0,
+                    /*
+                     * Lore 0.10.0 起 merge / cherry-pick / revert 不再自动继承源 Revision 的
+                     * 自定义元数据（`created-by`、`reviewed-by`、`change-request` 等）。空数组
+                     * 表示明确不继承任何键，保留上游新默认值；客户端没有让用户选择来源元数据的
+                     * 校验入口，不得用 `*` 通配符替用户决定。
+                     */
+                    inherit_metadata: to_lore_array(Vec::<String>::new()),
                 },
                 callback,
             ))
@@ -237,6 +244,8 @@ pub async fn lore_branch_merge(
                     no_commit: 0,
                     link: LoreString::default(),
                     ignore_links: 0,
+                    // 与 Cherry-pick 一致：不继承源 Revision 的自定义元数据。
+                    inherit_metadata: to_lore_array(Vec::<String>::new()),
                 },
                 callback,
             ))

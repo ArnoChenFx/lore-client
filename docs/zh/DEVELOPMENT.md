@@ -90,6 +90,23 @@ bun tauri build --debug --no-bundle
 
 桌面模式必须呈现真实失败。Lore 操作失败时，不得改用样例数据或报告成功。
 
+### 升级固定 Lore 版本
+
+上游升级通常同时改动 C API、FFI 错误码与协议语义，按以下顺序处理：
+
+1. 把 `src-tauri/Cargo.toml` 中 `lore` 与 `lore-revision` 的 `rev` 同时改成目标标签
+   指向的 commit（两行必须一致，否则协议实现漂移）。
+2. 对比上游 `Cargo.toml` 的 `[patch.crates-io]`：上游作为外部 Git 依赖时 path
+   patch 不传播，每一条都需要在客户端侧携带同一份 vendored crate 并加入本地
+   patch 表。当前包含 `vendor/quinn-proto` 与 `vendor/glob-match`。
+3. 逐项比对 `lore-base/src/error.rs` 的 `#[ffi_code(N)]` 分配表与
+   `src-tauri/src/lore_adapter/runtime.rs` 的 `lore_error_code_name`，以及
+   `LORE_FFI_ERROR_NOT_AUTHENTICATED` / `LORE_FFI_ERROR_NOT_CONNECTED` 常量与
+   前端 `localizedLoreErrorCodeKey`。错误码换位不会报编译错误，但会让错误分类
+   静默失效。
+4. `cargo check` 会报出结构体字段增删；逐个确认新字段的语义后再决定填充值，
+   不得为了通过编译而无脑传默认值（尤其是此前会改变行为的新开关）。
+
 ### 修改持久化设置
 
 持久化设置统一使用偏好服务和 `client-preferences.json` 流程，不得新增运行期 `localStorage` 写入。

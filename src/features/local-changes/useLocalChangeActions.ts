@@ -539,6 +539,8 @@ export function useLocalChangeActions({
         setFileHistoryEntries(
           activeSnapshot.revisions.slice(0, 6).map((revision, index) => ({
             path: changeFilePath(file),
+            // 浏览器演示模式没有真实 Lore 事件，来源路径只能是空值。
+            fromPath: '',
             revision: revision.id,
             revisionNumber: 1482 - index,
             parent: revision.parentIds ?? [],
