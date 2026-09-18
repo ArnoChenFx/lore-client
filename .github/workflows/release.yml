@@ -12,7 +12,9 @@ concurrency:
 jobs:
   verify:
     name: Validate Version and Tests
-    runs-on: ubuntu-latest
+    # 发布校验必须运行前端测试，而 Linux 版 Bun 当前无法跑通 `bun test`，
+    # 因此该 job 固定在 Windows 运行，避免整条发布流程被无关缺陷阻断。
+    runs-on: windows-latest
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -24,6 +26,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Validate tag and project version
+        shell: bash
         run: bun run release:prepare --check "${{ github.ref_name }}"
 
       - name: Run frontend tests
