@@ -1142,7 +1142,7 @@ fn run_read_only_repository_status(
                 }
             };
 
-            let result = lore_revision::repository::status::status(
+            let result = lore_revision::repository::status::status_boxed(
                 repository,
                 None,
                 lore_revision::repository::status::StatusOptions {

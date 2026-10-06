@@ -38,7 +38,8 @@ use lore::layer::{
     LoreLayerAddArgs, LoreLayerListArgs, LoreLayerListStagedArgs, LoreLayerRemoveArgs,
 };
 use lore::link::{
-    LoreLinkAddArgs, LoreLinkInfoArgs, LoreLinkListArgs, LoreLinkRemoveArgs, LoreLinkUpdateArgs,
+    LoreLinkAddArgs, LoreLinkInfoArgs, LoreLinkListArgs, LoreLinkListStagedArgs,
+    LoreLinkRemoveArgs, LoreLinkUpdateArgs,
 };
 use lore::lock::{
     LoreLockFileAcquireArgs, LoreLockFileQueryArgs, LoreLockFileReleaseArgs, LoreLockFileStatusArgs,

@@ -340,7 +340,11 @@ pub async fn lore_link_list_staged(
     run_lore_task(move || {
         let globals = global_args(&repository_path)?;
         run_operation("link.list-staged", move |callback| {
-            lore::runtime().block_on(lore::link::list_staged(globals, callback))
+            lore::runtime().block_on(lore::link::list_staged(
+                globals,
+                LoreLinkListStagedArgs {},
+                callback,
+            ))
         })
     })
     .await

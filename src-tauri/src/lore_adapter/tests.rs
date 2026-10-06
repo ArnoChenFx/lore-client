@@ -1412,7 +1412,12 @@ fn workspace_status_classifies_content_without_extension_hints() {
 }
 
 #[test]
-fn revision_content_reading_preserves_storage_item_error_code() {
+fn revision_content_reading_preserves_storage_item_error_detail() {
+    /*
+     * Lore 0.10.1 把 storage 单项失败从 `data.errorCode` 字符串枚举改为
+     * `data.error` 完整明细（数字 FFI 码 + 消息）。错误提取必须保留具体
+     * 单项诊断（如 PayloadNotFound），不得退化成操作级说明或泛化文案。
+     */
     let result = LoreOperationResult {
         operation: "storage.get",
         status: -1,
@@ -1422,7 +1427,11 @@ fn revision_content_reading_preserves_storage_item_error_code() {
                 "tagName": "storageGetItemComplete",
                 "data": {
                     "id": 1,
-                    "errorCode": "AddressNotFound"
+                    "address": "0x0000",
+                    "error": {
+                        "errorCode": 81,
+                        "message": "Payload not found"
+                    }
                 }
             }),
             serde_json::json!({
@@ -1440,7 +1449,48 @@ fn revision_content_reading_preserves_storage_item_error_code() {
     let error = ensure_operation_success(&result, "Read revision file content")
         .expect_err("A nonzero status must map to a structured error");
     assert_eq!(error.code, "revision_tree_read_failed");
-    assert!(error.message.contains("AddressNotFound"));
+    // 单项明细优先于操作级说明，且渲染为可读的错误码名称。
+    assert!(error.message.contains("PayloadNotFound"));
+    assert!(error.message.contains("Payload not found"));
+    assert!(!error.message.contains("1/1 get items failed"));
+}
+
+#[test]
+fn revision_content_reading_ignores_successful_storage_items() {
+    /*
+     * 成功单项的 `error.errorCode` 是 0；错误提取不得把它误报为失败来源。
+     */
+    let result = LoreOperationResult {
+        operation: "storage.get",
+        status: -1,
+        duration_ms: 1,
+        events: vec![
+            serde_json::json!({
+                "tagName": "storageGetItemComplete",
+                "data": {
+                    "id": 1,
+                    "address": "0x1234",
+                    "error": {
+                        "errorCode": 0,
+                        "message": ""
+                    }
+                }
+            }),
+            serde_json::json!({
+                "tagName": "complete",
+                "data": {
+                    "error": {
+                        "errorCode": -1,
+                        "message": "1/1 get items failed"
+                    }
+                }
+            }),
+        ],
+    };
+
+    let error = ensure_operation_success(&result, "Read revision file content")
+        .expect_err("A nonzero status must map to a structured error");
+    assert!(error.message.contains("1/1 get items failed"));
 }
 
 #[test]

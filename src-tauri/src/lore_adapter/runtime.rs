@@ -1072,15 +1072,31 @@ pub(super) fn ensure_operation_success(
     }
 
     /*
-     * 固定 Lore 版本的批量 Storage 接口会把单项失败放在
-     * `storageGetItemComplete.data.errorCode`，而操作级说明则放在
-     * `complete.data.error.message`。它们都不一定额外发送 `error` 事件。
+     * Lore 0.10.1 起批量 Storage 接口把单项失败改为完整错误明细
+     * `storageGetItemComplete.data.error = { errorCode, message, traceLocations }`，
+     * 0.10.0 及以前是 `data.errorCode` 字符串枚举；操作级说明仍在
+     * `complete.data.error.message`，它们都不一定额外发送 `error` 事件。
      * 这里按“具体单项错误 → 操作级说明 → 旧 error 事件”的顺序提取，避免再次
-     * 把 AddressNotFound 等可诊断信息抹成“未提供额外错误信息”。
+     * 把 PayloadNotFound 等可诊断信息抹成“未提供额外错误信息”。
      */
     let item_error = result.events.iter().find_map(|event| {
-        let error_code = event["data"]["errorCode"].as_str()?;
-        (error_code != "None" && !error_code.is_empty()).then_some(error_code)
+        // 单项失败：数字 FFI 码 + 上游消息。0 表示成功项，跳过。
+        let detail = event["data"]["error"].as_object()?;
+        let error_code = detail.get("errorCode")?.as_i64()?;
+        if error_code == 0 {
+            return None;
+        }
+        let name = lore_error_code_name(error_code as i32);
+        let message = detail
+            .get("message")
+            .and_then(|value| value.as_str())
+            .filter(|message| !message.trim().is_empty());
+        Some(match (name, message) {
+            (Some(name), Some(message)) => format!("{name}: {message}"),
+            (Some(name), None) => name.to_owned(),
+            (None, Some(message)) => message.to_owned(),
+            (None, None) => format!("Lore error code {error_code}"),
+        })
     });
     let operation_error = result.events.iter().find_map(|event| {
         event["data"]["error"]["message"]
@@ -1089,7 +1105,6 @@ pub(super) fn ensure_operation_success(
             .or_else(|| event["data"]["error"].as_str())
     });
     let detail = item_error
-        .map(|error_code| format!("Lore error code {error_code}"))
         .or_else(|| operation_error.map(str::to_owned))
         .unwrap_or_else(|| "Lore did not provide additional error details".to_owned());
     Err(LoreCommandError::new(
