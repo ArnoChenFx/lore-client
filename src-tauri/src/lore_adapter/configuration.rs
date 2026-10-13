@@ -4,6 +4,8 @@
 //! 父模块统一管理，避免模块化重构改变现有 IPC 契约或 Lore 调用行为。
 
 use super::*;
+use crate::atomic_file::write_file_atomically;
+
 /// 返回仓库当前格式对应的配置路径；旧 `.urc` 仓库继续使用自己的目录，
 /// 不能在旁边新建 `.lore` 后造成双配置来源。
 pub(super) fn repository_configuration_path(
@@ -99,105 +101,20 @@ pub(super) fn normalize_repository_remote_url(
         .map_err(|error| LoreCommandError::new("invalid_repository_remote_url", error.message))
 }
 
-/// 先把完整新内容写入同目录临时文件，再替换配置。Windows 不支持直接覆盖式
-/// rename，因此先把旧文件移到唯一备份，替换失败时立即回滚。
+/// 以原子替换方式写入仓库配置：崩溃时只会留下旧文件或完整的新文件。
 pub(super) fn write_repository_configuration_document(
     path: &Path,
     document: &toml_edit::DocumentMut,
 ) -> Result<(), LoreCommandError> {
-    let parent = path.parent().ok_or_else(|| {
+    write_file_atomically(path, document.to_string().as_bytes()).map_err(|error| {
         LoreCommandError::new(
-            "repository_config_path_invalid",
-            "The repository configuration path is invalid",
+            "repository_config_write_failed",
+            format!(
+                "Failed to write repository configuration {}: {error}",
+                path.display()
+            ),
         )
-    })?;
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let temporary_path = parent.join(format!(
-        ".config.toml.lore-client-{}-{unique}.tmp",
-        std::process::id()
-    ));
-    let mut temporary = OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(&temporary_path)
-        .map_err(|error| {
-            LoreCommandError::new(
-                "repository_config_temporary_create_failed",
-                format!(
-                    "Failed to create temporary repository configuration file {}: {error}",
-                    temporary_path.display()
-                ),
-            )
-        })?;
-    temporary
-        .write_all(document.to_string().as_bytes())
-        .and_then(|_| temporary.sync_all())
-        .map_err(|error| {
-            let _ = std::fs::remove_file(&temporary_path);
-            LoreCommandError::new(
-                "repository_config_temporary_write_failed",
-                format!(
-                    "Failed to write temporary repository configuration file {}: {error}",
-                    temporary_path.display()
-                ),
-            )
-        })?;
-    drop(temporary);
-
-    #[cfg(not(windows))]
-    {
-        std::fs::rename(&temporary_path, path).map_err(|error| {
-            let _ = std::fs::remove_file(&temporary_path);
-            LoreCommandError::new(
-                "repository_config_replace_failed",
-                format!(
-                    "Failed to replace repository configuration {}: {error}",
-                    path.display()
-                ),
-            )
-        })?;
-    }
-
-    #[cfg(windows)]
-    {
-        let backup_path = parent.join(format!(
-            ".config.toml.lore-client-{}-{unique}.backup",
-            std::process::id()
-        ));
-        let had_original = path.exists();
-        if had_original {
-            std::fs::rename(path, &backup_path).map_err(|error| {
-                let _ = std::fs::remove_file(&temporary_path);
-                LoreCommandError::new(
-                    "repository_config_backup_failed",
-                    format!(
-                        "Failed to back up repository configuration {}: {error}",
-                        path.display()
-                    ),
-                )
-            })?;
-        }
-        if let Err(error) = std::fs::rename(&temporary_path, path) {
-            if had_original {
-                let _ = std::fs::rename(&backup_path, path);
-            }
-            let _ = std::fs::remove_file(&temporary_path);
-            return Err(LoreCommandError::new(
-                "repository_config_replace_failed",
-                format!(
-                    "Failed to replace repository configuration {}: {error}",
-                    path.display()
-                ),
-            ));
-        }
-        if had_original {
-            let _ = std::fs::remove_file(backup_path);
-        }
-    }
-    Ok(())
+    })
 }
 
 pub(super) fn update_repository_configuration(
