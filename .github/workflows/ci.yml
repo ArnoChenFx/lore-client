@@ -7,6 +7,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# CI 只需要读取源码；显式收窄 GITHUB_TOKEN 权限，避免依赖仓库默认权限设置。
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -66,3 +70,9 @@ jobs:
 
       - name: Check desktop backend
         run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      # 后端测试（约 195 个，含 lore_adapter 与资产预览解析）此前只在本地执行，CI 从未运行。
+      # 目前只在 Linux 启用：这里已在 Linux 上全部通过；Windows 与 macOS 上的 #[cfg] 分支尚未验证。
+      - name: Run desktop backend tests
+        if: runner.os == 'Linux'
+        run: cargo test --manifest-path src-tauri/Cargo.toml
