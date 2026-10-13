@@ -3035,13 +3035,18 @@ fn empty_patch_is_rejected() {
     );
 }
 
+/// 补丁保存命令已改为异步，测试通过同一运行时入口驱动它。
+fn save_patch(destination_path: String, patch: String) -> Result<(), LoreCommandError> {
+    tauri::async_runtime::block_on(lore_write_patch_file(destination_path, patch))
+}
+
 #[test]
 fn patch_write_command_preserves_real_unified_diff_content() {
     let directory = tempfile::tempdir().expect("A temporary patch directory should be created");
     let destination = directory.path().join("workspace.patch");
     let patch = "--- a/Content/World.txt\n+++ b/Content/World.txt\n@@ -1 +1 @@\n-old\n+new\n";
 
-    lore_write_patch_file(destination.to_string_lossy().into_owned(), patch.to_owned())
+    save_patch(destination.to_string_lossy().into_owned(), patch.to_owned())
         .expect("A patch with a valid parent directory should be written");
 
     assert_eq!(
@@ -3057,15 +3062,14 @@ fn patch_write_command_only_targets_patch_extensions() {
 
     for name in ["settings.toml", "run.sh", "authorized_keys", ".bashrc"] {
         let destination = directory.path().join(name);
-        let error =
-            lore_write_patch_file(destination.to_string_lossy().into_owned(), patch.to_owned())
-                .expect_err("A non-patch destination must be rejected");
+        let error = save_patch(destination.to_string_lossy().into_owned(), patch.to_owned())
+            .expect_err("A non-patch destination must be rejected");
         assert_eq!(error.code, "invalid_patch_destination");
         assert!(!destination.exists(), "{name} must not be created");
     }
 
     let uppercase = directory.path().join("WORKSPACE.DIFF");
-    lore_write_patch_file(uppercase.to_string_lossy().into_owned(), patch.to_owned())
+    save_patch(uppercase.to_string_lossy().into_owned(), patch.to_owned())
         .expect("Extensions are matched case-insensitively");
     assert!(uppercase.is_file());
 }
