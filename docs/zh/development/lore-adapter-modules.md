@@ -34,7 +34,7 @@
 
 ## 依赖规则
 
-1. React 仍只通过 `src/services/lore.ts` 调用 IPC，不依赖 Rust 模块布局。
+1. React 仍只通过 `src/services/lore/` 调用 IPC，不依赖 Rust 模块布局。
 2. `src-tauri/src/lib.rs` 只注册命令，不放置 Lore 业务逻辑。
 3. 跨领域共享 DTO 和结构化错误保留在根门面；仅单领域使用的结构体留在对应模块。
 4. 新增命令时先选择现有领域模块，并同步在 `lib.rs` 注册；只有出现清晰且独立的新职责时才新增模块。

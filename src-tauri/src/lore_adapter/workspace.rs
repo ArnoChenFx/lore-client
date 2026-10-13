@@ -280,39 +280,6 @@ pub async fn lore_revision_files(
     .await
 }
 
-/// 按需读取一个工作区文件或指定 Revision 中的二进制预览或大小元数据。
-///
-/// `revision` 为空时读取工作区真实文件；非空时只读取该不可变 Revision Tree 中
-/// 精确匹配的内容。完整正文执行用户配置的大小限制；大型 Blender/Unreal 主包只读取
-/// 有界缩略图区间，未知格式或 metadata-only 请求只返回大小且不读取正文。
-#[tauri::command]
-pub async fn lore_file_preview(
-    repository_path: String,
-    path: String,
-    revision: Option<String>,
-    metadata_only: Option<bool>,
-    preview_limit_mib: Option<f64>,
-) -> Result<tauri::ipc::Response, LoreCommandError> {
-    let revision = revision
-        .map(|value| validate_revision(&value))
-        .transpose()?;
-    // IPC 参数不能未经检查直接参与内存预算；Rust 仍拒绝零值、非有限值和字节换算溢出。
-    let preview_limit_bytes =
-        binary_preview_limit_bytes(preview_limit_mib.unwrap_or(DEFAULT_BINARY_PREVIEW_LIMIT_MIB))
-            .map_err(|error| LoreCommandError::new(error.code, error.message))?;
-    run_heavy_lore_task(&FILE_PREVIEW_READ_LANE, move || {
-        build_file_preview(
-            &repository_path,
-            &path,
-            revision.as_deref(),
-            metadata_only.unwrap_or(false),
-            preview_limit_bytes,
-        )
-        .and_then(encode_file_preview_response)
-    })
-    .await
-}
-
 /// 以有序小块把单文件预览送入 WebView。
 ///
 /// 后端读取、格式校验和资产预处理仍完整位于 blocking 任务；变化只发生在 IPC 交付
@@ -768,39 +735,6 @@ pub async fn lore_open_external_merge(
         )
     })
     .await
-}
-
-/// 把真实 unified patch 写入临时目录并交给系统关联应用。
-#[tauri::command]
-pub fn lore_open_patch(file_name: String, patch: String) -> Result<String, LoreCommandError> {
-    validate_patch_content(&patch)?;
-    let safe_name = sanitize_patch_name(&file_name);
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| {
-            LoreCommandError::new(
-                "system_time_invalid",
-                format!("Failed to create a temporary patch because the system clock is invalid: {error}"),
-            )
-        })?
-        .as_nanos();
-    let destination = std::env::temp_dir().join(format!("lore-client-{unique}-{safe_name}.patch"));
-    std::fs::write(&destination, patch).map_err(|error| {
-        LoreCommandError::new(
-            "patch_write_failed",
-            format!(
-                "Failed to write temporary patch {}: {error}",
-                destination.display()
-            ),
-        )
-    })?;
-    open::that(&destination).map_err(|error| {
-        LoreCommandError::new(
-            "patch_open_failed",
-            format!("Failed to open the patch with the associated system application: {error}"),
-        )
-    })?;
-    Ok(destination.to_string_lossy().into_owned())
 }
 
 /// 把 unified patch 保存到用户通过原生对话框明确选择的位置。

@@ -52,9 +52,9 @@ bun tauri build --debug --no-bundle
 | Revision、本地更改、分支等领域界面与工作流 | `src/features/<domain>/` |
 | 跨领域基础控件与纯函数 | `src/shared/ui/`、`src/shared/lib/` |
 | 前端稳定数据类型 | `src/types.ts` |
-| 前端 Lore 调用 | `src/services/lore.ts` |
+| 前端 Lore 调用 | `src/services/lore/` |
 | 原生 Lore 操作 | `src-tauri/src/lore_adapter.rs`、`src-tauri/src/lib.rs` |
-| Revision 作者离线显示缓存 | `src-tauri/src/revision_author_cache.rs`、`src/services/lore.ts` |
+| Revision 作者离线显示缓存 | `src-tauri/src/revision_author_cache.rs`、`src/services/lore/` |
 | 偏好与持久化布局 | `src/services/preferences.ts`、`src/hooks/` |
 | 中英文界面文案 | `src/i18n/locales/` |
 | 浏览器预览样例数据 | `src/data.ts` |
@@ -81,7 +81,7 @@ bun tauri build --debug --no-bundle
 保持统一的接入路径：
 
 1. 在 `src/types.ts` 中定义或更新稳定前端 DTO。
-2. 在 `src/services/lore.ts` 中增加前端操作。
+2. 在 `src/services/lore/` 对应的领域模块中增加前端操作。
 3. 将功能状态与工作流编排放入对应的 `src/features/<domain>/` 模块，由
    `src/app/` 组合其窄接口控制器，并让 `src/App.tsx` 保持为应用根。
 4. 在 `src-tauri/src/lore_adapter.rs` 中实现原生命令，并在 `src-tauri/src/lib.rs` 中注册。
@@ -142,7 +142,7 @@ git lfs ls-files
 以下规则保护最重要的跨模块行为：
 
 - React 组件依赖 `src/types.ts` 中的稳定 DTO，不直接依赖 Lore Rust 或 C 类型。
-- 前端 Lore 操作统一经过 `src/services/lore.ts`；原生校验与仓库操作保留在 `src-tauri`。
+- 前端 Lore 操作统一经过 `src/services/lore/`；原生校验与仓库操作保留在 `src-tauri`。
 - 用户可见文案在两种支持语言中同步本地化。
 - 仓库写操作必须保留真实状态并明确呈现失败；破坏性操作需要清晰的用户确认。
 - 应用持久化偏好统一使用共享偏好流程。

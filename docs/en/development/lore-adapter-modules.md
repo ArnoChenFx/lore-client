@@ -34,7 +34,7 @@ Support items default to `pub(super)` visibility for the `lore_adapter` parent. 
 
 ## Dependency rules
 
-1. React continues to call IPC only through `src/services/lore.ts` and does not depend on the Rust module layout.
+1. React continues to call IPC only through `src/services/lore/` and does not depend on the Rust module layout.
 2. `src-tauri/src/lib.rs` registers commands only; Lore business logic does not belong there.
 3. Cross-domain DTOs and structured errors remain in the facade; domain-only structures stay in their owning module.
 4. Add a new command to an existing domain module and register it in `lib.rs`. Create a module only for a distinct, durable responsibility.
