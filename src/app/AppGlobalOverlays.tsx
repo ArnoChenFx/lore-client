@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react'
+import { lazy, Suspense, type ComponentProps } from 'react'
 
 import { OperationCenter } from '../features/operations'
 import {
@@ -10,8 +10,17 @@ import {
 import { AboutDialog } from './components/AboutDialog'
 import { CommandPalette } from './components/CommandPalette'
 import { SearchDialog } from './components/SearchDialog'
-import { SettingsDialog } from './components/SettingsDialog'
-import { UpdateDialog } from './components/UpdateDialog'
+
+/*
+ * 设置页与更新说明各自带有独立依赖：更新说明需要 react-markdown 解析链，只在检测到新版本
+ * 时出现；设置页只在用户打开时出现。两者都延迟加载，不进入每次启动都要解析的主包。
+ */
+const SettingsDialog = lazy(() =>
+  import('./components/SettingsDialog').then((module) => ({ default: module.SettingsDialog }))
+)
+const UpdateDialog = lazy(() =>
+  import('./components/UpdateDialog').then((module) => ({ default: module.UpdateDialog }))
+)
 
 interface AppGlobalOverlaysProps {
   commandPalette: ComponentProps<typeof CommandPalette> | null
@@ -50,11 +59,19 @@ export function AppGlobalOverlays({
       {initialization && <InitializeRepositoryDialog {...initialization} />}
       {server && <ServerDialog {...server} />}
       {clone && <CloneDialog {...clone} />}
-      {settings && <SettingsDialog {...settings} />}
+      {settings && (
+        <Suspense fallback={null}>
+          <SettingsDialog {...settings} />
+        </Suspense>
+      )}
       {search && <SearchDialog {...search} />}
       {operations && <OperationCenter {...operations} />}
       {about && <AboutDialog {...about} />}
-      {update && <UpdateDialog {...update} />}
+      {update && (
+        <Suspense fallback={null}>
+          <UpdateDialog {...update} />
+        </Suspense>
+      )}
       {remoteAuthentication && <RemoteAuthenticationDialog {...remoteAuthentication} />}
     </>
   )

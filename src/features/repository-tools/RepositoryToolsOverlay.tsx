@@ -1,5 +1,14 @@
-import { RepositoryToolsDialog } from './components/RepositoryToolsDialog'
+import { lazy, Suspense } from 'react'
+
 import type { RepositoryToolsController } from './types'
+
+/*
+ * 工具面板包含依赖图、诊断、认证账号等大量子面板，而绝大多数会话从不打开它。
+ * 只有控制器真正给出 dialogProps 时才加载，避免它们进入每次启动都要解析的主包。
+ */
+const RepositoryToolsDialog = lazy(() =>
+  import('./components/RepositoryToolsDialog').then((module) => ({ default: module.RepositoryToolsDialog }))
+)
 
 interface RepositoryToolsOverlayProps {
   controller: RepositoryToolsController
@@ -13,5 +22,9 @@ interface RepositoryToolsOverlayProps {
  */
 export function RepositoryToolsOverlay({ controller }: RepositoryToolsOverlayProps) {
   if (!controller.dialogProps) return null
-  return <RepositoryToolsDialog {...controller.dialogProps} />
+  return (
+    <Suspense fallback={null}>
+      <RepositoryToolsDialog {...controller.dialogProps} />
+    </Suspense>
+  )
 }

@@ -718,8 +718,16 @@ pub async fn lore_open_external_diff(
 }
 
 /// 探测已配置工具的显式路径或系统 PATH；失效工具不返回，前端据此隐藏菜单入口。
+/// 探测会对 PATH 中的每个目录、每种扩展名做文件系统查询（Windows 上可达数千次），
+/// 因此整体放到后台线程执行。
 #[tauri::command]
-pub fn lore_detect_external_tools(
+pub async fn lore_detect_external_tools(
+    tools: Vec<ExternalDiffTool>,
+) -> Result<Vec<ExternalToolAvailability>, LoreCommandError> {
+    run_lore_task(move || detect_external_tools(tools)).await
+}
+
+fn detect_external_tools(
     tools: Vec<ExternalDiffTool>,
 ) -> Result<Vec<ExternalToolAvailability>, LoreCommandError> {
     if tools.len() > 64 {
@@ -799,11 +807,16 @@ pub fn lore_open_patch(file_name: String, patch: String) -> Result<String, LoreC
 ///
 /// 该命令能写入任意绝对路径，因此只接受 `.patch` 与 `.diff` 扩展名，与保存对话框的
 /// 过滤器保持一致；这样即使 WebView 被注入脚本，也无法借此覆盖 rc 文件、配置文件等。
+/// 补丁可达 10 MB，写盘放到后台线程执行，避免阻塞 WebView 所在的主线程。
 #[tauri::command]
-pub fn lore_write_patch_file(
+pub async fn lore_write_patch_file(
     destination_path: String,
     patch: String,
 ) -> Result<(), LoreCommandError> {
+    run_lore_task(move || write_patch_file(destination_path, patch)).await
+}
+
+fn write_patch_file(destination_path: String, patch: String) -> Result<(), LoreCommandError> {
     validate_patch_content(&patch)?;
     let destination = PathBuf::from(destination_path.trim());
     if !destination.is_absolute() || destination.file_name().is_none() {
