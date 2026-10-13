@@ -724,16 +724,7 @@ pub(super) fn launch_external_merge(
                  * 工具启动时工作区没有该文件，按需求先使用临时 MERGED。退出后仅在
                  * 目标仍不存在时回写，避免覆盖合并期间由其他进程新建的真实内容。
                  */
-                if !target.exists() {
-                    if let Some(parent) = target.parent() {
-                        let _ = fs::create_dir_all(parent);
-                        let parent_is_safe = fs::canonicalize(parent)
-                            .is_ok_and(|resolved| resolved.starts_with(&copy_back_root));
-                        if parent_is_safe {
-                            let _ = fs::copy(&merged, target);
-                        }
-                    }
-                }
+                let _ = copy_back_merged_result(&merged, &target, &copy_back_root);
             }
         }
         std::thread::sleep(Duration::from_secs(30));
@@ -745,6 +736,41 @@ pub(super) fn launch_external_merge(
         process_id,
         temporary_file_count: 3 + u8::from(copy_back_needed),
     })
+}
+
+/// 把外部 Merge 的临时 MERGED 回写到工作区中原本不存在的目标文件。
+///
+/// 任何写入或建目录之前，都要确认目标位置及其已存在的祖先解析后仍位于仓库内；目标
+/// 路径上存在的任何条目（包括指向仓库外的悬空符号链接）都视为已占用，不覆盖。返回
+/// `true` 表示已经写入。
+pub(super) fn copy_back_merged_result(
+    merged: &Path,
+    target: &Path,
+    repository_root: &Path,
+) -> std::io::Result<bool> {
+    if fs::symlink_metadata(target).is_ok() {
+        return Ok(false);
+    }
+    let Some(parent) = target.parent() else {
+        return Ok(false);
+    };
+    let mut existing_ancestor = parent;
+    while !existing_ancestor.exists() {
+        match existing_ancestor.parent() {
+            Some(next) => existing_ancestor = next,
+            None => return Ok(false),
+        }
+    }
+    if !fs::canonicalize(existing_ancestor)?.starts_with(repository_root) {
+        return Ok(false);
+    }
+
+    fs::create_dir_all(parent)?;
+    if !fs::canonicalize(parent)?.starts_with(repository_root) {
+        return Ok(false);
+    }
+    fs::copy(merged, target)?;
+    Ok(true)
 }
 
 /// 限制通过 IPC 传入的补丁大小，避免意外把超大二进制内容复制到内存或磁盘。
@@ -816,4 +842,82 @@ pub(super) fn build_ignore_rules(
 
 pub(super) fn to_lore_array(paths: Vec<String>) -> LoreArray<LoreString> {
     LoreArray::from_vec(paths.into_iter().map(LoreString::from).collect())
+}
+
+#[cfg(test)]
+mod copy_back_tests {
+    use super::*;
+
+    /// 返回 (仓库根, 仓库外的兄弟目录, 临时 MERGED 文件)。两个目录都是规范路径。
+    fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
+        let sandbox = tempfile::tempdir().expect("sandbox should exist");
+        let repository = sandbox.path().join("repository");
+        let outside = sandbox.path().join("outside");
+        fs::create_dir_all(&repository).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let repository = fs::canonicalize(&repository).unwrap();
+        let outside = fs::canonicalize(&outside).unwrap();
+        let merged = sandbox.path().join("merged.txt");
+        fs::write(&merged, "merged content").unwrap();
+        (sandbox, repository, outside, merged)
+    }
+
+    #[test]
+    fn copies_into_a_missing_nested_target_inside_the_repository() {
+        let (_sandbox, repository, _outside, merged) = fixture();
+        let target = repository.join("Content").join("Hero.txt");
+
+        let copied = copy_back_merged_result(&merged, &target, &repository).unwrap();
+
+        assert!(copied);
+        assert_eq!(fs::read_to_string(&target).unwrap(), "merged content");
+    }
+
+    #[test]
+    fn never_overwrites_an_existing_workspace_file() {
+        let (_sandbox, repository, _outside, merged) = fixture();
+        let target = repository.join("Hero.txt");
+        fs::write(&target, "created while the tool was open").unwrap();
+
+        let copied = copy_back_merged_result(&merged, &target, &repository).unwrap();
+
+        assert!(!copied);
+        assert_eq!(
+            fs::read_to_string(&target).unwrap(),
+            "created while the tool was open"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn does_not_write_through_a_dangling_symlink_pointing_outside() {
+        let (_sandbox, repository, outside, merged) = fixture();
+        let escape = outside.join("escaped.txt");
+        let target = repository.join("Hero.txt");
+        std::os::unix::fs::symlink(&escape, &target).unwrap();
+
+        let copied = copy_back_merged_result(&merged, &target, &repository).unwrap();
+
+        assert!(!copied);
+        assert!(
+            !escape.exists(),
+            "the dangling link target must not be created"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn does_not_create_directories_through_a_symlinked_parent_outside_the_repository() {
+        let (_sandbox, repository, outside, merged) = fixture();
+        std::os::unix::fs::symlink(&outside, repository.join("linked")).unwrap();
+        let target = repository.join("linked").join("deep").join("Hero.txt");
+
+        let copied = copy_back_merged_result(&merged, &target, &repository).unwrap();
+
+        assert!(!copied);
+        assert!(
+            !outside.join("deep").exists(),
+            "no directory may be created outside the repository"
+        );
+    }
 }
