@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use crate::asset_preview::{binary_preview_limit_bytes, DEFAULT_BINARY_PREVIEW_LIMIT_MIB};
+use crate::atomic_file::write_file_atomically;
 use crate::lore_adapter::{sync_auth_account_bindings, LoreCommandError};
 
 /// 当前偏好文件格式版本；后续调整字段语义时在 Rust 边界执行显式迁移。
@@ -332,7 +333,7 @@ fn write_preferences_file(
             format!("Failed to serialize client preferences: {error}"),
         )
     })?;
-    fs::write(path, format!("{content}\n")).map_err(|error| {
+    write_file_atomically(path, format!("{content}\n").as_bytes()).map_err(|error| {
         LoreCommandError::new(
             "preferences_write_failed",
             format!(
