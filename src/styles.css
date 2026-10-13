@@ -5613,6 +5613,83 @@ button.sidebar__repo-mark:focus-visible {
   border: 0 !important;
 }
 
+/* 操作进度片段：与相邻状态项同一行高；总量未知时只显示滑动条与计数，不给出百分比。 */
+.statusbar > .statusbar__progress {
+  min-width: 0;
+  flex: 0 1 auto;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--text-soft);
+}
+
+.statusbar__progress svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.statusbar__progress b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.statusbar__progress small {
+  min-width: 0;
+  overflow: hidden;
+  font-size: inherit;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+}
+
+.statusbar__progress-track {
+  position: relative;
+  display: block;
+  width: 88px;
+  height: 4px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.statusbar__progress-track > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.2s linear;
+}
+
+.statusbar__progress-track.is-indeterminate > i {
+  width: 36%;
+  animation: statusbar-progress-slide 1.3s ease-in-out infinite;
+}
+
+.statusbar__progress.is-stalled {
+  color: var(--warning);
+}
+
+.statusbar__progress.is-stalled .statusbar__progress-track > i {
+  background: var(--warning);
+}
+
+@keyframes statusbar-progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(280%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 全局规则会把动画压成单帧，滑块会停在轨道之外；改为静态半透明整条。 */
+  .statusbar__progress-track.is-indeterminate > i {
+    width: 100%;
+    animation: none;
+    opacity: 0.45;
+  }
+}
+
 .statusbar__version {
   color: var(--faint);
   font-family: var(--mono);

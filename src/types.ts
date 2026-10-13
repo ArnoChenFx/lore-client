@@ -656,6 +656,33 @@ export interface LoreOperationStreamEvent {
   cancellable: boolean
 }
 
+/** 进度主指标的计量单位：暂存数文件，提交 / 同步在总量定稿后数字节，推送数片段。 */
+export type OperationProgressUnit = 'files' | 'bytes' | 'fragments'
+
+/**
+ * Rust 端归一化后的进度快照（`LoreOperationStreamEvent.event.data` 的线上形状）。
+ *
+ * 所有操作共用同一结构；`total` 缺省表示总量未知，界面必须按不确定进度表达。
+ */
+export interface OperationProgress {
+  unit: OperationProgressUnit
+  current: number
+  total?: number
+  /** 总量不会再增长；`false` 时 `total` 只是“至少”（上游仍在发现待处理内容）。 */
+  totalFinal: boolean
+  /** 补充指标：以字节为主指标时的文件数。 */
+  files?: number
+  filesTotal?: number
+  /** 补充指标：以文件 / 片段为主指标时已传输的字节（推送没有可信的字节总量）。 */
+  bytes?: number
+  bytesTotal?: number
+  /** 推送按版本分步：第几个 / 共几个。 */
+  stepIndex?: number
+  stepCount?: number
+  /** 自操作开始的单调时钟毫秒数，由 Rust 端给出。 */
+  elapsedMs: number
+}
+
 /** 操作中心中的流式聚合记录，保留最近阶段和轻量指标，不复制大型事件载荷。 */
 export interface LoreOperationStreamRecord {
   operationId: string
@@ -668,6 +695,12 @@ export interface LoreOperationStreamRecord {
   current?: number
   total?: number
   bytes?: number
+  /** 最近一次归一化进度快照；旧事件（无 `unit`）不会产生该字段。 */
+  progress?: OperationProgress
+  /** 收到该快照时的墙钟时间，用于“长时间无进展”判断。 */
+  progressAt?: number
+  /** 主指标的平滑速率（单位 / 秒）。 */
+  progressRate?: number
   cancellable: boolean
 }
 
