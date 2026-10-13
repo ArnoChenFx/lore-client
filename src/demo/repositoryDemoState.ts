@@ -4,7 +4,7 @@ import type { ChangeFile, Revision } from '../types'
  * 以不可变方式切换单个演示文件的 Stage 状态。
  *
  * 该函数只服务不连接真实 Lore 后端的浏览器演示状态；真实仓库写入必须继续通过
- * `services/lore.ts` 与仓库写操作队列完成。
+ * `services/lore/` 与仓库写操作队列完成。
  */
 export function toggleDemoFileStage(files: ChangeFile[], fileId: string) {
   return files.map((file) => (file.id === fileId ? { ...file, staged: !file.staged } : file))

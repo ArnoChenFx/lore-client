@@ -52,9 +52,9 @@ bun tauri build --debug --no-bundle
 | Domain UI and workflows such as revisions, local changes, and branches | `src/features/<domain>/`                                |
 | Cross-domain primitives and pure helpers                               | `src/shared/ui/`, `src/shared/lib/`                     |
 | Stable frontend data types                                             | `src/types.ts`                                          |
-| Frontend Lore calls                                                    | `src/services/lore.ts`                                  |
+| Frontend Lore calls                                                    | `src/services/lore/`                                  |
 | Native Lore operations                                                 | `src-tauri/src/lore_adapter.rs`, `src-tauri/src/lib.rs` |
-| Offline Revision author display cache                                  | `src-tauri/src/revision_author_cache.rs`, `src/services/lore.ts` |
+| Offline Revision author display cache                                  | `src-tauri/src/revision_author_cache.rs`, `src/services/lore/` |
 | Preferences and persisted layout                                       | `src/services/preferences.ts`, `src/hooks/`             |
 | English and Chinese UI text                                            | `src/i18n/locales/`                                     |
 | Browser-preview sample data                                            | `src/data.ts`                                           |
@@ -82,7 +82,7 @@ should import from the domain root `index.ts` instead of reaching into another d
 Keep the integration path consistent:
 
 1. Define or update the stable frontend DTO in `src/types.ts`.
-2. Add the frontend operation in `src/services/lore.ts`.
+2. Add the frontend operation in the matching domain module under `src/services/lore/`.
 3. Keep feature state and orchestration in the matching `src/features/<domain>/` module; let
    `src/app/` compose its narrow controller interface and keep `src/App.tsx` as the application root.
 4. Implement the native command in `src-tauri/src/lore_adapter.rs` and register it in `src-tauri/src/lib.rs`.
@@ -148,7 +148,7 @@ git lfs ls-files
 These rules protect the most important cross-module behavior:
 
 - React components depend on the stable DTOs in `src/types.ts`, not Lore Rust or C types.
-- Frontend Lore operations go through `src/services/lore.ts`; native validation and repository operations stay in `src-tauri`.
+- Frontend Lore operations go through `src/services/lore/`; native validation and repository operations stay in `src-tauri`.
 - User-visible text is localized in both supported languages.
 - Repository writes must preserve real state and expose failures; destructive actions require clear user confirmation.
 - Persistent application preferences use the shared preferences flow.

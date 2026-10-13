@@ -630,7 +630,7 @@ export interface LoreAuthIdentity {
  * Lore Core 的事件枚举在 Rust 端使用 `tagName` 和 `data` 序列化。
  *
  * 这里刻意保留未知数据，而不是为 nightly 版本复制完整类型树。组件只消费
- * `RepositorySnapshot`，上游事件变化只会影响 `services/lore.ts` 中的归一化逻辑。
+ * `RepositorySnapshot`，上游事件变化只会影响 `services/lore/` 中的归一化逻辑。
  */
 export interface LoreEvent {
   tagName: string

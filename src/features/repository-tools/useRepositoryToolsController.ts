@@ -282,7 +282,7 @@ interface UseRepositoryToolsControllerOptions {
  * Repository Tools 的领域控制器。
  *
  * 控制器拥有页签资源、惰性读取、写操作和对话框契约；App 仅负责提供统一仓库写入入口
- * 与少量跨领域导航。所有真实 Lore 调用仍经过 `services/lore.ts`，组件不接触 IPC。
+ * 与少量跨领域导航。所有真实 Lore 调用仍经过 `services/lore/`，组件不接触 IPC。
  */
 export function useRepositoryToolsController({
   applicationMode,
