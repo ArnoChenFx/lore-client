@@ -2353,11 +2353,6 @@ export async function openExternalMerge(request: ExternalMergeRequest): Promise<
   return invokeCommand<ExternalDiffLaunchResult>('lore_open_external_merge', { ...request })
 }
 
-/** 把真实 unified patch 交给系统关联应用。 */
-export async function openPatchExternally(fileName: string, patch: string): Promise<string> {
-  return invokeCommand<string>('lore_open_patch', { fileName, patch })
-}
-
 /**
  * 保证补丁保存路径带 `.patch` 或 `.diff` 扩展名；Rust 端只接受这两种扩展名。
  * 原生对话框在部分平台不会自动补全过滤器扩展名，因此这里统一补上 `.patch`。

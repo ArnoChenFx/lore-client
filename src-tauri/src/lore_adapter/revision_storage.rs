@@ -1101,13 +1101,6 @@ pub(super) fn encode_file_preview_envelope(
     Ok(envelope)
 }
 
-/// 为仍依赖单响应 Raw IPC 的诊断入口保留兼容包装。
-pub(super) fn encode_file_preview_response(
-    preview: LoreFilePreview,
-) -> Result<tauri::ipc::Response, LoreCommandError> {
-    encode_file_preview_envelope(preview).map(tauri::ipc::Response::new)
-}
-
 /// 统一把工作区文件或 Revision 临时文件交给大型资产随机读取器。
 fn build_large_asset_preview_from_reader(
     relative_path: &Path,

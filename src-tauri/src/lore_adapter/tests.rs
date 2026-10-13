@@ -2860,15 +2860,6 @@ fn ignore_extension_rejects_files_without_extensions() {
 }
 
 #[test]
-fn temporary_patch_file_name_does_not_preserve_directory_semantics() {
-    assert_eq!(
-        sanitize_patch_name("../Content/World Map.ini"),
-        ".._Content_World_Map.ini",
-    );
-    assert_eq!(sanitize_patch_name("////"), "workspace-change");
-}
-
-#[test]
 fn external_diff_arguments_replace_paths_without_shell_splitting() {
     let tool = ExternalDiffTool {
         id: "diff-test".to_owned(),

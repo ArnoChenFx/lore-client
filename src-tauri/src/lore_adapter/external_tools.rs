@@ -791,26 +791,6 @@ pub(super) fn validate_patch_content(patch: &str) -> Result<(), LoreCommandError
     Ok(())
 }
 
-/// 为临时补丁生成不包含目录语义的可读文件名。
-pub(super) fn sanitize_patch_name(file_name: &str) -> String {
-    let sanitized = file_name
-        .chars()
-        .map(|character| {
-            if character.is_alphanumeric() || matches!(character, '.' | '-' | '_') {
-                character
-            } else {
-                '_'
-            }
-        })
-        .take(96)
-        .collect::<String>();
-    if sanitized.trim_matches(['.', '_']).is_empty() {
-        "workspace-change".to_owned()
-    } else {
-        sanitized
-    }
-}
-
 /// 从安全仓库路径生成 `.loreignore` 规则，扩展名模式会自动去重。
 pub(super) fn build_ignore_rules(
     paths: &[String],
