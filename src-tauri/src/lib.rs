@@ -1,6 +1,7 @@
 mod app_logging;
 mod application_links;
 mod asset_preview;
+mod atomic_file;
 mod client_preferences;
 mod lore_adapter;
 mod revision_author_cache;

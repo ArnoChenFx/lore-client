@@ -3051,6 +3051,26 @@ fn patch_write_command_preserves_real_unified_diff_content() {
 }
 
 #[test]
+fn patch_write_command_only_targets_patch_extensions() {
+    let directory = tempfile::tempdir().expect("A temporary patch directory should be created");
+    let patch = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n";
+
+    for name in ["settings.toml", "run.sh", "authorized_keys", ".bashrc"] {
+        let destination = directory.path().join(name);
+        let error =
+            lore_write_patch_file(destination.to_string_lossy().into_owned(), patch.to_owned())
+                .expect_err("A non-patch destination must be rejected");
+        assert_eq!(error.code, "invalid_patch_destination");
+        assert!(!destination.exists(), "{name} must not be created");
+    }
+
+    let uppercase = directory.path().join("WORKSPACE.DIFF");
+    lore_write_patch_file(uppercase.to_string_lossy().into_owned(), patch.to_owned())
+        .expect("Extensions are matched case-insensitively");
+    assert!(uppercase.is_file());
+}
+
+#[test]
 fn server_url_validates_scheme_and_removes_trailing_slash() {
     assert_eq!(
         validate_server_url(" lore://127.0.0.1:41337/ ").unwrap(),
@@ -3085,6 +3105,9 @@ fn revision_history_args_preserve_branch_date_and_only_branch_filter() {
 #[test]
 fn diagnostic_paths_reject_absolute_and_parent_traversal_inputs() {
     assert!(validate_repository_relative_path("../outside").is_err());
+    assert!(validate_repository_relative_path("/outside").is_err());
+    // 盘符前缀只在 Windows 上是路径前缀；Linux 上 `C:` 只是普通文件名字符。
+    #[cfg(windows)]
     assert!(validate_repository_relative_path("C:\\outside").is_err());
     assert_eq!(
         validate_repository_relative_path("Content/Maps/World.umap")

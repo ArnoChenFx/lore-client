@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "check": "tsc -b --pretty false",
-    "test": "vitest run",
+    "test": "bun test",
     "test:ui": "bun scripts/cdp-smoke.mjs",
     "test:visual": "bun scripts/visual-audit.mjs",
     "release:prepare": "bun scripts/prepare-release.mjs",
@@ -55,5 +55,8 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.3",
     "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "tinypool": "2.1.2"
   }
 }

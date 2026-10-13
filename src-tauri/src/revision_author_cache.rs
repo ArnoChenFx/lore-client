@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+use crate::atomic_file::write_file_atomically;
 use crate::lore_adapter::LoreCommandError;
 
 const CACHE_FILE_NAME: &str = "revision-author-cache.json";
@@ -179,7 +180,7 @@ fn write_cache_file(path: &Path, cache: &RevisionAuthorCacheFile) -> Result<(), 
             format!("Failed to serialize Revision author cache: {error}"),
         )
     })?;
-    fs::write(path, format!("{content}\n")).map_err(|error| {
+    write_file_atomically(path, format!("{content}\n").as_bytes()).map_err(|error| {
         LoreCommandError::new(
             "revision_author_cache_write_failed",
             format!(

@@ -13,7 +13,8 @@ import {
   parseDiagnosticReport,
   repositoryPublishFailureMessage,
   resolveDefaultServerUrl,
-  revisionDiffsToChangeFiles
+  revisionDiffsToChangeFiles,
+  withPatchExtension
 } from './lore'
 
 const repositoryPath = 'E:\\Worlds\\RealLore'
@@ -1395,5 +1396,17 @@ describe('Lore event adapter', () => {
         { kind: 'error', summary: 'corrupt node', error: true }
       ]
     })
+  })
+})
+
+describe('patch save path normalization', () => {
+  it('keeps .patch and .diff destinations unchanged regardless of case', () => {
+    expect(withPatchExtension('/work/Changes.patch')).toBe('/work/Changes.patch')
+    expect(withPatchExtension('/work/Changes.DIFF')).toBe('/work/Changes.DIFF')
+  })
+
+  it('appends .patch to destinations the native dialog returned without a patch extension', () => {
+    expect(withPatchExtension('/work/Changes')).toBe('/work/Changes.patch')
+    expect(withPatchExtension('/work/Changes.txt')).toBe('/work/Changes.txt.patch')
   })
 })

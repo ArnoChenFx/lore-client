@@ -796,6 +796,9 @@ pub fn lore_open_patch(file_name: String, patch: String) -> Result<String, LoreC
 }
 
 /// 把 unified patch 保存到用户通过原生对话框明确选择的位置。
+///
+/// 该命令能写入任意绝对路径，因此只接受 `.patch` 与 `.diff` 扩展名，与保存对话框的
+/// 过滤器保持一致；这样即使 WebView 被注入脚本，也无法借此覆盖 rc 文件、配置文件等。
 #[tauri::command]
 pub fn lore_write_patch_file(
     destination_path: String,
@@ -807,6 +810,18 @@ pub fn lore_write_patch_file(
         return Err(LoreCommandError::new(
             "invalid_patch_destination",
             "The patch destination must be an absolute path that includes a file name",
+        ));
+    }
+    let has_patch_extension = destination
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("patch") || extension.eq_ignore_ascii_case("diff")
+        });
+    if !has_patch_extension {
+        return Err(LoreCommandError::new(
+            "invalid_patch_destination",
+            "The patch destination must end with .patch or .diff",
         ));
     }
     let parent = destination.parent().ok_or_else(|| {
