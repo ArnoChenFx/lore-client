@@ -10,12 +10,14 @@ import {
 import { AboutDialog } from './components/AboutDialog'
 import { CommandPalette } from './components/CommandPalette'
 import { SearchDialog } from './components/SearchDialog'
-import { SettingsDialog } from './components/SettingsDialog'
 
 /*
- * 更新说明需要 react-markdown 及其 remark/micromark 解析链。它只在检测到新版本时出现，
- * 因此延迟加载，避免这条解析链进入每次启动都要解析的主包。
+ * 设置页与更新说明各自带有独立依赖：更新说明需要 react-markdown 解析链，只在检测到新版本
+ * 时出现；设置页只在用户打开时出现。两者都延迟加载，不进入每次启动都要解析的主包。
  */
+const SettingsDialog = lazy(() =>
+  import('./components/SettingsDialog').then((module) => ({ default: module.SettingsDialog }))
+)
 const UpdateDialog = lazy(() =>
   import('./components/UpdateDialog').then((module) => ({ default: module.UpdateDialog }))
 )
@@ -57,7 +59,11 @@ export function AppGlobalOverlays({
       {initialization && <InitializeRepositoryDialog {...initialization} />}
       {server && <ServerDialog {...server} />}
       {clone && <CloneDialog {...clone} />}
-      {settings && <SettingsDialog {...settings} />}
+      {settings && (
+        <Suspense fallback={null}>
+          <SettingsDialog {...settings} />
+        </Suspense>
+      )}
       {search && <SearchDialog {...search} />}
       {operations && <OperationCenter {...operations} />}
       {about && <AboutDialog {...about} />}
