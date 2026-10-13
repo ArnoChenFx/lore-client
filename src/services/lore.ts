@@ -2358,16 +2358,25 @@ export async function openPatchExternally(fileName: string, patch: string): Prom
   return invokeCommand<string>('lore_open_patch', { fileName, patch })
 }
 
+/**
+ * 保证补丁保存路径带 `.patch` 或 `.diff` 扩展名；Rust 端只接受这两种扩展名。
+ * 原生对话框在部分平台不会自动补全过滤器扩展名，因此这里统一补上 `.patch`。
+ */
+export function withPatchExtension(path: string): string {
+  return /\.(patch|diff)$/i.test(path) ? path : `${path}.patch`
+}
+
 /** 通过原生保存对话框选择位置，并由 Rust 完成补丁写入。 */
 export async function savePatchFile(suggestedName: string, patch: string): Promise<string | null> {
-  const destinationPath = await save({
+  const selectedPath = await save({
     title: t('saveWorkspacePatch'),
     defaultPath: suggestedName.endsWith('.patch') ? suggestedName : `${suggestedName}.patch`,
     filters: [{ name: t('unifiedDiffPatch'), extensions: ['patch', 'diff'] }]
   })
-  if (!destinationPath) {
+  if (!selectedPath) {
     return null
   }
+  const destinationPath = withPatchExtension(selectedPath)
   await invokeCommand<void>('lore_write_patch_file', {
     destinationPath,
     patch
