@@ -99,6 +99,7 @@ pub(crate) mod history;
 pub(crate) mod maintenance;
 mod operation_support;
 pub(crate) mod operations;
+mod progress;
 pub(crate) mod repository;
 mod repository_lifecycle;
 mod revision_storage;

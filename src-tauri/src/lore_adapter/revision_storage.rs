@@ -393,7 +393,6 @@ pub(super) fn run_storage_get_operation(
     let capture = Arc::new(Mutex::new(StorageGetCapture::default()));
     let event_target = Arc::clone(&events);
     let capture_target = Arc::clone(&capture);
-    let callback_operation_id = operation_id.clone();
     let callback: LoreEventCallback = Some(Box::new(move |event: &LoreEvent| {
         let payload_handled = match event {
             LoreEvent::StorageGetHeader(data) => {
@@ -424,17 +423,6 @@ pub(super) fn run_storage_get_operation(
         }
 
         let serialized = serialize_lore_event(event);
-        if let Some(summary) = operation_stream_summary(&serialized) {
-            emit_operation_stream(LoreOperationStreamEvent {
-                operation_id: callback_operation_id.clone(),
-                operation: OPERATION,
-                phase: "streaming",
-                event: Some(summary),
-                status: None,
-                duration_ms: None,
-                cancellable: false,
-            });
-        }
         if let Ok(mut target) = event_target.lock() {
             target.push(serialized);
         }

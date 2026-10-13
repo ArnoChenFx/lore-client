@@ -2467,53 +2467,6 @@ fn targeted_revision_tree_walk_prunes_unrelated_directories_and_files() {
 }
 
 #[test]
-fn operation_stream_drops_large_non_progress_payloads() {
-    let event = serde_json::json!({
-        "tagName": "fileDiff",
-        "data": {
-            "path": "Content/Hero.txt",
-            "patch": "x".repeat(1024 * 1024)
-        }
-    });
-
-    assert!(operation_stream_summary(&event).is_none());
-}
-
-#[test]
-fn operation_stream_keeps_only_bounded_progress_metrics() {
-    let event = serde_json::json!({
-        "tagName": "cloneProgress",
-        "data": {
-            "current": 4,
-            "total": 10,
-            "bytes": 8192,
-            "patch": "must not cross the stream boundary"
-        }
-    });
-
-    assert_eq!(
-        operation_stream_summary(&event),
-        Some(serde_json::json!({
-            "tagName": "cloneProgress",
-            "data": { "current": 4, "total": 10, "bytes": 8192 }
-        }))
-    );
-}
-
-#[test]
-fn operation_stream_rejects_business_counts_from_non_progress_events() {
-    let event = serde_json::json!({
-        "tagName": "branchListEnd",
-        "data": {
-            "count": 24,
-            "size": 8192
-        }
-    });
-
-    assert!(operation_stream_summary(&event).is_none());
-}
-
-#[test]
 fn revision_diff_adds_empty_new_files_without_text_hunks() {
     let source = vec![RevisionTreeFile {
         path: "existing.txt".to_owned(),

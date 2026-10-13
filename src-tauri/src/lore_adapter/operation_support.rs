@@ -3,6 +3,7 @@
 //! 本模块由原 `lore_adapter.rs` 按职责机械迁移而来。共享 DTO、调度与错误语义仍由
 //! 父模块统一管理，避免模块化重构改变现有 IPC 契约或 Lore 调用行为。
 
+use super::progress::{retain_in_result, ProgressAggregator};
 use super::*;
 
 /**
@@ -10,7 +11,7 @@ use super::*;
  *
  * 普通短读的完整结果已经由 IPC 返回，若仍为每次调用广播 queued/running/terminal，
  * 启动恢复会把大量无进度事件投递给页面 listener，并在 reload 后放大陈旧 callback。
- * 只有 Lore 实际给出受限数值进度时才开启全局流；首次进度按顺序补齐 queued 与
+ * 只有进度聚合器给出可显示的快照时才开启全局流；首次快照按顺序补齐 queued 与
  * running，后续保留 streaming，最终只为已开启的流发送 terminal。
  */
 struct OperationStreamLifecycle {
@@ -69,7 +70,42 @@ impl OperationStreamLifecycle {
     }
 }
 
-/// 运行操作并捕获完整 LoreEvent 序列。
+/**
+ * 把进度聚合器与全局流生命周期接在一起。
+ *
+ * 聚合器决定发什么、何时发，生命周期决定何时开流、何时收尾。事件回调只需要调用
+ * `observe` 并转发返回的事件，因此这条链路可以脱离 Tauri 做单元测试。
+ */
+struct OperationProgressStream {
+    aggregator: ProgressAggregator,
+    lifecycle: OperationStreamLifecycle,
+}
+
+impl OperationProgressStream {
+    fn new(operation_id: String, operation: &'static str, started_at: Instant) -> Self {
+        Self {
+            aggregator: ProgressAggregator::new(started_at),
+            lifecycle: OperationStreamLifecycle::new(operation_id, operation),
+        }
+    }
+
+    fn observe(&mut self, event: &LoreEvent, now: Instant) -> Vec<LoreOperationStreamEvent> {
+        match self.aggregator.observe(event, now) {
+            Some(snapshot) => self.lifecycle.progress_events(snapshot),
+            None => Vec::new(),
+        }
+    }
+
+    fn completion_event(&self, status: i32, duration_ms: u128) -> Option<LoreOperationStreamEvent> {
+        self.lifecycle.completion_event(status, duration_ms)
+    }
+}
+
+/// 运行操作并捕获 LoreEvent 序列。
+///
+/// 暂存和同步的逐文件事件以及各类进度 tick 只服务于实时显示，由进度聚合器消化后不再
+/// 进入返回结果：一万个文件就是约 1 MB 的 JSON，先驻留内存再经 IPC 复制一遍，前端
+/// 没有任何地方消费它们。
 pub(super) fn run_operation(
     operation: &'static str,
     call: impl FnOnce(LoreEventCallback) -> i32,
@@ -81,22 +117,23 @@ pub(super) fn run_operation(
     let started_at = Instant::now();
     let events = Arc::new(Mutex::new(Vec::<Value>::new()));
     let event_target = Arc::clone(&events);
-    let stream_lifecycle = Arc::new(Mutex::new(OperationStreamLifecycle::new(
+    let progress_stream = Arc::new(Mutex::new(OperationProgressStream::new(
         operation_id,
         operation,
+        started_at,
     )));
-    let callback_stream_lifecycle = Arc::clone(&stream_lifecycle);
+    let callback_progress_stream = Arc::clone(&progress_stream);
     let callback: LoreEventCallback = Some(Box::new(move |event: &LoreEvent| {
-        let serialized = serialize_lore_event(event);
-        if let Some(summary) = operation_stream_summary(&serialized) {
-            if let Ok(mut lifecycle) = callback_stream_lifecycle.lock() {
-                for stream_event in lifecycle.progress_events(summary) {
-                    emit_operation_stream(stream_event);
-                }
+        if let Ok(mut stream) = callback_progress_stream.lock() {
+            for stream_event in stream.observe(event, Instant::now()) {
+                emit_operation_stream(stream_event);
             }
         }
-        if let Ok(mut target) = event_target.lock() {
-            target.push(serialized);
+        if retain_in_result(event) {
+            let serialized = serialize_lore_event(event);
+            if let Ok(mut target) = event_target.lock() {
+                target.push(serialized);
+            }
         }
     }));
 
@@ -127,7 +164,7 @@ pub(super) fn run_operation(
     if status != 0 && operation_failure_indicates_unauthenticated(status, &events) {
         emit_remote_authentication_required(operation);
     }
-    let terminal_event = stream_lifecycle
+    let terminal_event = progress_stream
         .lock()
         .map_err(|_| {
             LoreCommandError::new(
@@ -157,43 +194,6 @@ pub(super) fn serialize_lore_event(event: &LoreEvent) -> Value {
             }
         })
     })
-}
-
-///
-/// 操作中心只消费进度数字；完整 Diff、Tree Child 和内容地址已经包含在最终 IPC 结果
-/// 中，不能再原样克隆并通过 Tauri Event 传输一次。这里只允许有限数字键，既保留
-/// Clone/Push 等长操作的实时进度，也让单个流事件拥有稳定且很小的内存上限。
-pub(super) fn operation_stream_summary(event: &Value) -> Option<Value> {
-    const PROGRESS_KEYS: [&str; 6] = ["current", "processed", "total", "count", "bytes", "size"];
-    const PROGRESS_SIGNALS: [&str; 5] = ["current", "processed", "total", "count", "bytes"];
-
-    let tag_name = event["tagName"].as_str()?;
-    /*
-     * Lore 的进度变体稳定序列化为 `progress` 或 `*Progress`。Branch/List/Status 等业务
-     * 结束事件也可能带 count、size，不能仅凭字段名把它们误判为实时进度，否则启动
-     * 短读仍会重新开启全局流并向 reload 前的陈旧 callback 广播。
-     */
-    if tag_name != "progress" && !tag_name.ends_with("Progress") {
-        return None;
-    }
-    let data = event["data"].as_object()?;
-    if !PROGRESS_SIGNALS
-        .iter()
-        .any(|key| data.get(*key).is_some_and(Value::is_number))
-    {
-        return None;
-    }
-
-    let mut summary = serde_json::Map::new();
-    for key in PROGRESS_KEYS {
-        if let Some(value) = data.get(key).filter(|value| value.is_number()) {
-            summary.insert(key.to_owned(), value.clone());
-        }
-    }
-    Some(serde_json::json!({
-        "tagName": tag_name,
-        "data": summary
-    }))
 }
 
 /// 从 Status 事件提取当前、staged 与 incoming Revision。
@@ -290,5 +290,80 @@ mod operation_stream_lifecycle_tests {
         assert_eq!(completed.phase, "succeeded");
         assert_eq!(completed.status, Some(0));
         assert_eq!(completed.duration_ms, Some(42));
+    }
+
+    fn event(json: &str) -> LoreEvent {
+        serde_json::from_str(json).unwrap_or_else(|error| panic!("bad fixture {json}: {error}"))
+    }
+
+    fn phases(events: &[LoreOperationStreamEvent]) -> Vec<&'static str> {
+        events.iter().map(|event| event.phase).collect()
+    }
+
+    // 来自真实本地仓库暂存 4003 个文件时的事件。
+    const STAGE_BEGIN: &str = r#"{"data":{"pathCount":1},"tagName":"fileStageBegin"}"#;
+    const STAGE_TICK: &str = r#"{"data":{"count":{"directoryAddCount":1,"directoryDeleteCount":0,"directoryModifyCount":0,"directoryMoveCount":0,"fileAddCount":3,"fileDeleteCount":0,"fileModifyCount":0,"fileMoveCount":0,"totalCount":4}},"tagName":"fileStageProgress"}"#;
+    const STAGE_END: &str = r#"{"data":{"count":{"directoryAddCount":41,"directoryDeleteCount":0,"directoryModifyCount":0,"directoryMoveCount":0,"fileAddCount":4003,"fileDeleteCount":0,"fileModifyCount":0,"fileMoveCount":0,"totalCount":4044}},"tagName":"fileStageEnd"}"#;
+
+    #[test]
+    fn short_operations_never_open_the_global_stream() {
+        let base = Instant::now();
+        let mut stream = OperationProgressStream::new("operation-3".to_owned(), "file.stage", base);
+
+        for json in [STAGE_BEGIN, STAGE_TICK, STAGE_END] {
+            assert!(stream
+                .observe(&event(json), base + Duration::from_millis(40))
+                .is_empty());
+        }
+        assert!(stream.completion_event(0, 40).is_none());
+    }
+
+    #[test]
+    fn slow_operations_stream_normalized_snapshots_and_close_with_a_terminal_event() {
+        let base = Instant::now();
+        let mut stream = OperationProgressStream::new("operation-4".to_owned(), "file.stage", base);
+
+        assert!(stream
+            .observe(&event(STAGE_BEGIN), base + Duration::from_millis(1))
+            .is_empty());
+        let opened = stream.observe(&event(STAGE_TICK), base + Duration::from_millis(320));
+        assert_eq!(phases(&opened), ["queued", "running", "streaming"]);
+        assert_eq!(
+            opened[2].event,
+            Some(serde_json::json!({
+                "tagName": "fileStageProgress",
+                "data": { "unit": "files", "current": 3, "totalFinal": false, "elapsedMs": 320 }
+            }))
+        );
+
+        // 结束事件是离散变化，不受 250 ms 节流限制；此时流已打开，只补一条 streaming。
+        let finished = stream.observe(&event(STAGE_END), base + Duration::from_millis(330));
+        assert_eq!(phases(&finished), ["streaming"]);
+        let data = &finished[0].event.as_ref().expect("snapshot")["data"];
+        assert_eq!(data["current"], 4003);
+        assert_eq!(data["total"], 4003);
+        assert_eq!(data["totalFinal"], true);
+
+        let terminal = stream
+            .completion_event(0, 340)
+            .expect("An opened stream should emit its terminal phase");
+        assert_eq!(terminal.phase, "succeeded");
+        assert_eq!(terminal.operation_id, "operation-4");
+    }
+
+    #[test]
+    fn payload_events_never_reach_the_stream() {
+        // 流上只有聚合器构造的小快照；大载荷事件既不开流，也不会被复制进去。
+        let base = Instant::now();
+        let mut stream = OperationProgressStream::new("operation-5".to_owned(), "file.diff", base);
+        let payload = "x".repeat(1024 * 1024);
+        let large = event(&format!(
+            r#"{{"tagName":"complete","data":{{"error":{{"errorCode":0,"message":"{payload}","traceLocations":[]}},"status":0}}}}"#
+        ));
+
+        assert!(stream
+            .observe(&large, base + Duration::from_secs(5))
+            .is_empty());
+        assert!(stream.completion_event(0, 5_000).is_none());
     }
 }
