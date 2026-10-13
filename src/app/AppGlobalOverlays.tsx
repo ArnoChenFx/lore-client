@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react'
+import { lazy, Suspense, type ComponentProps } from 'react'
 
 import { OperationCenter } from '../features/operations'
 import {
@@ -11,7 +11,14 @@ import { AboutDialog } from './components/AboutDialog'
 import { CommandPalette } from './components/CommandPalette'
 import { SearchDialog } from './components/SearchDialog'
 import { SettingsDialog } from './components/SettingsDialog'
-import { UpdateDialog } from './components/UpdateDialog'
+
+/*
+ * 更新说明需要 react-markdown 及其 remark/micromark 解析链。它只在检测到新版本时出现，
+ * 因此延迟加载，避免这条解析链进入每次启动都要解析的主包。
+ */
+const UpdateDialog = lazy(() =>
+  import('./components/UpdateDialog').then((module) => ({ default: module.UpdateDialog }))
+)
 
 interface AppGlobalOverlaysProps {
   commandPalette: ComponentProps<typeof CommandPalette> | null
@@ -54,7 +61,11 @@ export function AppGlobalOverlays({
       {search && <SearchDialog {...search} />}
       {operations && <OperationCenter {...operations} />}
       {about && <AboutDialog {...about} />}
-      {update && <UpdateDialog {...update} />}
+      {update && (
+        <Suspense fallback={null}>
+          <UpdateDialog {...update} />
+        </Suspense>
+      )}
       {remoteAuthentication && <RemoteAuthenticationDialog {...remoteAuthentication} />}
     </>
   )
