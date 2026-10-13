@@ -38,7 +38,7 @@ import {
   useLocalChangeSelection,
   useLocalChangesAutoRefresh
 } from './features/local-changes'
-import { operationMessage, useOperationHistory } from './features/operations'
+import { operationMessage, selectActiveProgressRecord, useOperationHistory } from './features/operations'
 import {
   RepositoryWelcome,
   conflictOperationLabel,
@@ -218,6 +218,7 @@ function App() {
     finishOperation,
     clearCompleted: clearCompletedOperations
   } = useOperationHistory(applicationMode === 'tauri')
+  const activeProgressRecord = useMemo(() => selectActiveProgressRecord(loreOperationStreams), [loreOperationStreams])
   const { availableExternalToolIds, availableExternalDiffTools, availableExternalMergeTools } =
     useAvailableExternalTools(preferences)
   // 渲染期可读的 workspace 节点镜像。PaneResizer 在事件处理器里读取 container，
@@ -901,6 +902,7 @@ function App() {
       activeRepositoryId={activeRepositoryId}
       runtimeInfo={runtimeInfo}
       busyLabel={busyAction ? t(busyAction as never) : null}
+      operationProgress={activeProgressRecord}
       demoMode={applicationMode === 'browser-demo'}
       toast={toast}
       onToolbarAction={(action) => void handleToolbarAction(action)}

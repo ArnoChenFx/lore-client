@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import type { LoreOperationStreamEvent, OperationRecord } from '../../types'
-import { INITIAL_OPERATION_HISTORY, operationHistoryReducer, type OperationHistoryState } from './useOperationHistory'
+import {
+  INITIAL_OPERATION_HISTORY,
+  countActiveOperations,
+  operationHistoryReducer,
+  type OperationHistoryState
+} from './useOperationHistory'
 
 function runningOperation(id: number, startedAt: number): OperationRecord {
   return {
@@ -63,23 +68,39 @@ describe('operation history controller', () => {
         phase: 'running',
         cancellable: false
       }
-      /*
-       * mergeLoreOperationStream 使用接收时刻作为首次开始时间；这里先注入确定性记录，
-       * 再验证 reducer 的跨来源裁剪，不让测试依赖墙钟速度。
-       */
-      state = {
-        ...state,
-        streams: [stream(event.operationId, 151 + index), ...state.streams]
-      }
+      // 到达时间由 action 给出，流记录比所有命令记录都新，裁剪结果不依赖墙钟速度。
+      state = operationHistoryReducer(state, { type: 'stream', event, receivedAt: 151 + index })
       state = operationHistoryReducer(state, {
         type: 'stream',
-        event: { ...event, phase: 'streaming' }
+        event: { ...event, phase: 'streaming' },
+        receivedAt: 151 + index
       })
     }
 
     expect(state.operations.length + state.streams.length).toBe(200)
     expect(state.operations[0]?.id).toBe(150)
     expect(state.streams).toHaveLength(100)
+  })
+
+  it('stamps stream records with the arrival time carried by the action, not the clock', () => {
+    const progressEvent: LoreOperationStreamEvent = {
+      operationId: 'stream-1',
+      operation: 'file.stage',
+      phase: 'streaming',
+      event: {
+        tagName: 'fileStageProgress',
+        data: { unit: 'files', current: 12, totalFinal: false, elapsedMs: 800 }
+      },
+      cancellable: false
+    }
+    let state = operationHistoryReducer(INITIAL_OPERATION_HISTORY, {
+      type: 'stream',
+      event: progressEvent,
+      receivedAt: 5_000
+    })
+    state = operationHistoryReducer(state, { type: 'stream', event: progressEvent, receivedAt: 7_500 })
+
+    expect(state.streams).toEqual([expect.objectContaining({ startedAt: 5_000, progressAt: 7_500, eventCount: 2 })])
   })
 
   it('clears completed records while preserving active work', () => {
@@ -100,5 +121,24 @@ describe('operation history controller', () => {
 
     expect(cleared.operations.map((record) => record.id)).toEqual([1])
     expect(cleared.streams.map((record) => record.operationId)).toEqual(['running', 'queued'])
+  })
+})
+
+describe('active operation count', () => {
+  it('counts one push once even though it has both a command record and a live stream', () => {
+    expect(countActiveOperations([runningOperation(1, 1)], [stream('push', 1)])).toBe(1)
+  })
+
+  it('still counts work that only one side knows about', () => {
+    expect(countActiveOperations([], [stream('background', 1)])).toBe(1)
+    expect(countActiveOperations([runningOperation(1, 1), runningOperation(2, 2)], [])).toBe(2)
+    expect(countActiveOperations([], [])).toBe(0)
+  })
+
+  it('ignores operations that already finished', () => {
+    const finishedCommand: OperationRecord = { ...runningOperation(1, 1), status: 'succeeded' }
+    const finishedStream = { ...stream('done', 1), phase: 'failed' as const }
+    expect(countActiveOperations([finishedCommand], [finishedStream])).toBe(0)
+    expect(countActiveOperations([finishedCommand], [stream('push', 2), finishedStream])).toBe(1)
   })
 })

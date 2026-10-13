@@ -1596,6 +1596,10 @@ const enUSStatic = {
     branchRevision: 'Branch Revision',
     branch: 'Branch',
     cloneProgress: 'Clone Progress',
+    stageProgress: 'Stage Progress',
+    commitProgress: 'Commit Progress',
+    syncProgress: 'Sync Progress',
+    pushProgress: 'Push Progress',
     fileDependency: 'File Dependency',
     dependencySourceFile: 'Dependency Source File',
     dependencySourceFinished: 'Dependency Source Finished',
@@ -1643,6 +1647,9 @@ const enUSStatic = {
     succeeded: 'Succeeded',
     failed: 'Failed',
     cancelled: 'Cancelled'
+  },
+  operationProgress: {
+    preparing: 'Preparing…'
   }
 } as const
 

@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next'
 import { getAppLanguage, t } from '../../../i18n'
 import type { LoreOperationStreamRecord, OperationRecord } from '../../../types'
 import { resolveOperationDetail } from '../operationDetail'
+import { deriveProgressView } from '../operationProgress'
+import { describeOperationProgress } from '../operationProgressText'
 import { resolveLoreEventLabel, resolveLoreOperationLabel } from '../operationStreamLabels'
 
 /** 展示本次应用会话真实执行过的操作，而不是固定的示例队列。 */
@@ -78,7 +80,8 @@ export function OperationCenter({
                         stage: resolveLoreEventLabel(stream.lastEventTag)
                       })}
                     </small>
-                    {(stream.total !== undefined || stream.bytes !== undefined) && (
+                    {stream.progress && <small>{describeStreamProgress(stream)}</small>}
+                    {!stream.progress && (stream.total !== undefined || stream.bytes !== undefined) && (
                       <small>
                         {stream.current !== undefined && stream.total !== undefined
                           ? `${stream.current} / ${stream.total}`
@@ -142,4 +145,11 @@ function formatOperationBytes(bytes: number): string {
   if (bytes < 1_024 ** 2) return `${(bytes / 1_024).toFixed(1)} KB`
   if (bytes < 1_024 ** 3) return `${(bytes / 1_024 ** 2).toFixed(1)} MB`
   return `${(bytes / 1_024 ** 3).toFixed(1)} GB`
+}
+
+/** 历史记录里的进度以“最后一次快照”为准：不再累加墙钟间隔，也不会误报停滞。 */
+function describeStreamProgress(stream: LoreOperationStreamRecord): string {
+  const progress = stream.progress
+  const view = deriveProgressView(stream, stream.progressAt ?? 0)
+  return progress && view ? describeOperationProgress(stream.lastEventTag, progress, view).detail : ''
 }

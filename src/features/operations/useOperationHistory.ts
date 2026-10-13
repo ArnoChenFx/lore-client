@@ -34,7 +34,8 @@ export interface OperationHistoryState {
 export type OperationHistoryAction =
   | { type: 'begin'; record: OperationRecord }
   | { type: 'finish'; id: number; succeeded: boolean; detail: OperationDetail; durationMs: number }
-  | { type: 'stream'; event: LoreOperationStreamEvent }
+  /** `receivedAt` 是事件到达页面的墙钟时间，由 dispatch 方给出，reducer 自己不读时钟。 */
+  | { type: 'stream'; event: LoreOperationStreamEvent; receivedAt: number }
   | { type: 'clearCompleted' }
 
 export const INITIAL_OPERATION_HISTORY: OperationHistoryState = {
@@ -55,6 +56,22 @@ function limitCombinedHistory(state: OperationHistoryState): OperationHistorySta
     operations: selected.operations,
     streams: selected.streams
   }
+}
+
+/**
+ * 正在进行的操作数。
+ *
+ * 一次用户操作通常同时有界面发起的命令记录和 Rust 发出的 Lore 实时流，两边没有共同标识。
+ * 暂存、提交、推送都会开流，直接相加会把一次推送显示成“2 个操作”，所以取较大者：
+ * 每个进行中的操作至少会被其中一边看到。
+ */
+export function countActiveOperations(
+  operations: readonly OperationRecord[],
+  streams: readonly LoreOperationStreamRecord[]
+): number {
+  const commands = operations.filter((record) => record.status === 'running').length
+  const live = streams.filter((record) => ACTIVE_STREAM_PHASES.has(record.phase)).length
+  return Math.max(commands, live)
 }
 
 /** 操作历史的纯状态机；不得在这里读取时间、翻译或调用 Lore 服务。 */
@@ -85,7 +102,7 @@ export function operationHistoryReducer(
     case 'stream':
       return limitCombinedHistory({
         ...state,
-        streams: mergeLoreOperationStream(state.streams, action.event)
+        streams: mergeLoreOperationStream(state.streams, action.event, action.receivedAt)
       })
     case 'clearCompleted':
       return {
@@ -142,14 +159,12 @@ export function useOperationHistory(enabled: boolean) {
     if (!enabled) return
 
     return loreOperationStreamSubscription.subscribe((event) => {
-      dispatch({ type: 'stream', event })
+      dispatch({ type: 'stream', event, receivedAt: Date.now() })
     })
   }, [enabled])
 
   const activeCount = useMemo(
-    () =>
-      history.operations.filter((record) => record.status === 'running').length +
-      history.streams.filter((record) => ACTIVE_STREAM_PHASES.has(record.phase)).length,
+    () => countActiveOperations(history.operations, history.streams),
     [history.operations, history.streams]
   )
 

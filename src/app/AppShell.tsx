@@ -4,7 +4,14 @@ import { useTranslation } from 'react-i18next'
 
 import { RepositoryTabs, type RepositoryTab } from '../features/repository-session'
 import type { RepositoryAccentColor } from '../shared/lib'
-import type { LoreRuntimeInfo, Repository, RepositoryIconId, ResolvedTheme, ToastMessage } from '../types'
+import type {
+  LoreOperationStreamRecord,
+  LoreRuntimeInfo,
+  Repository,
+  RepositoryIconId,
+  ResolvedTheme,
+  ToastMessage
+} from '../types'
 import { StatusBar } from './components/StatusBar'
 import { TitleBar } from './components/TitleBar'
 import { Toolbar } from './components/Toolbar'
@@ -18,6 +25,7 @@ interface AppShellProps {
   activeRepositoryId: string
   runtimeInfo: LoreRuntimeInfo | null
   busyLabel: string | null
+  operationProgress?: LoreOperationStreamRecord | null
   demoMode: boolean
   toast: ToastMessage | null
   onToolbarAction: (action: string) => void
@@ -52,6 +60,7 @@ export function AppShell({
   activeRepositoryId,
   runtimeInfo,
   busyLabel,
+  operationProgress = null,
   demoMode,
   toast,
   onToolbarAction,
@@ -109,7 +118,13 @@ export function AppShell({
 
       {children}
 
-      <StatusBar repository={repository} runtimeInfo={runtimeInfo} busyLabel={busyLabel} demoMode={demoMode} />
+      <StatusBar
+        repository={repository}
+        runtimeInfo={runtimeInfo}
+        busyLabel={busyLabel}
+        progress={operationProgress}
+        demoMode={demoMode}
+      />
       {overlays}
 
       {toast && (

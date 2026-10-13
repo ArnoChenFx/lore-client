@@ -1,18 +1,22 @@
 import { Activity, Cloud, Database, GitBranch, LockKeyhole } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import type { LoreRuntimeInfo, Repository } from '../../types'
+import { OperationProgressStatus, useProgressClock } from '../../features/operations'
+import type { LoreOperationStreamRecord, LoreRuntimeInfo, Repository } from '../../types'
 import '../../i18n'
 
 interface StatusBarProps {
   repository: Repository
   runtimeInfo: LoreRuntimeInfo | null
   busyLabel: string | null
+  /** 正在进行且已有归一化进度的 Lore 流；缺省或 null 时只显示 busyLabel。 */
+  progress?: LoreOperationStreamRecord | null
   demoMode: boolean
 }
 
-export function StatusBar({ repository, runtimeInfo, busyLabel, demoMode }: StatusBarProps) {
+export function StatusBar({ repository, runtimeInfo, busyLabel, progress = null, demoMode }: StatusBarProps) {
   const { t } = useTranslation()
+  const now = useProgressClock(progress !== null)
   const conflictLabel =
     repository.unresolvedConflictCount > 0
       ? t('status.unresolvedConflicts', { count: repository.unresolvedConflictCount })
@@ -41,10 +45,14 @@ export function StatusBar({ repository, runtimeInfo, busyLabel, demoMode }: Stat
         <Cloud size={12} />
         {remoteLabel}
       </span>
-      <span title={t('status.operationStatusTooltip', { value: operationLabel })}>
-        <Activity size={12} />
-        {operationLabel}
-      </span>
+      {progress ? (
+        <OperationProgressStatus record={progress} label={busyLabel} now={now} />
+      ) : (
+        <span title={t('status.operationStatusTooltip', { value: operationLabel })}>
+          <Activity size={12} />
+          {operationLabel}
+        </span>
+      )}
       <span className="statusbar__spacer" />
       <span title={t('status.storeStatusTooltip', { value: storeLabel })}>
         <Database size={12} />
