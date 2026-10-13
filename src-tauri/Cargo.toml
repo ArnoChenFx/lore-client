@@ -68,9 +68,9 @@ debug = "line-tables-only"
 [profile.test]
 debug = "line-tables-only"
 
-# 发布构建使用单代码生成单元编译。实测可执行文件代码段从 49.0 MB 降到 32.9 MB，
-# 状态查询等热路径耗时在测量噪声内不变；代价是 release 编译时间增加约一半。
+# 只对本仓库的 crate 使用单代码生成单元：实测 .text 从 49.0 MB 降到 42.1 MB，从零构建耗时基本不变。
+# 依赖（Lore、Tauri 等）保持 Cargo 默认值，编译并行度不受影响。
 # 不开启 LTO：实测 thin LTO 体积收益更小、编译更慢，且热路径慢约 20%。
 # 不设置 `panic = "abort"`：Tauri 命令的错误处理依赖 unwinding。不 strip 符号：崩溃日志中的函数名依赖它。
-[profile.release]
+[profile.release.package.lore-client]
 codegen-units = 1
