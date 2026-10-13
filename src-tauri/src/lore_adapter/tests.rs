@@ -4115,3 +4115,87 @@ fn repository_view_uses_the_metadata_directory_matching_the_repository_format() 
     assert_eq!(view.path, ".urc/view");
     assert_eq!(view.content, "Legacy/**\n");
 }
+
+/// 峰值常驻内存（KiB），仅用于手动度量；来自 Linux `/proc/self/status` 的 `VmHWM`。
+fn peak_resident_kib() -> Option<u64> {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()?
+        .lines()
+        .find_map(|line| line.strip_prefix("VmHWM:"))
+        .and_then(|value| value.trim().trim_end_matches("kB").trim().parse().ok())
+}
+
+/// 度量大批量未暂存改动时状态查询的事件数量、IPC 体积与峰值内存。默认忽略，手动运行：
+/// `cargo test measure_status_event_volume -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn measure_status_event_volume() {
+    const FILE_COUNT: usize = 10_000;
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("System time should be later than the Unix epoch")
+        .as_nanos();
+    let repository_path = std::env::temp_dir().join(format!("lore-client-measure-status-{unique}"));
+    let _cleanup = TemporaryRepository::new(repository_path.clone());
+    std::fs::create_dir_all(&repository_path).expect("The measurement directory should be created");
+    let repository_path_string = repository_path.to_string_lossy().into_owned();
+    initialize_repository(
+        &repository_path_string,
+        "measure-status",
+        "Status event volume measurement",
+        "lore-client-test",
+        None,
+        false,
+        None,
+    )
+    .expect("The measurement repository should be initialized");
+
+    let directory = repository_path.join("Content");
+    std::fs::create_dir_all(&directory).expect("The content directory should be created");
+    let paths = (0..FILE_COUNT)
+        .map(|index| format!("Content/asset-{index:05}.txt"))
+        .collect::<Vec<_>>();
+    for (index, path) in paths.iter().enumerate() {
+        std::fs::write(repository_path.join(path), format!("original {index}"))
+            .expect("The original file should be written");
+    }
+    tauri::async_runtime::block_on(lore_stage(repository_path_string.clone(), paths.clone()))
+        .expect("The measurement files should be staged");
+    tauri::async_runtime::block_on(lore_commit(
+        repository_path_string.clone(),
+        "Commit measurement files".to_owned(),
+        None,
+    ))
+    .expect("The measurement files should be committed");
+    for (index, path) in paths.iter().enumerate() {
+        std::fs::write(repository_path.join(path), format!("changed {index}"))
+            .expect("The changed file should be written");
+    }
+
+    let before_peak = peak_resident_kib();
+    let started = std::time::Instant::now();
+    let status = tauri::async_runtime::block_on(lore_repository_status(
+        repository_path_string.clone(),
+        true,
+    ))
+    .expect("The status read should succeed");
+    let elapsed = started.elapsed();
+    let after_peak = peak_resident_kib();
+    let json_bytes = serde_json::to_vec(&status)
+        .expect("The operation result should serialize")
+        .len();
+
+    let mut by_tag = std::collections::BTreeMap::<String, usize>::new();
+    for event in &status.events {
+        let tag = event["tagName"].as_str().unwrap_or("<none>").to_owned();
+        *by_tag.entry(tag).or_default() += 1;
+    }
+    println!(
+        "measure status: files={FILE_COUNT} events={} json_bytes={json_bytes} elapsed_ms={} peak_rss_kib_before={before_peak:?} peak_rss_kib_after={after_peak:?}",
+        status.events.len(),
+        elapsed.as_millis()
+    );
+    for (tag, count) in by_tag {
+        println!("  {tag}: {count}");
+    }
+}
