@@ -1482,6 +1482,10 @@ const zhCNStatic = {
     branchRevision: '分支修订',
     branch: '分支',
     cloneProgress: '克隆进度',
+    stageProgress: '暂存进度',
+    commitProgress: '提交进度',
+    syncProgress: '同步进度',
+    pushProgress: '推送进度',
     fileDependency: '文件依赖',
     dependencySourceFile: '依赖来源文件',
     dependencySourceFinished: '依赖来源处理完成',
@@ -1529,6 +1533,9 @@ const zhCNStatic = {
     succeeded: '已完成',
     failed: '失败',
     cancelled: '已取消'
+  },
+  operationProgress: {
+    preparing: '正在准备…'
   }
 } as const
 
