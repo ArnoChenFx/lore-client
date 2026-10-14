@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -265,6 +265,17 @@ async function openFreshApplicationDocument(cdp, navigate) {
     await delay(100)
   }
   await waitForApplication(cdp)
+}
+
+/** 仅在设置 LORE_CDP_SCREENSHOT_DIR 时把当前页面保存为 PNG，便于人工核对关键状态。 */
+async function captureScreenshot(cdp, fileName) {
+  const directory = process.env.LORE_CDP_SCREENSHOT_DIR
+  if (!directory) {
+    return
+  }
+  const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' })
+  await mkdir(directory, { recursive: true })
+  await writeFile(resolve(directory, fileName), Buffer.from(data, 'base64'))
 }
 
 try {
@@ -5167,6 +5178,7 @@ try {
       !lazyFailure.settingsDialogVisible,
     `A failed lazy dialog did not show the localized retryable error: ${JSON.stringify(lazyFailure)}`
   )
+  await captureScreenshot(cdp, 'cdp-lazy-view-failure.png')
 
   failSettingsChunk = false
   await cdp.send('Fetch.disable')
