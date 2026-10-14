@@ -2,14 +2,14 @@
 
 This guide runs the Epic Games Lore server (`loreserver`) and the Lore authentication service on one machine, then runs Lore Client's live tests against them. Nothing is mocked on the server or auth side. The scripts live in `scripts/e2e/`, and everything they create goes under `LORE_E2E_HOME` (default `~/lore-e2e`), which must stay outside the repository.
 
-**Last verified** on 2026-10-14 on Linux x86_64 with lore-auth-service `b4be18d`, `loreserver` 0.10.1 and Rust 1.99.0. On a fresh auth database, the 10 live tests passed and the auth probes passed 12 of 12 checks. The findings and the probe output are in [Findings in lore-auth-service](#findings-in-lore-auth-service) and [Auth service probes](#auth-service-probes).
+**Last verified** on 2026-10-14 on Linux x86_64 with lore-auth-service `f3742a7` and `loreserver` 0.10.1. On a fresh auth database the auth probes passed 12 of 12 checks. The live tests have not been run on `f3742a7`: they need Rust 1.85 or newer, and the verification host has Rust 1.83. The earlier verification on `b4be18d` reported all 10 live tests passing. The findings and the probe output are in [Findings in lore-auth-service](#findings-in-lore-auth-service) and [Auth service probes](#auth-service-probes).
 
 ## What runs
 
 | Component | Version pinned by the scripts | Role |
 | --- | --- | --- |
 | `loreserver` | `ghcr.io/arnochenfx/lore-server:0.10.1`, linux/amd64 manifest `sha256:6dad04dc1280cfb3…`, upstream revision `95a9a834f18402cbacf43d43518c0ac771e029eb` | Lore server: repositories, branches, storage, QUIC/gRPC transport. |
-| `lore-auth-service` | [ArnoChenFx/lore-auth-service](https://github.com/ArnoChenFx/lore-auth-service) at `b4be18d`, the head of [PR #1](https://github.com/ArnoChenFx/lore-auth-service/pull/1) (`lore-auth` 0.1.13, Bun) | Browser login, RS256 JWTs, JWKS, ReBAC permissions, admin API, sign-in throttling. |
+| `lore-auth-service` | [ArnoChenFx/lore-auth-service](https://github.com/ArnoChenFx/lore-auth-service) at `f3742a7`, the head of [PR #1](https://github.com/ArnoChenFx/lore-auth-service/pull/1) (`lore-auth` 0.1.13, Bun) | Browser login, RS256 JWTs, JWKS, ReBAC permissions, admin API, sign-in throttling. |
 | Test client | This repository's `src-tauri` crate, `live_server_tests.rs` | Drives the Lore Client backend adapter against the stack. |
 
 `loreserver` is not built from source. `setup-stack.sh` reads the image through the GHCR registry API, verifies the manifest digest and every blob digest, and extracts `usr/local/bin/loreserver`. Docker is not required. The 0.10.1 binary has sha256 `f6495aeedb807d9d181e3256ee022d6680eda0ed31766a6595594e7205757d51`.
@@ -76,7 +76,7 @@ Both `setup-stack.sh` and `start-stack.sh` print progress and never print secret
 | `LORE_SERVER_TAG` | `0.10.1` | Image tag to extract. Delete `bin/loreserver` after changing it. |
 | `LORE_SERVER_DIGEST` | `sha256:6dad04dc…` | Required digest of the linux/amd64 manifest. Set it to an empty value (`LORE_SERVER_DIGEST=`) to skip the pin. |
 | `LORESERVER_BIN` | unset | Copy a local `loreserver` binary instead of pulling the image. |
-| `LORE_AUTH_SERVICE_REF` | `b4be18d` | Commit of `lore-auth-service` to check out. The default is the head of PR #1, which carries the fixes. Set `f257d43` to reproduce the findings. |
+| `LORE_AUTH_SERVICE_REF` | `f3742a7` | Commit of `lore-auth-service` to check out. The default is the head of PR #1, which carries the fixes. Set `f257d43` to reproduce the findings. |
 | `LORE_AUTH_SERVICE_DIR` | `$LORE_E2E_HOME/src/lore-auth-service` | Existing checkout to use instead of a clone. |
 | `LORE_E2E_SYSTEM_CA_BUNDLE` | `/etc/ssl/certs/ca-certificates.crt` | System roots that are merged with the E2E CA. |
 | `RUST_LOG` | `info` | Log level for `loreserver`. |
@@ -99,15 +99,17 @@ Both `setup-stack.sh` and `start-stack.sh` print progress and never print secret
 | `LOGIN_MAX_FAILING_IPS_PER_ACCOUNT` | service default | `50` | Distinct addresses that failed against one account within 15 minutes, before the account locks for everyone. `0` disables this scope. `1` is refused at startup. |
 | `LOGIN_LOCK_BASE_SECONDS` | service default | `60` | First login lock. It doubles with each further failure. |
 | `LOGIN_LOCK_MAX_SECONDS` | service default | `900` | Upper bound for a login lock. |
-| `TRUSTED_PROXY_COUNT` | service default | `0` | Number of reverse proxies in front of the service. The stack has none, so clients are identified by their TCP address. |
+| `LOGIN_RECENT_SUCCESS_SECONDS` | service default | `2592000` (30 days) | Sources that signed in to an account successfully within this many seconds are not blocked by that account's lock. `0` disables this exemption. |
+| `TRUSTED_PROXY_COUNT` | service default | `0` | Number of reverse proxies in front of the service. The stack has none, so clients are identified by their TCP address. The proxy warning below explains the log line that this setting produces. |
 
-- **Sign-in throttling.** Password checks on `/auth/login` and on browser approval count failures in three scopes: one username from one address, one address, and one account across addresses. A throttled request gets `429 Too Many Requests` and a `Retry-After` header, in seconds. It is not checked against the password and is not counted, so continued guessing cannot extend the lock. A successful sign-in clears only the username-and-address counter. Every probe comes from `127.0.0.1`, so the probes exercise the username-and-address scope.
+- **Sign-in throttling.** Password checks on `/auth/login` and on browser approval count failures in three scopes: one username from one address, one address, and one account across addresses. An IPv6 address counts as its /64 prefix in each scope. A throttled request gets `429 Too Many Requests` and a `Retry-After` header, in seconds. It is not checked against the password and is not counted, so continued guessing cannot extend the lock. A successful sign-in clears only the username-and-address counter. Every probe comes from `127.0.0.1`, so the probes count toward the username-and-address scope and the address scope; see [Re-running the probes](#re-running-the-probes). A source that signed in to an account successfully within `LOGIN_RECENT_SUCCESS_SECONDS` is not blocked by that account's lock, but its own counters still apply. The probes do not test this exemption.
 - **Approvals across sessions.** Browser approvals count toward the same username-and-address counter as `/auth/login`. Starting a new browser session with `StartAuthSession` does not reset that counter, so a new session for that username from the same address is refused too. The per-session lock (`AUTH_SESSION_MAX_ATTEMPTS`, `AUTH_SESSION_LOCK_SECONDS`) still applies inside one session.
 - **Body limits.** JSON bodies on `/auth/login`, `/auth/refresh` and the admin API are limited to 64 KiB, and browser login forms to 16 KiB. The limits count the bytes received, so a chunked body is capped too. A larger body gets `413`.
 - **Deleted users.** Deleting a user takes effect in the auth service at once. The user's access token gets `401` from `/auth/me`, the refresh token gets `401` from `/auth/refresh`, and the gRPC token exchange returns `UNAUTHENTICATED`.
 - **Lore Server.** Lore Server checks each token's signature and expiry offline, with the keys from `/.well-known/jwks.json`. For an identity token (the token `/auth/login` returns), it then asks the auth service whether the user still exists and has access, so a deleted user's identity token is refused at once. A repository-scoped token carries its grants in a `resources` claim, which Lore Server evaluates without calling the auth service. Such a token keeps working until it expires, even after its user is deleted or the user's repository permissions change. The live tests and the probes use identity tokens, so this stack does not test the repository-scoped case. The window described here comes from the upstream source and the auth service README, not from a run on this stack.
 - **`TOKEN_TTL` guidance.** `TOKEN_TTL` is the longest time a removed user's repository-scoped token can keep working on Lore Server. The default of 10 days lets a signed-in client work without a daily browser login, because Lore Client does not refresh browser sessions (`RefreshAuthSession` returns `UNIMPLEMENTED`). For sensitive deployments, set `TOKEN_TTL=28800` (eight hours) or less, as the auth service README recommends. The stack keeps the default.
-- **Upgrading an existing stack.** A stack set up by `setup-stack.sh` already has a generated `ADMIN_PASSWORD`, so nothing needs to change. If the stored administrator still has one of the two public values, `changeme` or `replace-with-a-long-random-password`, the first start with this auth service replaces that password with `ADMIN_PASSWORD` and revokes that administrator's refresh tokens. The `login_throttles` table is created automatically.
+- **Proxy warning.** While `TRUSTED_PROXY_COUNT` is `0`, the service logs one `[proxy]` warning per process, on the first request from a private, loopback or other non-public address. The stack's clients connect from `127.0.0.1`, so `logs/auth.log` shows this warning after each start: `[proxy] Requests arrive from a non-public address while TRUSTED_PROXY_COUNT=0. ...`. It is expected on this stack, which has no reverse proxy, and it changes no result. Keep `TRUSTED_PROXY_COUNT=0`. The startup banner prints `Proxies:     TRUSTED_PROXY_COUNT=0`.
+- **Upgrading an existing stack.** A stack set up by `setup-stack.sh` already has a generated `ADMIN_PASSWORD`, so nothing needs to change. If the stored administrator still has one of the two public values, `changeme` or `replace-with-a-long-random-password`, the first start with this auth service replaces that password with `ADMIN_PASSWORD` and revokes that administrator's refresh tokens. The `login_throttles` and `login_successes` tables are created automatically. Sources that signed in before this version are exempt from an account lock only after they sign in again. A database written by the pre-fix commit `f257d43` gets both tables on the first start, and the probes pass on it.
 
 ### Trust
 
@@ -181,7 +183,7 @@ Each check prints `PASS` or `FAIL` with status codes and counts. The script exit
 | `session` | new sessions share the lock | `429:locked` for each of ten new sessions |
 | `session` | correct password in a new session is refused while locked | `429:locked` |
 
-Output of the run on `b4be18d`, on a fresh auth database:
+Output of the run on `f3742a7`, on a fresh auth database:
 
 ```text
 login: 30 consecutive wrong passwords -> 401 x5, 429 x25
@@ -196,7 +198,7 @@ body: 200 KiB JSON, chunked, right password -> 413
 PASS body: oversized JSON is refused with 413 for every transfer encoding: 413 413 413 413
 deleted: login -> HTTP 200; /auth/me before delete -> HTTP 200; gRPC exchange before delete -> code 0
 PASS deleted: sign-in works before deletion: login 200, /auth/me 200, gRPC code 0
-deleted: DELETE /admin/users/probe-deleted -> HTTP 200
+deleted: DELETE /admin/users/probe-deleted-c413b389 -> HTTP 200
 deleted: /auth/me with the access token after delete -> HTTP 401
 PASS deleted: access token is refused after deletion: HTTP 401
 deleted: gRPC exchange of the access token after delete -> code 16
@@ -258,7 +260,7 @@ bin/xdg-open             login approval shim
 auth/auth.env            auth-service settings, including ADMIN_PASSWORD (0600)
 auth/users.env           test user credentials (0600)
 auth/keys/               RS256 signing keys generated by the auth service (private.pem 0600)
-auth/lore-auth.db        auth-service SQLite database (users, permissions, sessions)
+auth/lore-auth.db        auth-service SQLite database (users, permissions, sessions, login counters)
 server/config/stack.toml loreserver configuration
 server/data/             repositories created by the tests
 src/lore-auth-service/   checkout of the auth service at LORE_AUTH_SERVICE_REF
@@ -279,9 +281,9 @@ To start from empty state, run `stop-stack.sh` and then remove `server/data/` (w
 
 ## Findings in lore-auth-service
 
-These findings were reproduced on this stack before lore-auth-service PR #1. They are fixed on the PR branch at `b4be18d`. `auth-service-probes.mjs` checks items 1 to 4 against the running service, and the auth repository's tests (`test/config.test.ts`) cover item 5. Item 6 is in the image, not in lore-auth-service, and is still open.
+These findings were reproduced on this stack before lore-auth-service PR #1. They are fixed on the PR branch at `f3742a7`. `auth-service-probes.mjs` checks items 1 to 4 against the running service, and the auth repository's tests (`test/config.test.ts`) cover item 5. Item 6 is in the image, not in lore-auth-service, and is still open.
 
-1. **Sign-in attempt limit (fixed).** `/auth/login` had no limit: thirty wrong passwords each returned 401, and the correct password then returned 200. Five failed passwords for one username from one address now lock that pair for 60 seconds, and the lock doubles with each further failure up to 900 seconds. Throttled requests get `429` with `Retry-After`.
+1. **Sign-in attempt limit (fixed).** `/auth/login` had no limit: thirty wrong passwords each returned 401, and the correct password then returned 200. Five failed passwords for one username from one address (an IPv6 address counts as its /64 prefix) now lock that pair for 60 seconds, and the lock doubles with each further failure up to 900 seconds. Throttled requests get `429` with `Retry-After`.
 2. **Approval lockout across sessions (fixed).** The lockout after `AUTH_SESSION_MAX_ATTEMPTS` failed approvals applied to one browser session. `StartAuthSession` on the gRPC port needs no credentials, so each new session started unlocked: ten wrong passwords in ten new sessions were all refused as invalid, and a correct password in a new session was then accepted. Approvals now count toward the same username-and-address throttle as `/auth/login`, so a new session for that username from that address gets `429`.
 3. **Body limit for chunked requests (fixed).** The 64 KiB limit applied only when a request declared a `Content-Length`. An oversized request that declared its length got `400 Missing username or password`, even with the correct password. The same body sent chunked was accepted and signed in with the correct password (`200`). The limit now counts received bytes, so both transfer encodings get `413`.
 4. **Deleted user's access token on `/auth/me` (fixed).** A deleted user's access token kept returning 200 from `/auth/me` until it expired, while `/auth/refresh` already refused the refresh token. `/auth/me` now refuses the access token. The gRPC token exchange already refused it. What Lore Server does with tokens issued before the deletion is described in [Auth service settings](#auth-service-settings).
@@ -296,3 +298,4 @@ These findings were reproduced on this stack before lore-auth-service PR #1. The
 - `admin login failed` from `start-stack.sh`: the admin password in `auth/auth.env` does not match the database. This happens when the database was created with another password. Restore the old value or remove `auth/lore-auth.db` to start over.
 - `ADMIN_PASSWORD must ...` in `logs/auth.log`: `auth/auth.env` has no usable admin password (missing, shorter than 8 characters, or a public value). Remove the `ADMIN_PASSWORD` line and run `setup-stack.sh` again, which generates a new one. If the administrator in the database has a different, non-public password, `start-stack.sh` then fails with `admin login failed`; see above.
 - Sign-in fails with `http=429` in `logs/xdg-open-shim.log`, or the probes report `HTTP 429` for the admin sign-in: the address is in a sign-in lock. See [Re-running the probes](#re-running-the-probes).
+- `[proxy] Requests arrive from a non-public address` in `logs/auth.log`: expected on this stack, which has no reverse proxy. Keep `TRUSTED_PROXY_COUNT=0`. If a proxy does sit in front of the service, set `TRUSTED_PROXY_COUNT` to the number of proxies instead; see [Auth service settings](#auth-service-settings).
