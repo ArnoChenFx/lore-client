@@ -3,9 +3,10 @@
 // (scripts/e2e/start-stack.sh). The findings are fixed in ArnoChenFx/lore-auth-service#1, so each check
 // expects the fixed behavior, and the script exits 1 when any check fails. Against the pre-fix commit
 // f257d43 (LORE_AUTH_SERVICE_REF=f257d43) the checks fail, which reproduces the findings.
-// Prints status codes, counts and PASS or FAIL lines only. The script creates probe-* users on the stack
-// and never prints passwords, tokens or session codes. Every run adds failed logins from 127.0.0.1, so
-// read the re-run note in the guide before running it repeatedly.
+// Prints status codes, counts and PASS or FAIL lines only. Each run creates probe-<label>-<run id> users
+// and deletes them at the end, and never prints passwords, tokens or session codes. Every run still adds
+// failed logins from 127.0.0.1 to the address counter, so read the re-run note in the guide before running
+// it repeatedly.
 //
 // Usage: node scripts/e2e/auth-service-probes.mjs [login] [body] [deleted] [session]   (default: all)
 
@@ -23,6 +24,9 @@ const ca = readFileSync(join(home, 'tls', 'ca.pem'))
 const host = env.HOST
 const port = Number(env.PORT)
 const probeSecret = (label) => `${label}-${randomBytes(12).toString('hex')}`
+const runId = randomBytes(4).toString('hex')
+const probeUser = (label) => `probe-${label}-${runId}`
+const createdUsers = []
 const results = []
 
 function readEnvFile(path) {
@@ -115,13 +119,20 @@ async function adminToken() {
 }
 
 async function createUser(token, username, password) {
-  await send({ method: 'DELETE', path: `/admin/users/${username}`, headers: { authorization: `Bearer ${token}` } })
   const response = await json('POST', '/admin/users', { username, password, is_admin: false }, token)
   if (response.status !== 201 && response.status !== 200) throw new Error(`creating ${username} failed with HTTP ${response.status}`)
+  createdUsers.push(username)
+}
+
+async function removeProbeUsers(token) {
+  for (const username of createdUsers.splice(0)) {
+    const response = await send({ method: 'DELETE', path: `/admin/users/${username}`, headers: { authorization: `Bearer ${token}` } })
+    if (response.status !== 200 && response.status !== 404) console.log(`cleanup: DELETE /admin/users/${username} -> HTTP ${response.status}`)
+  }
 }
 
 async function probeLoginLimit(token) {
-  const username = 'probe-lockout'
+  const username = probeUser('lockout')
   const password = probeSecret('lockout')
   await createUser(token, username, password)
   const statuses = []
@@ -144,7 +155,7 @@ async function probeLoginLimit(token) {
 }
 
 async function probeBodyLimit(token) {
-  const username = 'probe-body'
+  const username = probeUser('body')
   const password = probeSecret('body')
   await createUser(token, username, password)
   const padding = 'a'.repeat(200 * 1024)
@@ -165,7 +176,7 @@ async function probeBodyLimit(token) {
 }
 
 async function probeDeletedUser(token) {
-  const username = 'probe-deleted'
+  const username = probeUser('deleted')
   const password = probeSecret('deleted')
   await createUser(token, username, password)
   const login = await json('POST', '/auth/login', { username, password })
@@ -230,7 +241,7 @@ async function probeSessionLockout(token) {
       return `${response.status}:other`
     }
 
-    const username = 'probe-session'
+    const username = probeUser('session')
     const password = probeSecret('session')
     await createUser(token, username, password)
     const maxAttempts = Number(env.AUTH_SESSION_MAX_ATTEMPTS ?? 5)
@@ -292,12 +303,16 @@ try {
   process.exit(1)
 }
 
-for (const name of selected) {
-  try {
-    await probes[name](token)
-  } catch (error) {
-    check(`${name}: probe ran to completion`, false, error.message)
+try {
+  for (const name of selected) {
+    try {
+      await probes[name](token)
+    } catch (error) {
+      check(`${name}: probe ran to completion`, false, error.message)
+    }
   }
+} finally {
+  await removeProbeUsers(token)
 }
 
 const failed = results.filter((passed) => !passed).length
