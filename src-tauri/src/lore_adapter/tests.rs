@@ -3209,6 +3209,49 @@ fn patch_write_command_replaces_an_existing_file_only_when_confirmed() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn confirmed_patch_replacement_refuses_a_symlink_and_leaves_its_target_alone() {
+    let directory = tempfile::tempdir().expect("A temporary patch directory should be created");
+    let victim = directory.path().join("victim.bashrc");
+    std::fs::write(&victim, "export KEEP=1\n").expect("The link target should be written");
+    let destination = directory.path().join("review.patch");
+    std::os::unix::fs::symlink(&victim, &destination).expect("The symlink should be created");
+
+    let error = save_patch(
+        destination.to_string_lossy().into_owned(),
+        "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n".to_owned(),
+        true,
+    )
+    .expect_err("A confirmed replacement must refuse a symlink instead of following it");
+    assert_eq!(error.code, "patch_destination_is_link");
+    assert_eq!(
+        std::fs::read_to_string(&victim).expect("The link target should be readable"),
+        "export KEEP=1\n",
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn confirmed_patch_replacement_never_creates_a_dangling_link_target() {
+    let directory = tempfile::tempdir().expect("A temporary patch directory should be created");
+    let outside = directory.path().join("created-by-replace.sh");
+    let destination = directory.path().join("review.diff");
+    std::os::unix::fs::symlink(&outside, &destination).expect("The symlink should be created");
+
+    let error = save_patch(
+        destination.to_string_lossy().into_owned(),
+        "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n".to_owned(),
+        true,
+    )
+    .expect_err("A dangling link must not be replaced");
+    assert_eq!(error.code, "patch_destination_is_link");
+    assert!(
+        !outside.exists(),
+        "the replacement must not create the link's target"
+    );
+}
+
 #[test]
 fn server_url_validates_scheme_and_removes_trailing_slash() {
     assert_eq!(

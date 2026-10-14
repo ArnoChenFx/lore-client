@@ -751,6 +751,8 @@ const enUSStatic = {
   partition: 'Partition',
   patchDestinationExists:
     'A file with that name already exists here. Choose another name to save the patch; the existing file was not replaced.',
+  patchDestinationIsLink:
+    'That location is a symbolic link. Choose another name to save the patch; the file the link points to is unchanged.',
   patchOpenedInAnExternalApp: 'Patch opened in an external app',
   patchSaved: 'Patch saved',
   path: 'Path',
