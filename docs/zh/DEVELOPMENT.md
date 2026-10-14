@@ -128,6 +128,8 @@ bun tauri dev
 
 显式联网测试使用同一个环境变量。默认测试集必须保持离线。
 
+要针对本地 Lore 服务器和 lore-auth-service 运行实时测试，请参阅 [E2E_LOCAL_STACK.md](E2E_LOCAL_STACK.md)。
+
 ### 更新公共文档
 
 中英文公共文档必须同步维护。公共图片统一放入 `docs/img/`，新增或替换后确认图片由 Git LFS 管理：
