@@ -747,6 +747,8 @@ const enUSStatic = {
   parsing3dModel: 'Parsing 3D model',
   parsingPdf: 'Parsing PDF',
   partition: 'Partition',
+  patchDestinationExists:
+    'A file with that name already exists here. Choose another name to save the patch; the existing file was not replaced.',
   patchOpenedInAnExternalApp: 'Patch opened in an external app',
   patchSaved: 'Patch saved',
   path: 'Path',

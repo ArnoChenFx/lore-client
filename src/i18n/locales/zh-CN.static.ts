@@ -691,6 +691,7 @@ const zhCNStatic = {
   parsing3dModel: '正在解析三维模型',
   parsingPdf: '正在解析 PDF',
   partition: '分区',
+  patchDestinationExists: '该位置已存在同名文件。请换一个文件名保存补丁，原文件不会被覆盖。',
   patchOpenedInAnExternalApp: '补丁已在外部应用中打开',
   patchSaved: '补丁已保存',
   path: '路径',
