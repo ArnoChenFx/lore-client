@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 ///
 /// 进程崩溃或断电最多留下旧文件或完整的新文件，不会留下截断内容。替换失败时删除
 /// 临时文件并保持原文件不变。目标是符号链接时替换链接指向的文件，保留链接本身；
-/// 已存在文件的权限（例如 0600）会复制到新内容上。
+/// 已存在文件的权限（例如 0600）会复制到新内容上。应用自有文件允许经由符号链接写到别处。
 pub(crate) fn write_file_atomically(path: &Path, content: &[u8]) -> io::Result<()> {
     write_resolved_file_atomically(&replacement_target(path), content)
 }
@@ -33,26 +33,30 @@ pub(crate) fn write_resolved_file_atomically(path: &Path, content: &[u8]) -> io:
         std::process::id()
     ));
 
-    {
-        let mut temporary = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&temporary_path)?;
+    let mut temporary = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&temporary_path)?;
+    let written = (|| -> io::Result<()> {
         #[cfg(unix)]
         if let Ok(metadata) = fs::metadata(path) {
-            let _ = temporary.set_permissions(metadata.permissions());
+            temporary.set_permissions(metadata.permissions())?;
         }
-        if let Err(error) = temporary
-            .write_all(content)
-            .and_then(|_| temporary.sync_all())
-        {
-            let _ = fs::remove_file(&temporary_path);
-            return Err(error);
-        }
+        temporary.write_all(content)?;
+        temporary.sync_all()
+    })();
+    drop(temporary);
+    if let Err(error) = written {
+        let _ = fs::remove_file(&temporary_path);
+        return Err(error);
     }
 
     #[cfg(not(windows))]
     let replaced = fs::rename(&temporary_path, path);
+    #[cfg(unix)]
+    if replaced.is_ok() {
+        sync_parent_directory(parent);
+    }
 
     #[cfg(windows)]
     let replaced = {
@@ -86,6 +90,14 @@ pub(crate) fn write_resolved_file_atomically(path: &Path, content: &[u8]) -> io:
     replaced.inspect_err(|_| {
         let _ = fs::remove_file(&temporary_path);
     })
+}
+
+/// rename 之后同步父目录，使新的目录项在掉电后保留；同步失败不影响已经完成的替换。
+#[cfg(unix)]
+fn sync_parent_directory(parent: &Path) {
+    if let Ok(directory) = fs::File::open(parent) {
+        let _ = directory.sync_all();
+    }
 }
 
 /// 返回真正需要被替换的路径。直接 rename 到符号链接上会把链接换成普通文件，而旧的
