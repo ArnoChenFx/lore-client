@@ -742,15 +742,21 @@ pub async fn lore_open_external_merge(
 /// 该命令能写入任意绝对路径，因此只接受 `.patch` 与 `.diff` 扩展名，与保存对话框的
 /// 过滤器保持一致；这样即使 WebView 被注入脚本，也无法借此覆盖 rc 文件、配置文件等。
 /// 补丁可达 10 MB，写盘放到后台线程执行，避免阻塞 WebView 所在的主线程。
+/// `replace_existing` 只有在用户确认过覆盖的路径上才能为真；否则已存在的文件会被拒绝。
 #[tauri::command]
 pub async fn lore_write_patch_file(
     destination_path: String,
     patch: String,
+    replace_existing: bool,
 ) -> Result<(), LoreCommandError> {
-    run_lore_task(move || write_patch_file(destination_path, patch)).await
+    run_lore_task(move || write_patch_file(destination_path, patch, replace_existing)).await
 }
 
-fn write_patch_file(destination_path: String, patch: String) -> Result<(), LoreCommandError> {
+fn write_patch_file(
+    destination_path: String,
+    patch: String,
+    replace_existing: bool,
+) -> Result<(), LoreCommandError> {
     validate_patch_content(&patch)?;
     let destination = PathBuf::from(destination_path.trim());
     if !destination.is_absolute() || destination.file_name().is_none() {
@@ -786,7 +792,30 @@ fn write_patch_file(destination_path: String, patch: String) -> Result<(), LoreC
             ),
         ));
     }
-    std::fs::write(&destination, patch).map_err(|error| {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true);
+    if replace_existing {
+        options.create(true).truncate(true);
+    } else {
+        options.create_new(true);
+    }
+    let mut file = options.open(&destination).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            LoreCommandError::new(
+                "patch_destination_exists",
+                format!(
+                    "A file already exists at {}; choose another name to keep it",
+                    destination.display()
+                ),
+            )
+        } else {
+            LoreCommandError::new(
+                "patch_write_failed",
+                format!("Failed to save patch {}: {error}", destination.display()),
+            )
+        }
+    })?;
+    file.write_all(patch.as_bytes()).map_err(|error| {
         LoreCommandError::new(
             "patch_write_failed",
             format!("Failed to save patch {}: {error}", destination.display()),

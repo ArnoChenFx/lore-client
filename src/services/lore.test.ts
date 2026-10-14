@@ -13,6 +13,7 @@ import {
   parseDiagnosticReport,
   repositoryPublishFailureMessage,
   resolveDefaultServerUrl,
+  resolvePatchDestination,
   revisionDiffsToChangeFiles,
   withPatchExtension
 } from './lore'
@@ -1408,5 +1409,16 @@ describe('patch save path normalization', () => {
   it('appends .patch to destinations the native dialog returned without a patch extension', () => {
     expect(withPatchExtension('/work/Changes')).toBe('/work/Changes.patch')
     expect(withPatchExtension('/work/Changes.txt')).toBe('/work/Changes.txt.patch')
+  })
+
+  it('lets only a dialog-confirmed path replace an existing file', () => {
+    expect(resolvePatchDestination('/work/Changes.patch')).toEqual({
+      destinationPath: '/work/Changes.patch',
+      replaceExisting: true
+    })
+    expect(resolvePatchDestination('/work/Changes')).toEqual({
+      destinationPath: '/work/Changes.patch',
+      replaceExisting: false
+    })
   })
 })

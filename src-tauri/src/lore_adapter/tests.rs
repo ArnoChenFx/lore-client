@@ -3120,8 +3120,16 @@ fn empty_patch_is_rejected() {
 }
 
 /// 补丁保存命令已改为异步，测试通过同一运行时入口驱动它。
-fn save_patch(destination_path: String, patch: String) -> Result<(), LoreCommandError> {
-    tauri::async_runtime::block_on(lore_write_patch_file(destination_path, patch))
+fn save_patch(
+    destination_path: String,
+    patch: String,
+    replace_existing: bool,
+) -> Result<(), LoreCommandError> {
+    tauri::async_runtime::block_on(lore_write_patch_file(
+        destination_path,
+        patch,
+        replace_existing,
+    ))
 }
 
 #[test]
@@ -3130,8 +3138,12 @@ fn patch_write_command_preserves_real_unified_diff_content() {
     let destination = directory.path().join("workspace.patch");
     let patch = "--- a/Content/World.txt\n+++ b/Content/World.txt\n@@ -1 +1 @@\n-old\n+new\n";
 
-    save_patch(destination.to_string_lossy().into_owned(), patch.to_owned())
-        .expect("A patch with a valid parent directory should be written");
+    save_patch(
+        destination.to_string_lossy().into_owned(),
+        patch.to_owned(),
+        false,
+    )
+    .expect("A patch with a valid parent directory should be written");
 
     assert_eq!(
         std::fs::read_to_string(destination).expect("The saved patch should be readable"),
@@ -3146,16 +3158,55 @@ fn patch_write_command_only_targets_patch_extensions() {
 
     for name in ["settings.toml", "run.sh", "authorized_keys", ".bashrc"] {
         let destination = directory.path().join(name);
-        let error = save_patch(destination.to_string_lossy().into_owned(), patch.to_owned())
-            .expect_err("A non-patch destination must be rejected");
+        let error = save_patch(
+            destination.to_string_lossy().into_owned(),
+            patch.to_owned(),
+            true,
+        )
+        .expect_err("A non-patch destination must be rejected");
         assert_eq!(error.code, "invalid_patch_destination");
         assert!(!destination.exists(), "{name} must not be created");
     }
 
     let uppercase = directory.path().join("WORKSPACE.DIFF");
-    save_patch(uppercase.to_string_lossy().into_owned(), patch.to_owned())
-        .expect("Extensions are matched case-insensitively");
+    save_patch(
+        uppercase.to_string_lossy().into_owned(),
+        patch.to_owned(),
+        false,
+    )
+    .expect("Extensions are matched case-insensitively");
     assert!(uppercase.is_file());
+}
+
+#[test]
+fn patch_write_command_replaces_an_existing_file_only_when_confirmed() {
+    let directory = tempfile::tempdir().expect("A temporary patch directory should be created");
+    let destination = directory.path().join("unconfirmed.patch");
+    let patch = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n";
+    std::fs::write(&destination, "kept by the user").expect("The existing patch should be written");
+
+    let error = save_patch(
+        destination.to_string_lossy().into_owned(),
+        patch.to_owned(),
+        false,
+    )
+    .expect_err("An unconfirmed replacement must be refused");
+    assert_eq!(error.code, "patch_destination_exists");
+    assert_eq!(
+        std::fs::read_to_string(&destination).expect("The existing patch should be readable"),
+        "kept by the user",
+    );
+
+    save_patch(
+        destination.to_string_lossy().into_owned(),
+        patch.to_owned(),
+        true,
+    )
+    .expect("A confirmed replacement should be written");
+    assert_eq!(
+        std::fs::read_to_string(&destination).expect("The replaced patch should be readable"),
+        patch,
+    );
 }
 
 #[test]
