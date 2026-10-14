@@ -8,7 +8,11 @@ set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 e2e_check_home
-e2e_require cargo
+e2e_require cargo rustc
+# The upstream Lore crates use edition 2024, which needs Rust 1.85. Older cargo reports "no matching package named 'lore'".
+rust_version="$(rustc --version | awk '{print $2}')"
+oldest="$(printf '%s\n%s\n' 1.85.0 "$rust_version" | sort -V | head -n 1)"
+[ "$oldest" = "1.85.0" ] || e2e_die "Rust 1.85 or newer is required, found $rust_version; run 'rustup update stable'"
 [ -f "$E2E_HOME/tls/trust-bundle.pem" ] || e2e_die "run scripts/e2e/setup-stack.sh first"
 
 filter="${1:-live_}"
