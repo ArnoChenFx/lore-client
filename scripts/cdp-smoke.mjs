@@ -142,6 +142,7 @@ function createCdpClient(webSocketUrl) {
   const socket = new WebSocket(webSocketUrl)
   let commandId = 0
   const pendingCommands = new Map()
+  const eventListeners = new Map()
   const runtimeErrors = []
 
   const opened = new Promise((resolve, reject) => {
@@ -166,7 +167,14 @@ function createCdpClient(webSocketUrl) {
     if (message.method === 'Runtime.exceptionThrown') {
       runtimeErrors.push(message.params.exceptionDetails.text)
     }
+    for (const listener of eventListeners.get(message.method) ?? []) {
+      listener(message.params)
+    }
   })
+
+  function on(method, listener) {
+    eventListeners.set(method, [...(eventListeners.get(method) ?? []), listener])
+  }
 
   async function send(method, params = {}) {
     await opened
@@ -192,7 +200,7 @@ function createCdpClient(webSocketUrl) {
     return result.result.value
   }
 
-  return { socket, send, evaluate, runtimeErrors }
+  return { socket, send, evaluate, on, runtimeErrors }
 }
 
 function assert(condition, message) {
@@ -243,6 +251,20 @@ async function waitForApplication(cdp) {
   throw new Error(
     `Lore Client did not finish mounting React before the timeout${lastContextError ? ` (${lastContextError})` : ''}${lastPageState ? `; page state: ${lastPageState}` : ''}${cdp.runtimeErrors.length ? `; runtime errors: ${JSON.stringify(cdp.runtimeErrors)}` : ''}${browserDiagnostic ? `: ${browserDiagnostic}` : ''}`
   )
+}
+
+/** 导航命令返回时旧文档可能仍然存活；只有标记消失后才能确定新文档已经替换旧页面。 */
+async function openFreshApplicationDocument(cdp, navigate) {
+  await cdp.evaluate('window.__cdpDocumentMarker = true')
+  await navigate()
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const replaced = await cdp.evaluate('window.__cdpDocumentMarker !== true').catch(() => false)
+    if (replaced) {
+      break
+    }
+    await delay(100)
+  }
+  await waitForApplication(cdp)
 }
 
 try {
@@ -4263,7 +4285,11 @@ try {
   await delay(40)
 
   await cdp.evaluate(`document.querySelector('button[aria-label="客户端设置"]')?.click()`)
-  await delay(50)
+  await waitForEvaluatedState(
+    cdp,
+    'Boolean(document.querySelector(".settings-dialog"))',
+    (visible) => visible
+  )
   results.settings = await cdp.evaluate(`({
     visible: Boolean(document.querySelector(".settings-dialog")),
     categories: document.querySelectorAll(
@@ -4457,9 +4483,10 @@ try {
   await cdp.evaluate(`Array.from(document.querySelectorAll(".tree-row"))
     .find((button) => button.textContent.includes("账户"))
     ?.click()`)
-  await delay(50)
-  results.sidebarAccountShortcut = await cdp.evaluate(
-    `document.querySelector('#repository-tool-tab-accounts[aria-selected="true"]')?.textContent?.trim() ?? ""`
+  results.sidebarAccountShortcut = await waitForEvaluatedState(
+    cdp,
+    `document.querySelector('#repository-tool-tab-accounts[aria-selected="true"]')?.textContent?.trim() ?? ""`,
+    (text) => text === '账户'
   )
   assert(
     results.sidebarAccountShortcut === '账户',
@@ -4848,11 +4875,19 @@ try {
   await cdp.evaluate(`Array.from(
     document.querySelectorAll(".sidebar__scroll .tree-row--root")
   ).find((button) => button.textContent?.includes("仓库工具"))?.click()`)
-  await delay(50)
+  await waitForEvaluatedState(
+    cdp,
+    'Boolean(document.querySelector(".tools-dialog__nav"))',
+    (visible) => visible
+  )
   await cdp.evaluate(`Array.from(
     document.querySelectorAll(".tools-dialog__nav button")
   ).find((button) => button.textContent?.includes("依赖"))?.click()`)
-  await delay(60)
+  await waitForEvaluatedState(
+    cdp,
+    'document.querySelectorAll(".dependency-visualizer__node").length',
+    (count) => count === 6
+  )
   results.dependencyGraphFixture = await cdp.evaluate(`(() => {
     const selectedTab = document.querySelector(
       '.tools-dialog__nav button[aria-selected="true"]'
@@ -5094,6 +5129,77 @@ try {
       after: results.dependencyGraphWheelAfter
     })}`
   )
+
+  /*
+   * 设置弹层的懒加载 chunk 在本文档内尚未加载，Fetch 拦截只作用于它。失败必须显示可关闭的错误
+   * 而不是空白区域。浏览器会缓存失败的模块请求，同一文档内的重试可能仍然失败，因此只断言
+   * 结果不是空白，并记录重试是否恢复；重新加载页面后必须能正常打开。
+   */
+  await openFreshApplicationDocument(cdp, () => cdp.send('Page.navigate', { url: applicationUrl }))
+  let failSettingsChunk = true
+  let blockedSettingsRequests = 0
+  cdp.on('Fetch.requestPaused', (params) => {
+    const command = failSettingsChunk ? 'Fetch.failRequest' : 'Fetch.continueRequest'
+    if (failSettingsChunk) blockedSettingsRequests += 1
+    cdp
+      .send(command, failSettingsChunk ? { requestId: params.requestId, errorReason: 'Failed' } : { requestId: params.requestId })
+      .catch(() => {})
+  })
+  await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*SettingsDialog*', requestStage: 'Request' }] })
+  await cdp.evaluate(`document.querySelector('button[aria-label="客户端设置"]')?.click()`)
+  const lazyFailure = await waitForEvaluatedState(
+    cdp,
+    `(() => {
+      const alert = document.querySelector('[role="alertdialog"]')
+      return {
+        visible: Boolean(alert),
+        title: alert?.querySelector('h2')?.textContent?.trim() ?? '',
+        hasRetry: Array.from(alert?.querySelectorAll('button') ?? []).some((button) => button.textContent?.trim() === '重试'),
+        settingsDialogVisible: Boolean(document.querySelector('.settings-dialog'))
+      }
+    })()`,
+    (state) => state.visible
+  )
+  assert(
+    lazyFailure.visible &&
+      lazyFailure.title === '此视图暂时无法显示。' &&
+      lazyFailure.hasRetry &&
+      !lazyFailure.settingsDialogVisible,
+    `A failed lazy dialog did not show the localized retryable error: ${JSON.stringify(lazyFailure)}`
+  )
+
+  failSettingsChunk = false
+  await cdp.send('Fetch.disable')
+  await cdp.evaluate(`Array.from(document.querySelectorAll('[role="alertdialog"] button'))
+    .find((button) => button.textContent?.trim() === '重试')?.click()`)
+  await delay(300)
+  const afterRetry = await waitForEvaluatedState(
+    cdp,
+    `({
+      errorVisible: Boolean(document.querySelector('[role="alertdialog"]')),
+      settingsDialogVisible: Boolean(document.querySelector('.settings-dialog'))
+    })`,
+    (state) => state.errorVisible !== state.settingsDialogVisible
+  )
+  assert(
+    afterRetry.errorVisible !== afterRetry.settingsDialogVisible,
+    `The lazy dialog region was blank after retry: ${JSON.stringify(afterRetry)}`
+  )
+
+  await openFreshApplicationDocument(cdp, () => cdp.send('Page.reload'))
+  await cdp.evaluate(`document.querySelector('button[aria-label="客户端设置"]')?.click()`)
+  const recoveredAfterReload = await waitForEvaluatedState(
+    cdp,
+    `Boolean(document.querySelector('.settings-dialog'))`,
+    (visible) => visible
+  )
+  assert(recoveredAfterReload === true, 'Reloading the page did not restore the settings dialog after a failed chunk load')
+  results.lazyViewFailure = {
+    blockedSettingsRequests,
+    failure: lazyFailure,
+    retryOutcome: afterRetry.settingsDialogVisible ? 'recovered' : 'error-still-shown',
+    recoveredAfterReload
+  }
 
   assert(cdp.runtimeErrors.length === 0, 'Runtime errors were captured during interaction')
 
