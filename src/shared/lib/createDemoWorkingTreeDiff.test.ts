@@ -1,5 +1,6 @@
+import { describe, expect, it } from 'bun:test'
+
 import { parsePatchFiles } from '@pierre/diffs'
-import { describe, expect, it } from 'vitest'
 
 import type { ChangeFile } from '../../types'
 import { createDemoWorkingTreeDiff } from './createDemoWorkingTreeDiff'

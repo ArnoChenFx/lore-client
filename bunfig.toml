@@ -1,4 +1,6 @@
 # Bun 测试运行器配置（项目交付命令为 `bun test`）。
 [test]
+# 每个测试文件执行前先完成 i18n 初始化，保证组件测试与生产环境使用同一语言实例。
+preload = ["./src/test/setup.ts"]
 # vendored anti-slop 插件的自测文件不属于本项目测试集。
 pathIgnorePatterns = ["tools/**", "node_modules/**", "dist/**"]

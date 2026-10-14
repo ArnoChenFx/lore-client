@@ -46,20 +46,20 @@ bun tauri build --debug --no-bundle
 
 ## Find the right place to work
 
-| Task                                                                   | Main locations                                          |
-| ---------------------------------------------------------------------- | ------------------------------------------------------- |
-| Application-level UI, shell, and dialogs                               | `src/app/`, `src/App.tsx`, `src/styles.css`             |
-| Domain UI and workflows such as revisions, local changes, and branches | `src/features/<domain>/`                                |
-| Cross-domain primitives and pure helpers                               | `src/shared/ui/`, `src/shared/lib/`                     |
-| Stable frontend data types                                             | `src/types.ts`                                          |
-| Frontend Lore calls                                                    | `src/services/lore/`                                  |
-| Native Lore operations                                                 | `src-tauri/src/lore_adapter.rs`, `src-tauri/src/lib.rs` |
+| Task                                                                   | Main locations                                                 |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Application-level UI, shell, and dialogs                               | `src/app/`, `src/App.tsx`, `src/styles.css`                    |
+| Domain UI and workflows such as revisions, local changes, and branches | `src/features/<domain>/`                                       |
+| Cross-domain primitives and pure helpers                               | `src/shared/ui/`, `src/shared/lib/`                            |
+| Stable frontend data types                                             | `src/types.ts`                                                 |
+| Frontend Lore calls                                                    | `src/services/lore/`                                           |
+| Native Lore operations                                                 | `src-tauri/src/lore_adapter.rs`, `src-tauri/src/lib.rs`        |
 | Offline Revision author display cache                                  | `src-tauri/src/revision_author_cache.rs`, `src/services/lore/` |
-| Preferences and persisted layout                                       | `src/services/preferences.ts`, `src/hooks/`             |
-| English and Chinese UI text                                            | `src/i18n/locales/`                                     |
-| Browser-preview sample data                                            | `src/data.ts`                                           |
-| UI and visual validation                                               | `scripts/`                                              |
-| Public documentation and images                                        | `README.md`, `docs/en/`, `docs/zh/`, `docs/img/`        |
+| Preferences and persisted layout                                       | `src/services/preferences.ts`, `src/hooks/`                    |
+| English and Chinese UI text                                            | `src/i18n/locales/`                                            |
+| Browser-preview sample data                                            | `src/data.ts`                                                  |
+| UI and visual validation                                               | `scripts/`                                                     |
+| Public documentation and images                                        | `README.md`, `docs/en/`, `docs/zh/`, `docs/img/`               |
 
 Do not commit generated dependencies, build output, Rust targets, temporary browser profiles, or generated analysis directories.
 
@@ -67,7 +67,7 @@ Do not commit generated dependencies, build output, Rust targets, temporary brow
 
 ### Change the interface
 
-Start with `bun run dev`, update the relevant component and shared styles, then add or update nearby Vitest coverage. Use semantic design tokens so the same change works in light and dark themes.
+Start with `bun run dev`, update the relevant component and shared styles, then add or update nearby `bun test` coverage. Use semantic design tokens so the same change works in light and dark themes.
 
 All user-visible text, accessible names, tooltips, confirmations, and errors must use the localization resources. Update the English and Simplified Chinese resources together.
 

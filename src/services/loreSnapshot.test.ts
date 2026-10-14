@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'bun:test'
 
 import i18n from '../i18n'
 
@@ -1277,7 +1277,7 @@ describe('repository snapshot branch loading', () => {
     expect(invokeMock).toHaveBeenCalledWith('lore_conflict_session', {
       repositoryPath: 'E:\\Worlds\\RealLore'
     })
-    expect(snapshot.conflictSession).toEqual(conflictSessionResponse)
+    expect<unknown>(snapshot.conflictSession).toEqual(conflictSessionResponse)
     expect(snapshot.changes[0]).toMatchObject({
       id: 'Content/Conflict.txt',
       conflict: true,

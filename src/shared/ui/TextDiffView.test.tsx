@@ -1,5 +1,6 @@
+import { beforeEach, describe, expect, it, vi } from 'bun:test'
+
 import { renderToStaticMarkup } from 'react-dom/server'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import { normalizePatchPath, TextDiffView } from './TextDiffView'

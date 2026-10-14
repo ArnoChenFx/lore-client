@@ -241,6 +241,63 @@ pub(super) fn validate_repository_path(repository_path: &str) -> Result<PathBuf,
     })
 }
 
+/// 解析仓库自有文件的写入位置。路径或其父目录上的符号链接解析后必须仍位于仓库根目录之内；
+/// 悬空链接无法确认落点，同样拒绝，否则会在链接指向的仓库外位置创建文件。
+///
+/// 残余竞争：本函数的检查与调用方随后的写入（`write_resolved_file_atomically` 在解析后的父目录中
+/// 创建临时文件并 rename）不是原子操作。能够写入仓库目录的其他进程可以在检查之后，把某个路径组件
+/// 或祖先目录替换为指向仓库外的符号链接，使写入落到仓库之外。彻底封堵需要基于文件描述符的相对写入：
+/// 逐级以 `O_NOFOLLOW` 的 `openat` 打开每个组件，或在 Linux 上使用 `openat2` 并设置 `RESOLVE_BENEATH`。
+/// 当前实现只拒绝写入前已经存在的链接，并接受这一残余窗口。
+pub(super) fn repository_contained_write_path(
+    repository_root: &Path,
+    path: &Path,
+) -> Result<PathBuf, LoreCommandError> {
+    let root = std::fs::canonicalize(repository_root).map_err(|error| {
+        LoreCommandError::new(
+            "repository_path_unavailable",
+            format!(
+                "Failed to resolve repository directory {}: {error}",
+                repository_root.display()
+            ),
+        )
+    })?;
+    let destination = match std::fs::symlink_metadata(path) {
+        Ok(_) => {
+            std::fs::canonicalize(path).map_err(|error| repository_file_unavailable(path, error))?
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let (Some(parent), Some(file_name)) = (path.parent(), path.file_name()) else {
+                return Err(LoreCommandError::new(
+                    "repository_file_unavailable",
+                    format!("The file path has no parent directory: {}", path.display()),
+                ));
+            };
+            std::fs::canonicalize(parent)
+                .map_err(|error| repository_file_unavailable(path, error))?
+                .join(file_name)
+        }
+        Err(error) => return Err(repository_file_unavailable(path, error)),
+    };
+    if !destination.starts_with(&root) {
+        return Err(LoreCommandError::new(
+            "repository_file_outside_repository",
+            format!(
+                "The file resolves outside the Lore repository: {}",
+                path.display()
+            ),
+        ));
+    }
+    Ok(destination)
+}
+
+fn repository_file_unavailable(path: &Path, error: std::io::Error) -> LoreCommandError {
+    LoreCommandError::new(
+        "repository_file_unavailable",
+        format!("Failed to resolve {}: {error}", path.display()),
+    )
+}
+
 pub(super) fn validate_branch_name(branch: &str) -> Result<String, LoreCommandError> {
     let branch = branch.trim();
     if branch.is_empty() {

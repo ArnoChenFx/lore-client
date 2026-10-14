@@ -46,6 +46,20 @@ export function withPatchExtension(path: string): string {
   return /\.(patch|diff)$/i.test(path) ? path : `${path}.patch`
 }
 
+export interface PatchDestination {
+  destinationPath: string
+  replaceExisting: boolean
+}
+
+/**
+ * 对话框返回的路径才是用户看到并确认过的目标；补全扩展名后的路径没有经过确认，
+ * 因此只有未补全时才允许覆盖已存在的文件。
+ */
+export function resolvePatchDestination(selectedPath: string): PatchDestination {
+  const destinationPath = withPatchExtension(selectedPath)
+  return { destinationPath, replaceExisting: destinationPath === selectedPath }
+}
+
 /** 通过原生保存对话框选择位置，并由 Rust 完成补丁写入。 */
 export async function savePatchFile(suggestedName: string, patch: string): Promise<string | null> {
   const selectedPath = await save({
@@ -56,11 +70,8 @@ export async function savePatchFile(suggestedName: string, patch: string): Promi
   if (!selectedPath) {
     return null
   }
-  const destinationPath = withPatchExtension(selectedPath)
-  await invokeCommand<void>('lore_write_patch_file', {
-    destinationPath,
-    patch
-  })
+  const { destinationPath, replaceExisting } = resolvePatchDestination(selectedPath)
+  await invokeCommand<void>('lore_write_patch_file', { destinationPath, patch, replaceExisting })
   return destinationPath
 }
 

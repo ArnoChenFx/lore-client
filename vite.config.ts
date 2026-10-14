@@ -1,6 +1,6 @@
 import babel from '@rolldown/plugin-babel'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
-import { defineConfig } from 'vitest/config'
+import { defineConfig } from 'vite'
 
 // Tauri 在移动端开发时会通过环境变量注入宿主地址；桌面开发则保持本机回环地址。
 const tauriHost = process.env.TAURI_DEV_HOST
@@ -29,10 +29,5 @@ export default defineConfig({
       // Rust 构建目录体积较大且变化频繁，不应触发前端热更新。
       ignored: ['**/src-tauri/**', '**/.browser-profile/**']
     }
-  },
-  test: {
-    setupFiles: ['./src/test/setup.ts'],
-    // vendored anti-slop 插件的自测文件不属于本项目测试集。
-    exclude: ['node_modules/**', 'tools/**', 'dist/**']
   }
 })

@@ -442,6 +442,8 @@ const enUSStatic = {
   justNow: 'Just now',
   lastModified: 'Last modified',
   layersAndLinks: 'Layers and Links',
+  lazyViewUnavailable: 'This view could not be displayed.',
+  lazyViewUnavailableHint: 'Try again. If the problem continues, restart the app.',
   leaveBlankKeepRepositoryIdentity_5b56:
     'Leave blank to keep repository identity unset; you can still fill it in repository settings before committing.',
   light: 'Light',
@@ -747,6 +749,8 @@ const enUSStatic = {
   parsing3dModel: 'Parsing 3D model',
   parsingPdf: 'Parsing PDF',
   partition: 'Partition',
+  patchDestinationExists:
+    'A file with that name already exists here. Choose another name to save the patch; the existing file was not replaced.',
   patchOpenedInAnExternalApp: 'Patch opened in an external app',
   patchSaved: 'Patch saved',
   path: 'Path',
@@ -1110,6 +1114,7 @@ const enUSStatic = {
   closeUpdateDialog: 'Close update dialog',
   currentVersion: 'Current version',
   downloadInstallAndRestart: 'Download, Install, and Restart',
+  retry: 'Retry',
   retryDownloadInstallAndRestart: 'Retry Download, Install, and Restart',
   downloadingUpdate: 'Downloading update',
   installingUpdate: 'Installing; the app will restart shortly',

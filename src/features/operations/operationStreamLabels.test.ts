@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'bun:test'
 
 import i18n from '../../i18n'
 import { resolveLoreEventLabel } from './operationStreamLabels'

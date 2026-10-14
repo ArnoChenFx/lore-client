@@ -1,5 +1,6 @@
+import { afterEach, describe, expect, it, vi } from 'bun:test'
+
 import * as THREE from 'three'
-import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createModelPreviewObject, startModelPreviewWorker } from './modelPreviewWorkerClient'
 import type { ModelPreviewWorkerResult } from './modelPreviewWorkerProtocol'
@@ -32,13 +33,13 @@ describe('model preview worker client', () => {
     const task = startModelPreviewWorker('fbx', source)
     const worker = FakeWorker.latest!
 
-    expect(worker.postMessage).toHaveBeenCalledOnce()
+    expect(worker.postMessage).toHaveBeenCalledTimes(1)
     expect(worker.postMessage.mock.calls[0]?.[0]).toMatchObject({ type: 'parseModel', format: 'fbx' })
     expect(source.byteLength).toBe(8)
     task.cancel()
 
     await expect(task.promise).rejects.toMatchObject({ name: 'AbortError' })
-    expect(worker.terminate).toHaveBeenCalledOnce()
+    expect(worker.terminate).toHaveBeenCalledTimes(1)
   })
 
   it('rebuilds indexed geometry, materials, and worker-computed bounds', () => {

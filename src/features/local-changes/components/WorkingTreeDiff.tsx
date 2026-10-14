@@ -1,5 +1,5 @@
 import { Binary, File, FileQuestion, Folder, LockKeyhole, TriangleAlert } from 'lucide-react'
-import { lazy, Suspense, useMemo } from 'react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
@@ -17,19 +17,14 @@ import {
 import {
   BinaryDiffPreview,
   DiffOptionsControl,
-  loadConflictResolutionViewModule,
-  loadTextDiffViewModule,
+  LazyViewBoundary,
+  loadConflictResolutionView,
+  loadTextDiffView,
   type BinaryDiffPreviewView,
   type ConflictResolutionResult,
   type TextDiffFullFileLoader
 } from '../../../shared/ui'
 import type { ChangeFile, LoreFileLock, WorkingTreeDiff } from '../../../types'
-
-// Diffs/Shiki 体积较大，只在右侧实际进入文本或冲突正文时加载，避免拖慢主工作区首屏。
-const TextDiffView = lazy(() => loadTextDiffViewModule().then((module) => ({ default: module.TextDiffView })))
-const ConflictResolutionView = lazy(() =>
-  loadConflictResolutionViewModule().then((module) => ({ default: module.ConflictResolutionView }))
-)
 
 interface WorkingTreeDiffProps {
   file: ChangeFile | null
@@ -182,14 +177,16 @@ export function WorkingTreeDiff({
             className="working-diff__viewport working-diff__conflict"
             aria-label={t('status.textDiffOf', { name: file.name })}
           >
-            <Suspense fallback={null}>
-              <ConflictResolutionView
-                content={conflictContent}
-                fileName={file.name}
-                themeType={themeType}
-                onResolved={onConflictResolved ?? (() => undefined)}
-              />
-            </Suspense>
+            <LazyViewBoundary
+              load={loadConflictResolutionView}
+              resetKey={changeFilePath(file)}
+              viewProps={{
+                content: conflictContent,
+                fileName: file.name,
+                themeType,
+                onResolved: onConflictResolved ?? (() => undefined)
+              }}
+            />
           </div>
         )
       ) : previewModeActive && !preferences.binaryDiffVisible && !binaryPreview && !binaryPreviewLoading ? (
@@ -214,16 +211,18 @@ export function WorkingTreeDiff({
         </div>
       ) : (
         <div className="working-diff__viewport" aria-label={t('status.textDiffOf', { name: file.name })}>
-          <Suspense fallback={null}>
-            <TextDiffView
-              patch={diff?.patch ?? ''}
-              filePath={changeFilePath(file)}
-              themeType={themeType}
-              diffStyle={preferences.diff.diffStyle}
-              expandFullFile={preferences.diff.expandFullFile}
-              loadDiffFiles={loadDiffFiles}
-            />
-          </Suspense>
+          <LazyViewBoundary
+            load={loadTextDiffView}
+            resetKey={changeFilePath(file)}
+            viewProps={{
+              patch: diff?.patch ?? '',
+              filePath: changeFilePath(file),
+              themeType,
+              diffStyle: preferences.diff.diffStyle,
+              expandFullFile: preferences.diff.expandFullFile,
+              loadDiffFiles
+            }}
+          />
         </div>
       )}
     </section>

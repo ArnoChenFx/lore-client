@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'bun:test'
 
 import {
   REPOSITORY_NOTIFICATION_STABLE_DELAY_MS,

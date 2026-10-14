@@ -1,6 +1,7 @@
+import { beforeEach, describe, expect, it } from 'bun:test'
+
 import type { ComponentProps } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { beforeEach, describe, expect, it } from 'vitest'
 
 import i18n from '../../../i18n'
 import { updateClientPreferences } from '../../../services/preferences'

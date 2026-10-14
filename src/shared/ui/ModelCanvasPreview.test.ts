@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'bun:test'
 
 import { disposeObject3D, disposeWebGLRenderer } from './ModelCanvasPreview'
 
@@ -41,8 +41,8 @@ describe('model canvas resource disposal', () => {
       forceContextLoss
     } as never)
 
-    expect(disposeRenderLists).toHaveBeenCalledOnce()
-    expect(disposeRenderer).toHaveBeenCalledOnce()
-    expect(forceContextLoss).toHaveBeenCalledOnce()
+    expect(disposeRenderLists).toHaveBeenCalledTimes(1)
+    expect(disposeRenderer).toHaveBeenCalledTimes(1)
+    expect(forceContextLoss).toHaveBeenCalledTimes(1)
   })
 })

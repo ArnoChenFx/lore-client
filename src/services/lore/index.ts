@@ -79,6 +79,7 @@ export {
   detectExternalTools,
   openExternalDiff,
   openExternalMerge,
+  resolvePatchDestination,
   savePatchFile,
   selectExternalDiffExecutable,
   withPatchExtension

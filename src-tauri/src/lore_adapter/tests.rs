@@ -14,8 +14,8 @@ use super::{
         contains_conflict_markers, lore_commit, validate_conflict_resolution_preconditions,
     },
     workspace::{
-        lore_read_revision_text, lore_revision_changes, lore_stage, lore_stage_move, lore_unstage,
-        lore_workspace_diff, lore_write_patch_file,
+        lore_ignore_paths, lore_read_revision_text, lore_revision_changes, lore_stage,
+        lore_stage_move, lore_unstage, lore_workspace_diff, lore_write_patch_file,
     },
 };
 
@@ -2254,6 +2254,146 @@ fn repository_configuration_edit_preserves_unknown_tables_and_comments() {
     assert!(cleared_content.contains("[store]"));
 }
 
+#[cfg(unix)]
+#[test]
+fn repository_configuration_write_refuses_a_link_that_leaves_the_repository() {
+    let repository = tempfile::tempdir().expect("temporary repository should exist");
+    let outside = tempfile::tempdir().expect("outside directory should exist");
+    let outside_config = outside.path().join("config.toml");
+    fs::write(&outside_config, "identity = \"outside@example.com\"\n").unwrap();
+    let metadata = repository.path().join(".lore");
+    fs::create_dir(&metadata).unwrap();
+    std::os::unix::fs::symlink(&outside_config, metadata.join("config.toml")).unwrap();
+
+    let error = update_repository_configuration(repository.path(), "new@example.com", "")
+        .expect_err("a configuration link that leaves the repository must be refused");
+
+    assert_eq!(error.code, "repository_file_outside_repository");
+    assert_eq!(
+        fs::read_to_string(&outside_config).unwrap(),
+        "identity = \"outside@example.com\"\n"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn repository_configuration_write_refuses_a_metadata_directory_linked_outside_the_repository() {
+    let repository = tempfile::tempdir().expect("temporary repository should exist");
+    let outside = tempfile::tempdir().expect("outside directory should exist");
+    let outside_config = outside.path().join("config.toml");
+    fs::write(&outside_config, "identity = \"outside@example.com\"\n").unwrap();
+    std::os::unix::fs::symlink(outside.path(), repository.path().join(".lore")).unwrap();
+
+    let error = update_repository_configuration(repository.path(), "new@example.com", "")
+        .expect_err("a metadata directory that leaves the repository must be refused");
+
+    assert_eq!(error.code, "repository_file_outside_repository");
+    assert_eq!(
+        fs::read_to_string(&outside_config).unwrap(),
+        "identity = \"outside@example.com\"\n"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn repository_configuration_write_never_creates_a_dangling_link_target_outside_the_repository() {
+    let repository = tempfile::tempdir().expect("temporary repository should exist");
+    let outside = tempfile::tempdir().expect("outside directory should exist");
+    let missing = outside.path().join("created-by-write.toml");
+    let metadata = repository.path().join(".lore");
+    fs::create_dir(&metadata).unwrap();
+    std::os::unix::fs::symlink(&missing, metadata.join("config.toml")).unwrap();
+
+    let error = update_repository_configuration(repository.path(), "new@example.com", "")
+        .expect_err("a dangling configuration link must not be materialized");
+
+    assert_eq!(error.code, "repository_file_unavailable");
+    assert!(!missing.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn repository_configuration_write_follows_links_that_stay_inside_the_repository() {
+    let repository = tempfile::tempdir().expect("temporary repository should exist");
+    let metadata = repository.path().join(".lore");
+    fs::create_dir(&metadata).unwrap();
+    let shared = metadata.join("shared.toml");
+    fs::write(&shared, "identity = \"old@example.com\"\n").unwrap();
+    std::os::unix::fs::symlink(&shared, metadata.join("config.toml")).unwrap();
+
+    let updated = update_repository_configuration(repository.path(), "new@example.com", "")
+        .expect("a link that stays inside the repository should be written");
+
+    assert_eq!(updated.identity.as_deref(), Some("new@example.com"));
+    assert!(fs::symlink_metadata(metadata.join("config.toml"))
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert!(fs::read_to_string(&shared)
+        .unwrap()
+        .contains("identity = \"new@example.com\""));
+}
+
+#[cfg(unix)]
+#[test]
+fn repository_configuration_write_allows_a_metadata_directory_linked_inside_the_repository() {
+    let repository = tempfile::tempdir().expect("temporary repository should exist");
+    let store = repository.path().join("store");
+    fs::create_dir(&store).unwrap();
+    fs::write(
+        store.join("config.toml"),
+        "identity = \"old@example.com\"\n",
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(&store, repository.path().join(".lore")).unwrap();
+
+    update_repository_configuration(repository.path(), "new@example.com", "")
+        .expect("a metadata directory that stays inside the repository should be written");
+
+    assert!(fs::read_to_string(store.join("config.toml"))
+        .unwrap()
+        .contains("identity = \"new@example.com\""));
+}
+
+#[test]
+fn ignore_rules_append_to_a_regular_loreignore_file() {
+    let repository = tempfile::tempdir().expect("temporary repository should exist");
+    fs::write(repository.path().join(".loreignore"), "*.log\n").unwrap();
+
+    let appended = lore_ignore_paths(
+        repository.path().to_string_lossy().into_owned(),
+        vec!["Content/Hero.txt".to_owned()],
+        false,
+    )
+    .expect("a regular ignore file inside the repository should be updated");
+
+    assert_eq!(appended, vec!["Content/Hero.txt".to_owned()]);
+    assert_eq!(
+        fs::read_to_string(repository.path().join(".loreignore")).unwrap(),
+        "*.log\nContent/Hero.txt\n"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn ignore_rules_refuse_a_loreignore_link_that_leaves_the_repository() {
+    let repository = tempfile::tempdir().expect("temporary repository should exist");
+    let outside = tempfile::tempdir().expect("outside directory should exist");
+    let outside_rules = outside.path().join("global.ignore");
+    fs::write(&outside_rules, "keep\n").unwrap();
+    std::os::unix::fs::symlink(&outside_rules, repository.path().join(".loreignore")).unwrap();
+
+    let error = lore_ignore_paths(
+        repository.path().to_string_lossy().into_owned(),
+        vec!["Content/Hero.txt".to_owned()],
+        false,
+    )
+    .expect_err("an ignore file that leaves the repository must not be updated");
+
+    assert_eq!(error.code, "repository_file_outside_repository");
+    assert_eq!(fs::read_to_string(&outside_rules).unwrap(), "keep\n");
+}
+
 #[test]
 fn empty_file_list_maps_to_repository_root() {
     assert_eq!(normalize_paths(Vec::new(), true), vec!["."]);
@@ -2980,8 +3120,16 @@ fn empty_patch_is_rejected() {
 }
 
 /// 补丁保存命令已改为异步，测试通过同一运行时入口驱动它。
-fn save_patch(destination_path: String, patch: String) -> Result<(), LoreCommandError> {
-    tauri::async_runtime::block_on(lore_write_patch_file(destination_path, patch))
+fn save_patch(
+    destination_path: String,
+    patch: String,
+    replace_existing: bool,
+) -> Result<(), LoreCommandError> {
+    tauri::async_runtime::block_on(lore_write_patch_file(
+        destination_path,
+        patch,
+        replace_existing,
+    ))
 }
 
 #[test]
@@ -2990,8 +3138,12 @@ fn patch_write_command_preserves_real_unified_diff_content() {
     let destination = directory.path().join("workspace.patch");
     let patch = "--- a/Content/World.txt\n+++ b/Content/World.txt\n@@ -1 +1 @@\n-old\n+new\n";
 
-    save_patch(destination.to_string_lossy().into_owned(), patch.to_owned())
-        .expect("A patch with a valid parent directory should be written");
+    save_patch(
+        destination.to_string_lossy().into_owned(),
+        patch.to_owned(),
+        false,
+    )
+    .expect("A patch with a valid parent directory should be written");
 
     assert_eq!(
         std::fs::read_to_string(destination).expect("The saved patch should be readable"),
@@ -3006,16 +3158,55 @@ fn patch_write_command_only_targets_patch_extensions() {
 
     for name in ["settings.toml", "run.sh", "authorized_keys", ".bashrc"] {
         let destination = directory.path().join(name);
-        let error = save_patch(destination.to_string_lossy().into_owned(), patch.to_owned())
-            .expect_err("A non-patch destination must be rejected");
+        let error = save_patch(
+            destination.to_string_lossy().into_owned(),
+            patch.to_owned(),
+            true,
+        )
+        .expect_err("A non-patch destination must be rejected");
         assert_eq!(error.code, "invalid_patch_destination");
         assert!(!destination.exists(), "{name} must not be created");
     }
 
     let uppercase = directory.path().join("WORKSPACE.DIFF");
-    save_patch(uppercase.to_string_lossy().into_owned(), patch.to_owned())
-        .expect("Extensions are matched case-insensitively");
+    save_patch(
+        uppercase.to_string_lossy().into_owned(),
+        patch.to_owned(),
+        false,
+    )
+    .expect("Extensions are matched case-insensitively");
     assert!(uppercase.is_file());
+}
+
+#[test]
+fn patch_write_command_replaces_an_existing_file_only_when_confirmed() {
+    let directory = tempfile::tempdir().expect("A temporary patch directory should be created");
+    let destination = directory.path().join("unconfirmed.patch");
+    let patch = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n";
+    std::fs::write(&destination, "kept by the user").expect("The existing patch should be written");
+
+    let error = save_patch(
+        destination.to_string_lossy().into_owned(),
+        patch.to_owned(),
+        false,
+    )
+    .expect_err("An unconfirmed replacement must be refused");
+    assert_eq!(error.code, "patch_destination_exists");
+    assert_eq!(
+        std::fs::read_to_string(&destination).expect("The existing patch should be readable"),
+        "kept by the user",
+    );
+
+    save_patch(
+        destination.to_string_lossy().into_owned(),
+        patch.to_owned(),
+        true,
+    )
+    .expect("A confirmed replacement should be written");
+    assert_eq!(
+        std::fs::read_to_string(&destination).expect("The replaced patch should be readable"),
+        patch,
+    );
 }
 
 #[test]

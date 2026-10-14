@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'bun:test'
 
 import i18n from '../i18n'
+import zhCN from '../i18n/locales/zh-CN'
 import type { LoreEvent, LoreLinkDetails } from '../types'
 import {
   DEFAULT_SERVER_URL,
@@ -13,6 +14,7 @@ import {
   parseDiagnosticReport,
   repositoryPublishFailureMessage,
   resolveDefaultServerUrl,
+  resolvePatchDestination,
   revisionDiffsToChangeFiles,
   withPatchExtension
 } from './lore'
@@ -47,6 +49,22 @@ describe('Lore event adapter', () => {
     expect(isAuthenticationRequiredError(authenticationError)).toBe(true)
     expect(isAuthenticationRequiredError(unrelatedError)).toBe(false)
     expect(isAuthenticationRequiredError(new Error('authentication'))).toBe(false)
+  })
+
+  it('localizes an existing patch destination while keeping the stable error code', async () => {
+    const upstream = { code: 'patch_destination_exists', message: 'A file already exists at E:\\Patches\\World.patch' }
+
+    const englishError = new LoreCommandClientError(upstream, 'lore_write_patch_file')
+    expect(englishError.code).toBe('patch_destination_exists')
+    expect(englishError.message).toBe(
+      'A file with that name already exists here. Choose another name to save the patch; the existing file was not replaced.'
+    )
+
+    await i18n.changeLanguage('zh-CN')
+    const chineseError = new LoreCommandClientError(upstream, 'lore_write_patch_file')
+    expect(chineseError.code).toBe('patch_destination_exists')
+    expect(chineseError.message).toBe(zhCN.patchDestinationExists)
+    expect(chineseError.message).not.toContain('E:\\Patches')
   })
 
   it('converts a complete revision diff into stable files and line statistics', () => {
@@ -1408,5 +1426,16 @@ describe('patch save path normalization', () => {
   it('appends .patch to destinations the native dialog returned without a patch extension', () => {
     expect(withPatchExtension('/work/Changes')).toBe('/work/Changes.patch')
     expect(withPatchExtension('/work/Changes.txt')).toBe('/work/Changes.txt.patch')
+  })
+
+  it('lets only a dialog-confirmed path replace an existing file', () => {
+    expect(resolvePatchDestination('/work/Changes.patch')).toEqual({
+      destinationPath: '/work/Changes.patch',
+      replaceExisting: true
+    })
+    expect(resolvePatchDestination('/work/Changes')).toEqual({
+      destinationPath: '/work/Changes.patch',
+      replaceExisting: false
+    })
   })
 })

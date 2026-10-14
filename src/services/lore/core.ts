@@ -274,6 +274,9 @@ function localizeCommandError(error: Partial<LoreCommandError>, command: string)
   if (error.code === 'revision_text_decode_failed') {
     return t('revisionTextDecodeFailed')
   }
+  if (error.code === 'patch_destination_exists') {
+    return t('patchDestinationExists')
+  }
   if (error.code === 'repository_view_workspace_dirty') {
     return t('cleanWorkspaceBeforeApplyingView')
   }

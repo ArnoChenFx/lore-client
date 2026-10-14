@@ -1,5 +1,6 @@
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import i18n from '../../../i18n'
 import type { LoreOperationStreamRecord, OperationProgress } from '../../../types'

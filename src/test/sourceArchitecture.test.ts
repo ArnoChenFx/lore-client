@@ -1,8 +1,7 @@
+import { describe, expect, it } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-
-import { describe, expect, it } from 'vitest'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const SOURCE_ROOT = resolve(PROJECT_ROOT, 'src')

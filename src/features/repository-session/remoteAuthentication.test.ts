@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'bun:test'
 
 import { LoreCommandClientError } from '../../services/lore'
 import type { RepositoryRemoteState, RepositorySnapshot } from '../../types'

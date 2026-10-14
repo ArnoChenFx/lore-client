@@ -11,6 +11,7 @@ export * from './ControlPrimitives'
 export * from './CsvTablePreview'
 export * from './DiffOptionsControl'
 export * from './IconButton'
+export * from './LazyViewBoundary'
 export * from './ModelCanvasPreview'
 export * from './PaneResizer'
 export * from './PdfCanvasPreview'
@@ -29,4 +30,13 @@ export function loadTextDiffViewModule() {
 export function loadConflictResolutionViewModule() {
   return import('./ConflictResolutionView')
 }
+
+export function loadTextDiffView() {
+  return loadTextDiffViewModule().then((module) => ({ default: module.TextDiffView }))
+}
+
+export function loadConflictResolutionView() {
+  return loadConflictResolutionViewModule().then((module) => ({ default: module.ConflictResolutionView }))
+}
+
 export * from './VersionContextMenu'

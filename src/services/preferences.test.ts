@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'bun:test'
 
 import type { DiffPreferences } from '../types'
 import { DEFAULT_CLIENT_PREFERENCES, getClientPreferences, updateClientPreferences } from './preferences'

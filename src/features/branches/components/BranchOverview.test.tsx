@@ -1,5 +1,6 @@
+import { describe, expect, it } from 'bun:test'
+
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
 
 import i18n from '../../../i18n'
 import type { Branch } from '../../../types'

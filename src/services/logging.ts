@@ -64,7 +64,7 @@ type LogWriter = (message: string) => Promise<void>
 /** 日志插件不可用时不能反过来打断产品流程；浏览器演示仅写开发控制台。 */
 function dispatchLog(writer: LogWriter, fallback: (message: string) => void, scope: string, value: unknown): void {
   const message = `[${scope}] ${sanitizeLogMessage(value)}`
-  // Vitest 会 mock Tauri invoke 并断言业务命令次数；测试进程不应写真实桌面日志或污染调用计数。
+  // bun test 中的 vi.mock 会替换 Tauri invoke 并断言业务命令次数；测试进程不应写真实桌面日志或污染调用计数。
   if (
     import.meta.env.MODE === 'test' ||
     (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') ||

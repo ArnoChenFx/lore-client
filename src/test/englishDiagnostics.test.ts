@@ -1,8 +1,7 @@
+import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-
-import { describe, expect, test } from 'vitest'
 
 const HAN_TEXT = /\p{Script=Han}/u
 // 本测试已归入 `src/test`，因此需要回到两级父目录才能定位项目根。
@@ -186,7 +185,7 @@ function collectTestFiles(directory: string): string[] {
 }
 
 /**
- * 提取 Vitest/Bun 的直接名称和 `it.each(...)(name, ...)` 参数化名称。
+ * 提取 bun test 的直接名称和 `it.each(...)(name, ...)` 参数化名称。
  *
  * 这里只检查名称字面量；中文本地化夹具、可访问名称和断言期望仍是合法测试数据。
  */
