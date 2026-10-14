@@ -1,5 +1,5 @@
 import { Binary, File, FileQuestion, Folder, LockKeyhole, TriangleAlert } from 'lucide-react'
-import { lazy, Suspense, useMemo } from 'react'
+import { lazy, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
@@ -17,6 +17,7 @@ import {
 import {
   BinaryDiffPreview,
   DiffOptionsControl,
+  LazyViewBoundary,
   loadConflictResolutionViewModule,
   loadTextDiffViewModule,
   type BinaryDiffPreviewView,
@@ -182,14 +183,14 @@ export function WorkingTreeDiff({
             className="working-diff__viewport working-diff__conflict"
             aria-label={t('status.textDiffOf', { name: file.name })}
           >
-            <Suspense fallback={null}>
+            <LazyViewBoundary>
               <ConflictResolutionView
                 content={conflictContent}
                 fileName={file.name}
                 themeType={themeType}
                 onResolved={onConflictResolved ?? (() => undefined)}
               />
-            </Suspense>
+            </LazyViewBoundary>
           </div>
         )
       ) : previewModeActive && !preferences.binaryDiffVisible && !binaryPreview && !binaryPreviewLoading ? (
@@ -214,7 +215,7 @@ export function WorkingTreeDiff({
         </div>
       ) : (
         <div className="working-diff__viewport" aria-label={t('status.textDiffOf', { name: file.name })}>
-          <Suspense fallback={null}>
+          <LazyViewBoundary>
             <TextDiffView
               patch={diff?.patch ?? ''}
               filePath={changeFilePath(file)}
@@ -223,7 +224,7 @@ export function WorkingTreeDiff({
               expandFullFile={preferences.diff.expandFullFile}
               loadDiffFiles={loadDiffFiles}
             />
-          </Suspense>
+          </LazyViewBoundary>
         </div>
       )}
     </section>

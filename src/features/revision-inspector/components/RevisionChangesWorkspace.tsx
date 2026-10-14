@@ -13,17 +13,7 @@ import {
   Search,
   TriangleAlert
 } from 'lucide-react'
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type MouseEvent
-} from 'react'
+import { lazy, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useAdjustFromProps } from '../../../hooks/useAdjustFromProps'
@@ -55,6 +45,7 @@ import {
   BinaryDiffPreview,
   createBinaryDiffPreviewView,
   DiffOptionsControl,
+  LazyViewBoundary,
   loadTextDiffViewModule,
   PaneResizer,
   SelectInput,
@@ -872,7 +863,7 @@ export function RevisionChangesWorkspace({
                 className="revision-diff-pane__viewport"
                 aria-label={t('status.revisionDiffOf', { name: primaryFile.name })}
               >
-                <Suspense fallback={null}>
+                <LazyViewBoundary>
                   <TextDiffView
                     patch={primaryDiff.patch}
                     filePath={changeFilePath(primaryFile)}
@@ -881,7 +872,7 @@ export function RevisionChangesWorkspace({
                     expandFullFile={preferences.diff.expandFullFile}
                     loadDiffFiles={loadDiffFiles}
                   />
-                </Suspense>
+                </LazyViewBoundary>
               </div>
             )}
           </section>

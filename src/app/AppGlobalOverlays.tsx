@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ComponentProps } from 'react'
+import { lazy, type ComponentProps } from 'react'
 
 import { OperationCenter } from '../features/operations'
 import {
@@ -7,6 +7,7 @@ import {
   RemoteAuthenticationDialog,
   ServerDialog
 } from '../features/repository-session'
+import { LazyViewBoundary } from '../shared/ui'
 import { AboutDialog } from './components/AboutDialog'
 import { CommandPalette } from './components/CommandPalette'
 import { SearchDialog } from './components/SearchDialog'
@@ -60,17 +61,17 @@ export function AppGlobalOverlays({
       {server && <ServerDialog {...server} />}
       {clone && <CloneDialog {...clone} />}
       {settings && (
-        <Suspense fallback={null}>
+        <LazyViewBoundary>
           <SettingsDialog {...settings} />
-        </Suspense>
+        </LazyViewBoundary>
       )}
       {search && <SearchDialog {...search} />}
       {operations && <OperationCenter {...operations} />}
       {about && <AboutDialog {...about} />}
       {update && (
-        <Suspense fallback={null}>
+        <LazyViewBoundary>
           <UpdateDialog {...update} />
-        </Suspense>
+        </LazyViewBoundary>
       )}
       {remoteAuthentication && <RemoteAuthenticationDialog {...remoteAuthentication} />}
     </>

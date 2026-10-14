@@ -1,5 +1,6 @@
-import { lazy, Suspense } from 'react'
+import { lazy } from 'react'
 
+import { LazyViewBoundary } from '../../shared/ui'
 import type { RepositoryToolsController } from './types'
 
 /*
@@ -23,8 +24,8 @@ interface RepositoryToolsOverlayProps {
 export function RepositoryToolsOverlay({ controller }: RepositoryToolsOverlayProps) {
   if (!controller.dialogProps) return null
   return (
-    <Suspense fallback={null}>
+    <LazyViewBoundary>
       <RepositoryToolsDialog {...controller.dialogProps} />
-    </Suspense>
+    </LazyViewBoundary>
   )
 }
