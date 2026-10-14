@@ -4,7 +4,7 @@
 //! 父模块统一管理，避免模块化重构改变现有 IPC 契约或 Lore 调用行为。
 
 use super::*;
-use crate::atomic_file::write_file_atomically;
+use crate::atomic_file::write_resolved_file_atomically;
 
 /// 返回仓库当前格式对应的配置路径；旧 `.urc` 仓库继续使用自己的目录，
 /// 不能在旁边新建 `.lore` 后造成双配置来源。
@@ -101,12 +101,15 @@ pub(super) fn normalize_repository_remote_url(
         .map_err(|error| LoreCommandError::new("invalid_repository_remote_url", error.message))
 }
 
-/// 以原子替换方式写入仓库配置：崩溃时只会留下旧文件或完整的新文件。
+/// 以原子替换方式写入仓库配置：崩溃时只会留下旧文件或完整的新文件。仓库配置属于仓库内容，
+/// 解析后的写入位置必须仍在仓库之内，不能借助符号链接把配置写到仓库之外。
 pub(super) fn write_repository_configuration_document(
+    repository_root: &Path,
     path: &Path,
     document: &toml_edit::DocumentMut,
 ) -> Result<(), LoreCommandError> {
-    write_file_atomically(path, document.to_string().as_bytes()).map_err(|error| {
+    let destination = repository_contained_write_path(repository_root, path)?;
+    write_resolved_file_atomically(&destination, document.to_string().as_bytes()).map_err(|error| {
         LoreCommandError::new(
             "repository_config_write_failed",
             format!(
@@ -137,6 +140,6 @@ pub(super) fn update_repository_configuration(
         document.remove("remote_url");
     }
 
-    write_repository_configuration_document(&path, &document)?;
+    write_repository_configuration_document(repository_path, &path, &document)?;
     read_repository_configuration(repository_path)
 }

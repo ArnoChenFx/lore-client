@@ -807,7 +807,8 @@ pub fn lore_ignore_paths(
     let repository_path = validate_repository_path(&repository_path)?;
     let paths = validate_repository_relative_paths(paths)?;
     let rules = build_ignore_rules(&paths, by_extension)?;
-    let ignore_path = repository_path.join(".loreignore");
+    let ignore_path =
+        repository_contained_write_path(&repository_path, &repository_path.join(".loreignore"))?;
     // 已存在的忽略文件可能包含用户手写规则，读取失败时必须停止，不能把异常误判为空文件后覆盖。
     let existing = match std::fs::read_to_string(&ignore_path) {
         Ok(content) => content,
