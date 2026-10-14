@@ -30,4 +30,13 @@ export function loadTextDiffViewModule() {
 export function loadConflictResolutionViewModule() {
   return import('./ConflictResolutionView')
 }
+
+export function loadTextDiffView() {
+  return loadTextDiffViewModule().then((module) => ({ default: module.TextDiffView }))
+}
+
+export function loadConflictResolutionView() {
+  return loadConflictResolutionViewModule().then((module) => ({ default: module.ConflictResolutionView }))
+}
+
 export * from './VersionContextMenu'

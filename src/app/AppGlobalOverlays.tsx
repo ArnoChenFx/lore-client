@@ -1,4 +1,4 @@
-import { lazy, type ComponentProps } from 'react'
+import type { ComponentProps } from 'react'
 
 import { OperationCenter } from '../features/operations'
 import {
@@ -11,17 +11,16 @@ import { LazyViewBoundary } from '../shared/ui'
 import { AboutDialog } from './components/AboutDialog'
 import { CommandPalette } from './components/CommandPalette'
 import { SearchDialog } from './components/SearchDialog'
+import type { SettingsDialog } from './components/SettingsDialog'
+import type { UpdateDialog } from './components/UpdateDialog'
 
 /*
  * 设置页与更新说明各自带有独立依赖：更新说明需要 react-markdown 解析链，只在检测到新版本
  * 时出现；设置页只在用户打开时出现。两者都延迟加载，不进入每次启动都要解析的主包。
  */
-const SettingsDialog = lazy(() =>
+const loadSettingsDialog = () =>
   import('./components/SettingsDialog').then((module) => ({ default: module.SettingsDialog }))
-)
-const UpdateDialog = lazy(() =>
-  import('./components/UpdateDialog').then((module) => ({ default: module.UpdateDialog }))
-)
+const loadUpdateDialog = () => import('./components/UpdateDialog').then((module) => ({ default: module.UpdateDialog }))
 
 interface AppGlobalOverlaysProps {
   commandPalette: ComponentProps<typeof CommandPalette> | null
@@ -61,17 +60,18 @@ export function AppGlobalOverlays({
       {server && <ServerDialog {...server} />}
       {clone && <CloneDialog {...clone} />}
       {settings && (
-        <LazyViewBoundary>
-          <SettingsDialog {...settings} />
-        </LazyViewBoundary>
+        <LazyViewBoundary
+          load={loadSettingsDialog}
+          viewProps={settings}
+          onDismiss={settings.onClose}
+          variant="dialog"
+        />
       )}
       {search && <SearchDialog {...search} />}
       {operations && <OperationCenter {...operations} />}
       {about && <AboutDialog {...about} />}
       {update && (
-        <LazyViewBoundary>
-          <UpdateDialog {...update} />
-        </LazyViewBoundary>
+        <LazyViewBoundary load={loadUpdateDialog} viewProps={update} onDismiss={update.onClose} variant="dialog" />
       )}
       {remoteAuthentication && <RemoteAuthenticationDialog {...remoteAuthentication} />}
     </>

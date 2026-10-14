@@ -13,7 +13,7 @@ import {
   Search,
   TriangleAlert
 } from 'lucide-react'
-import { lazy, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useAdjustFromProps } from '../../../hooks/useAdjustFromProps'
@@ -46,7 +46,7 @@ import {
   createBinaryDiffPreviewView,
   DiffOptionsControl,
   LazyViewBoundary,
-  loadTextDiffViewModule,
+  loadTextDiffView,
   PaneResizer,
   SelectInput,
   type BinaryDiffPreviewView,
@@ -59,9 +59,6 @@ import type {
   Revision,
   WorkingTreeDiff
 } from '../../../types'
-
-// 文本 Diff 渲染器只在“变更”页签右侧真正展示正文时按需加载。
-const TextDiffView = lazy(() => loadTextDiffViewModule().then((module) => ({ default: module.TextDiffView })))
 
 interface RevisionChangesWorkspaceProps {
   repositoryPath: string
@@ -863,16 +860,18 @@ export function RevisionChangesWorkspace({
                 className="revision-diff-pane__viewport"
                 aria-label={t('status.revisionDiffOf', { name: primaryFile.name })}
               >
-                <LazyViewBoundary>
-                  <TextDiffView
-                    patch={primaryDiff.patch}
-                    filePath={changeFilePath(primaryFile)}
-                    themeType={themeType}
-                    diffStyle={preferences.diff.diffStyle}
-                    expandFullFile={preferences.diff.expandFullFile}
-                    loadDiffFiles={loadDiffFiles}
-                  />
-                </LazyViewBoundary>
+                <LazyViewBoundary
+                  load={loadTextDiffView}
+                  resetKey={`${revision.id}:${changeFilePath(primaryFile)}`}
+                  viewProps={{
+                    patch: primaryDiff.patch,
+                    filePath: changeFilePath(primaryFile),
+                    themeType,
+                    diffStyle: preferences.diff.diffStyle,
+                    expandFullFile: preferences.diff.expandFullFile,
+                    loadDiffFiles
+                  }}
+                />
               </div>
             )}
           </section>

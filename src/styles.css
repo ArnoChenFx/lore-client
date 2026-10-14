@@ -4575,6 +4575,34 @@ button.sidebar__repo-mark:focus-visible {
   white-space: nowrap;
 }
 
+.lazy-view-error {
+  display: flex;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  padding: 28px;
+  color: var(--faint);
+  text-align: center;
+}
+
+.lazy-view-error > svg {
+  color: var(--danger);
+}
+
+.lazy-view-error strong {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lazy-view-error span {
+  max-width: 440px;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
 .working-diff__empty {
   display: flex;
   min-height: 0;
