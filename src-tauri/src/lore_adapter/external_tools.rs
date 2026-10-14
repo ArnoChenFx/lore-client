@@ -741,8 +741,8 @@ pub(super) fn launch_external_merge(
 /// 把外部 Merge 的临时 MERGED 回写到工作区中原本不存在的目标文件。
 ///
 /// 任何写入或建目录之前，都要确认目标位置及其已存在的祖先解析后仍位于仓库内；目标
-/// 路径上存在的任何条目（包括指向仓库外的悬空符号链接）都视为已占用，不覆盖。返回
-/// `true` 表示已经写入。
+/// 路径上存在的任何条目（包括指向仓库外的悬空符号链接）都视为已占用，不覆盖。检查之后、
+/// 写入之前出现的同名条目同样不会被覆盖，因为最终文件是独占创建的。返回 `true` 表示已经写入。
 pub(super) fn copy_back_merged_result(
     merged: &Path,
     target: &Path,
@@ -751,7 +751,7 @@ pub(super) fn copy_back_merged_result(
     if fs::symlink_metadata(target).is_ok() {
         return Ok(false);
     }
-    let Some(parent) = target.parent() else {
+    let (Some(parent), Some(file_name)) = (target.parent(), target.file_name()) else {
         return Ok(false);
     };
     let mut existing_ancestor = parent;
@@ -766,10 +766,35 @@ pub(super) fn copy_back_merged_result(
     }
 
     fs::create_dir_all(parent)?;
-    if !fs::canonicalize(parent)?.starts_with(repository_root) {
+    let canonical_parent = fs::canonicalize(parent)?;
+    if !canonical_parent.starts_with(repository_root) {
         return Ok(false);
     }
-    fs::copy(merged, target)?;
+    create_merged_copy(merged, &canonical_parent.join(file_name))
+}
+
+/// 以独占方式创建 `destination` 并复制 MERGED 内容与权限，语义与 `fs::copy` 一致，但已有
+/// 条目（含符号链接）只会返回 `false`，不会被截断或跟随。复制中途失败时删除半成品。
+fn create_merged_copy(merged: &Path, destination: &Path) -> std::io::Result<bool> {
+    let mut source = fs::File::open(merged)?;
+    let mut created = match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let copied = (|| -> std::io::Result<()> {
+        std::io::copy(&mut source, &mut created)?;
+        created.set_permissions(source.metadata()?.permissions())
+    })();
+    drop(created);
+    if let Err(error) = copied {
+        let _ = fs::remove_file(destination);
+        return Err(error);
+    }
     Ok(true)
 }
 
@@ -898,6 +923,56 @@ mod copy_back_tests {
         assert!(
             !outside.join("deep").exists(),
             "no directory may be created outside the repository"
+        );
+    }
+
+    #[test]
+    fn exclusive_create_refuses_an_entry_that_appeared_after_the_existence_check() {
+        let (_sandbox, repository, _outside, merged) = fixture();
+        let target = repository.join("Hero.txt");
+        fs::write(&target, "created after the existence check").unwrap();
+
+        let copied = create_merged_copy(&merged, &target).unwrap();
+
+        assert!(!copied);
+        assert_eq!(
+            fs::read_to_string(&target).unwrap(),
+            "created after the existence check"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exclusive_create_does_not_follow_a_link_that_appeared_after_the_existence_check() {
+        let (_sandbox, repository, outside, merged) = fixture();
+        let escape = outside.join("escaped.txt");
+        let target = repository.join("Hero.txt");
+        std::os::unix::fs::symlink(&escape, &target).unwrap();
+
+        let copied = create_merged_copy(&merged, &target).unwrap();
+
+        assert!(!copied);
+        assert!(!escape.exists(), "the link target must not be created");
+        assert!(fs::symlink_metadata(&target)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copied_result_keeps_the_permission_bits_of_the_merged_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_sandbox, repository, _outside, merged) = fixture();
+        fs::set_permissions(&merged, fs::Permissions::from_mode(0o750)).unwrap();
+        let target = repository.join("Hero.txt");
+
+        assert!(copy_back_merged_result(&merged, &target, &repository).unwrap());
+
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o750
         );
     }
 }
