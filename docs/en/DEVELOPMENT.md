@@ -67,7 +67,7 @@ Do not commit generated dependencies, build output, Rust targets, temporary brow
 
 ### Change the interface
 
-Start with `bun run dev`, update the relevant component and shared styles, then add or update nearby Vitest coverage. Use semantic design tokens so the same change works in light and dark themes.
+Start with `bun run dev`, update the relevant component and shared styles, then add or update nearby `bun test` coverage. Use semantic design tokens so the same change works in light and dark themes.
 
 All user-visible text, accessible names, tooltips, confirmations, and errors must use the localization resources. Update the English and Simplified Chinese resources together.
 
