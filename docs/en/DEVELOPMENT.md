@@ -134,6 +134,8 @@ bun tauri dev
 
 Explicit network tests use the same environment variable. The default test suite must remain offline.
 
+To run the live tests against a local Lore server and the lore-auth-service, follow [E2E_LOCAL_STACK.md](E2E_LOCAL_STACK.md).
+
 ### Update public documentation
 
 Keep English and Chinese public documents in sync. Store public images in `docs/img/`, then verify that Git LFS owns each new or replaced image:
