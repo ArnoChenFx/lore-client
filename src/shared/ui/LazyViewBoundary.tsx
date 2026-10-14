@@ -31,6 +31,23 @@ interface LazyViewBoundaryState<P extends object> extends LazyViewFailureState {
   resetKey: string | undefined
 }
 
+/*
+ * 同一加载函数共享已解析的 `React.lazy`：Diff 等视图会因加载态被卸载再挂载，若每次都新建
+ * `lazy`，挂载会重新挂起并留下数百毫秒空白。失败的实例在边界出错时即被移除，重试才会新建。
+ */
+const sharedViews = new WeakMap<object, unknown>()
+
+function sharedView<P extends object>(
+  load: LazyViewBoundaryProps<P>['load'],
+  renew = false
+): LazyExoticComponent<ComponentType<P>> {
+  const cached = renew ? undefined : sharedViews.get(load)
+  if (cached) return cached as LazyExoticComponent<ComponentType<P>>
+  const view = lazy(load)
+  sharedViews.set(load, view)
+  return view
+}
+
 /**
  * 包裹按需加载的视图。导入或渲染失败时显示可见的错误与重试入口，而不是留下永久空白；
  * 切换 `resetKey` 会清除失败状态，使下一个文件或路径重新尝试渲染。
@@ -39,7 +56,7 @@ interface LazyViewBoundaryState<P extends object> extends LazyViewFailureState {
 export class LazyViewBoundary<P extends object> extends Component<LazyViewBoundaryProps<P>, LazyViewBoundaryState<P>> {
   constructor(props: LazyViewBoundaryProps<P>) {
     super(props)
-    this.state = { View: lazy(props.load), load: props.load, failed: false, resetKey: props.resetKey }
+    this.state = { View: sharedView(props.load), load: props.load, failed: false, resetKey: props.resetKey }
   }
 
   static getDerivedStateFromError(): LazyViewFailureState {
@@ -53,15 +70,21 @@ export class LazyViewBoundary<P extends object> extends Component<LazyViewBounda
     const loaderChanged = props.load !== state.load
     if (!loaderChanged && props.resetKey === state.resetKey) return null
     if (!loaderChanged && !state.failed) return { resetKey: props.resetKey }
-    return { load: props.load, resetKey: props.resetKey, failed: false, View: lazy(props.load) }
+    return {
+      load: props.load,
+      resetKey: props.resetKey,
+      failed: false,
+      View: sharedView(props.load, state.failed)
+    }
   }
 
   componentDidCatch(error: unknown) {
     logError('lazy-view', error)
+    sharedViews.delete(this.props.load)
   }
 
   private readonly retry = () => {
-    this.setState({ failed: false, View: lazy(this.props.load) })
+    this.setState({ failed: false, View: sharedView(this.props.load, true) })
   }
 
   render() {

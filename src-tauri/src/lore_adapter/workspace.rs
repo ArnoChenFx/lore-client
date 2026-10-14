@@ -4,6 +4,7 @@
 //! 父模块统一管理，避免模块化重构改变现有 IPC 契约或 Lore 调用行为。
 
 use super::*;
+use crate::atomic_file::write_resolved_file_atomically;
 
 /// 单个 Channel 消息保持在较小范围内，避免 WebView2 为大 ArrayBuffer 执行一次长时间
 /// 的 fetch/复制任务。该值远高于 Tauri 的 Raw 直接执行阈值，因此仍走高效 fetch IPC，
@@ -743,6 +744,7 @@ pub async fn lore_open_external_merge(
 /// 过滤器保持一致；这样即使 WebView 被注入脚本，也无法借此覆盖 rc 文件、配置文件等。
 /// 补丁可达 10 MB，写盘放到后台线程执行，避免阻塞 WebView 所在的主线程。
 /// `replace_existing` 只有在用户确认过覆盖的路径上才能为真；否则已存在的文件会被拒绝。
+/// 确认覆盖时通过同目录临时文件原子替换，符号链接会被拒绝而不是跟随写入。
 #[tauri::command]
 pub async fn lore_write_patch_file(
     destination_path: String,
@@ -792,35 +794,57 @@ fn write_patch_file(
             ),
         ));
     }
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true);
     if replace_existing {
-        options.create(true).truncate(true);
-    } else {
-        options.create_new(true);
-    }
-    let mut file = options.open(&destination).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::AlreadyExists {
-            LoreCommandError::new(
-                "patch_destination_exists",
-                format!(
-                    "A file already exists at {}; choose another name to keep it",
-                    destination.display()
-                ),
-            )
-        } else {
+        reject_symbolic_link_destination(&destination)?;
+        return write_resolved_file_atomically(&destination, patch.as_bytes()).map_err(|error| {
             LoreCommandError::new(
                 "patch_write_failed",
                 format!("Failed to save patch {}: {error}", destination.display()),
             )
-        }
-    })?;
+        });
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&destination)
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                LoreCommandError::new(
+                    "patch_destination_exists",
+                    format!(
+                        "A file already exists at {}; choose another name to keep it",
+                        destination.display()
+                    ),
+                )
+            } else {
+                LoreCommandError::new(
+                    "patch_write_failed",
+                    format!("Failed to save patch {}: {error}", destination.display()),
+                )
+            }
+        })?;
     file.write_all(patch.as_bytes()).map_err(|error| {
         LoreCommandError::new(
             "patch_write_failed",
             format!("Failed to save patch {}: {error}", destination.display()),
         )
     })
+}
+
+/// 符号链接指向的文件不是用户在保存对话框里选中的补丁位置，替换时直接拒绝。
+fn reject_symbolic_link_destination(destination: &Path) -> Result<(), LoreCommandError> {
+    let is_symbolic_link = std::fs::symlink_metadata(destination)
+        .is_ok_and(|metadata| metadata.file_type().is_symlink());
+    if is_symbolic_link {
+        return Err(LoreCommandError::new(
+            "patch_destination_is_link",
+            format!(
+                "{} is a symbolic link; choose another name to save the patch",
+                destination.display()
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// 把所选路径或扩展名规则追加到 Lore 官方 `.loreignore` 文件。

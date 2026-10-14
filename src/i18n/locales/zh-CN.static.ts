@@ -694,6 +694,7 @@ const zhCNStatic = {
   parsingPdf: '正在解析 PDF',
   partition: '分区',
   patchDestinationExists: '该位置已存在同名文件。请换一个文件名保存补丁，原文件不会被覆盖。',
+  patchDestinationIsLink: '该位置是符号链接。请换一个文件名保存补丁，链接指向的文件不会被改动。',
   patchOpenedInAnExternalApp: '补丁已在外部应用中打开',
   patchSaved: '补丁已保存',
   path: '路径',

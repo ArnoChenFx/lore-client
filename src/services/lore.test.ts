@@ -67,6 +67,26 @@ describe('Lore event adapter', () => {
     expect(chineseError.message).not.toContain('E:\\Patches')
   })
 
+  it('localizes a patch destination that is a symbolic link while keeping the stable error code', async () => {
+    const upstream = {
+      code: 'patch_destination_is_link',
+      message: 'E:\\Patches\\World.patch is a symbolic link; choose another name to save the patch'
+    }
+
+    const englishError = new LoreCommandClientError(upstream, 'lore_write_patch_file')
+    expect(englishError.code).toBe('patch_destination_is_link')
+    expect(englishError.message).toBe(
+      'That location is a symbolic link. Choose another name to save the patch; the file the link points to is unchanged.'
+    )
+
+    await i18n.changeLanguage('zh-CN')
+    const chineseError = new LoreCommandClientError(upstream, 'lore_write_patch_file')
+    expect(chineseError.code).toBe('patch_destination_is_link')
+    expect(chineseError.message).toBe(zhCN.patchDestinationIsLink)
+    expect(chineseError.message).not.toContain('E:\\Patches')
+    await i18n.changeLanguage('en-US')
+  })
+
   it('converts a complete revision diff into stable files and line statistics', () => {
     expect(
       revisionDiffsToChangeFiles([

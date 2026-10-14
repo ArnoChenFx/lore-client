@@ -18,6 +18,14 @@ function loadTestView() {
   return Promise.resolve({ default: TestView })
 }
 
+function loadRemountedView() {
+  return Promise.resolve({ default: TestView })
+}
+
+function loadFailingView(): Promise<{ default: typeof TestView }> {
+  return Promise.reject(new Error('chunk failed to load'))
+}
+
 interface RetriedState {
   failed: boolean
   View: LazyExoticComponent<ComponentType<TestViewProps>>
@@ -113,6 +121,23 @@ describe('LazyViewBoundary', () => {
     expect(next?.resetKey).toBe('b.ts')
     expect(next?.View).toBeDefined()
     expect(next?.View).not.toBe(failedView)
+  })
+
+  it('reuses the lazy view for the same loader so a remounted view does not suspend again', () => {
+    const first = new LazyViewBoundary<TestViewProps>({ load: loadRemountedView, viewProps: { label: 'a' } })
+    const remounted = new LazyViewBoundary<TestViewProps>({ load: loadRemountedView, viewProps: { label: 'b' } })
+
+    expect(remounted.state.View).toBe(first.state.View)
+  })
+
+  it('does not reuse a view whose import failed when a boundary mounts again', () => {
+    const failing = new LazyViewBoundary<TestViewProps>({ load: loadFailingView, viewProps: { label: 'a' } })
+    const failedView = failing.state.View
+
+    failing.componentDidCatch(new Error('chunk failed to load'))
+    const retry = new LazyViewBoundary<TestViewProps>({ load: loadFailingView, viewProps: { label: 'a' } })
+
+    expect(retry.state.View).not.toBe(failedView)
   })
 
   it('keeps a failure in place while the reset key is unchanged', () => {

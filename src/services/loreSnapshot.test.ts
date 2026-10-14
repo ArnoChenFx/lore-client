@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'bun:test'
 import i18n from '../i18n'
 
 /*
- * 使用动态导入让模拟函数先完成初始化，再加载被测服务。这样既兼容 Vitest 对
- * `vi.mock` 的提升语义，也兼容项目交付命令使用的 Bun test（它没有 vi.hoisted）。
+ * 被测服务通过动态导入加载，保证 vi.mock 注册在前，且工厂函数引用的 invokeMock 等变量
+ * 在服务模块求值前已初始化。这种写法不依赖 mock 调用的提升，bun test 中同样成立。
  */
 const invokeMock = vi.fn()
 let repositoryStatusEvents: Array<{ tagName: string; data: Record<string, unknown> }> = []
