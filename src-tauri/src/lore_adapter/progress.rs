@@ -113,7 +113,11 @@ pub(super) struct ProgressAggregator {
     force_open: bool,
     snapshot: Option<Snapshot>,
     last_sent: Option<(Instant, Snapshot)>,
-    stage_files: u64,
+    /// 逐文件事件（`FileStageFile`）计入的文件数。
+    stage_events: u64,
+    /// 上游计数快照（进度 tick 与 End）报告过的最大文件数。两者描述的是同一批文件，只能取较大
+    /// 值：快照可能先于对应的 `FileStageFile` 事件计入文件，相加就会把这些文件数两次。
+    stage_reported: u64,
     push: PushState,
 }
 
@@ -147,7 +151,8 @@ impl ProgressAggregator {
             force_open: false,
             snapshot: None,
             last_sent: None,
-            stage_files: 0,
+            stage_events: 0,
+            stage_reported: 0,
             push: PushState::default(),
         }
     }
@@ -178,13 +183,14 @@ impl ProgressAggregator {
         match event {
             // ---- 暂存：只有“已暂存的变更数”，没有总量 ----
             LoreEvent::FileStageBegin(_) => {
-                self.stage_files = 0;
+                self.stage_events = 0;
+                self.stage_reported = 0;
                 self.set_stage(false);
                 Some(false)
             }
             LoreEvent::FileStageFile(_) => {
                 // 每个变更文件一条事件，自己数比等 500 ms 的 ticker 更及时。
-                self.stage_files += 1;
+                self.stage_events += 1;
                 self.set_stage(false);
                 Some(false)
             }
@@ -194,7 +200,7 @@ impl ProgressAggregator {
                     + count.file_modify_count
                     + count.file_delete_count
                     + count.file_move_count;
-                self.stage_files = self.stage_files.max(files);
+                self.stage_reported = self.stage_reported.max(files);
                 self.set_stage(false);
                 Some(false)
             }
@@ -204,7 +210,7 @@ impl ProgressAggregator {
                     + count.file_modify_count
                     + count.file_delete_count
                     + count.file_move_count;
-                self.stage_files = self.stage_files.max(files);
+                self.stage_reported = self.stage_reported.max(files);
                 self.set_stage(true);
                 Some(true)
             }
@@ -326,11 +332,12 @@ impl ProgressAggregator {
     }
 
     fn set_stage(&mut self, done: bool) {
+        let staged = self.stage_events.max(self.stage_reported);
         self.snapshot = Some(Snapshot {
             family: Family::Stage,
             unit: Unit::Files,
-            current: self.stage_files,
-            total: done.then_some(self.stage_files),
+            current: staged,
+            total: done.then_some(staged),
             total_final: done,
             files: None,
             files_total: None,
@@ -459,6 +466,15 @@ mod tests {
         ))
     }
 
+    fn stage_counts(tag: &str, added: u64) -> LoreEvent {
+        let count = json!({
+            "directoryAddCount": 0, "directoryDeleteCount": 0, "directoryModifyCount": 0,
+            "directoryMoveCount": 0, "fileAddCount": added, "fileDeleteCount": 0,
+            "fileModifyCount": 0, "fileMoveCount": 0, "totalCount": added
+        });
+        event(&json!({ "tagName": tag, "data": { "count": count } }).to_string())
+    }
+
     // 以下 JSON 均来自真实本地仓库的实测事件。
     const STAGE_BEGIN: &str = r#"{"data":{"pathCount":1},"tagName":"fileStageBegin"}"#;
     const STAGE_TICK: &str = r#"{"data":{"count":{"directoryAddCount":1,"directoryDeleteCount":0,"directoryModifyCount":0,"directoryMoveCount":0,"fileAddCount":3,"fileDeleteCount":0,"fileModifyCount":0,"fileMoveCount":0,"totalCount":4}},"tagName":"fileStageProgress"}"#;
@@ -559,6 +575,31 @@ mod tests {
         assert_eq!(data(&end)["current"], 4003);
         assert_eq!(data(&end)["total"], 4003);
         assert_eq!(data(&end)["totalFinal"], true);
+    }
+
+    #[test]
+    fn stage_does_not_count_a_file_twice_when_a_tick_leads_the_file_events() {
+        // 计数快照可能先于对应的 FileStageFile 事件计入文件；快照领先时，随后到达的事件
+        // 不能在快照之上再加一次。
+        let base = Instant::now();
+        let mut aggregator = ProgressAggregator::new(base);
+        aggregator.observe(&event(STAGE_BEGIN), at(base, 1));
+        aggregator.observe(&stage_file("a/0"), at(base, 2));
+        aggregator.observe(&stage_file("a/1"), at(base, 3));
+        let tick = aggregator
+            .observe(&stage_counts("fileStageProgress", 3), at(base, 400))
+            .expect("opens after the delay");
+        assert_eq!(data(&tick)["current"], 3);
+        aggregator.observe(&stage_file("a/2"), at(base, 500));
+        let next = aggregator
+            .observe(&stage_file("a/3"), at(base, 800))
+            .expect("after the interval");
+        assert_eq!(data(&next)["current"], 4);
+        let end = aggregator
+            .observe(&stage_counts("fileStageEnd", 4), at(base, 810))
+            .expect("end bypasses throttle");
+        assert_eq!(data(&end)["current"], 4);
+        assert_eq!(data(&end)["total"], 4);
     }
 
     #[test]
