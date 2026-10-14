@@ -24,6 +24,8 @@ umask 077
 mkdir -p "$E2E_HOME/bin" "$E2E_HOME/server/config" "$E2E_HOME/server/data" "$E2E_HOME/src" \
   "$E2E_HOME/logs" "$E2E_HOME/work" "$E2E_HOME/run" "$tls" "$auth"
 chmod 700 "$tls" "$auth"
+# Auth state written by an earlier run (database, signing keys) may predate the private umask.
+find "$auth" -mindepth 1 -maxdepth 2 -exec chmod go-rwx {} +
 
 # Keeps KEY from FILE when it already exists so re-running setup never rotates passwords.
 existing_or_new_secret() {

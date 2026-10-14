@@ -4,6 +4,9 @@
 set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+# The auth database, signing keys and logs that the services create stay private to this user.
+umask 077
+
 e2e_check_home
 [ -f "$E2E_HOME/auth/auth.env" ] && [ -x "$E2E_HOME/bin/loreserver" ] || e2e_die "run scripts/e2e/setup-stack.sh first"
 e2e_require curl python3
