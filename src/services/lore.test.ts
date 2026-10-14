@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'bun:test'
 
 import i18n from '../i18n'
 import type { LoreEvent, LoreLinkDetails } from '../types'

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'bun:test'
 
 import type { ChangeFile } from '../../../types'
 import { WorkingTreeDiffFilesError, resolveWorkingTreeDiffFiles } from './workingTreeDiffFiles'

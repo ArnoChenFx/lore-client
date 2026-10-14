@@ -51,6 +51,16 @@ export default defineConfig({
     'anti-slop/no-unknown-returns': 'off',
     'anti-slop/no-unsafe-dictionary-type': 'off'
   },
+  overrides: [
+    {
+      // bun:test 把 resolves/rejects 匹配器标注为 void，运行时却返回需要 await 的 Promise；
+      // 该规则在测试断言上只会产生误报，因此只在测试文件中关闭。
+      files: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+      rules: {
+        'typescript/await-thenable': 'off'
+      }
+    }
+  ],
   options: {
     typeAware: true,
     typeCheck: true

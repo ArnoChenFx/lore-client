@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'bun:test'
 
 import { revisions } from '../../demo'
 import { filterRevisions } from './revisionFilter'

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'bun:test'
 
 import {
   isRepositoryAccentColor,
@@ -21,7 +21,7 @@ describe('repository tab color matrix', () => {
     const colors = REPOSITORY_TAB_COLOR_MATRIX.flat()
 
     expect(REPOSITORY_ACCENT_PALETTE.every((color) => colors.includes(color))).toBe(true)
-    expect(REPOSITORY_ACCENT_PALETTE.map((_, index) => repositoryAccentFromIndex(index))).toEqual(
+    expect<readonly string[]>(REPOSITORY_ACCENT_PALETTE.map((_, index) => repositoryAccentFromIndex(index))).toEqual(
       REPOSITORY_ACCENT_PALETTE
     )
   })

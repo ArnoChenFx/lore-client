@@ -1,6 +1,5 @@
+import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
-
-import { describe, expect, it } from 'vitest'
 
 /** 读取指定选择器的声明块，让回归测试直接约束浏览器实际消费的布局规则。 */
 function readRule(css: string, selector: string): string {

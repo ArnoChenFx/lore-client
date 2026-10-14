@@ -1,5 +1,6 @@
+import { describe, expect, it, vi } from 'bun:test'
+
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
 
 import {
   type ConflictRegionAction,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'bun:test'
 
 import type { LoreOperationStreamRecord, OperationRecord } from '../../types'
 import { limitRecentOperationRecords, MAX_OPERATION_HISTORY, selectRecentOperationHistory } from './operationHistory'

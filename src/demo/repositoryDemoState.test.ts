@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'bun:test'
 
 import { initialChanges, inspectorFiles, revisions } from './repositoryData'
 import { getDemoInspectorFiles, setEveryDemoFileStaged, toggleDemoFileStage } from './repositoryDemoState'

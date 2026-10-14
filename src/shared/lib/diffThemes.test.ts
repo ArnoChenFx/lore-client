@@ -1,6 +1,7 @@
+import { describe, expect, it } from 'bun:test'
+
 import pierreDark from '@pierre/theme/pierre-dark'
 import pierreLight from '@pierre/theme/pierre-light'
-import { describe, expect, it } from 'vitest'
 
 import { createLoreDiffTheme, LORE_DIFF_DARK_THEME, LORE_DIFF_LIGHT_THEME } from './diffThemes'
 

@@ -1,5 +1,6 @@
+import { describe, expect, it } from 'bun:test'
+
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
 
 import { CheckboxInput, NumberInput, SelectInput, TextButton, TextInput } from './ControlPrimitives'
 import { IconButton } from './IconButton'

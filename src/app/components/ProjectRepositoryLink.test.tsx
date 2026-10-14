@@ -1,5 +1,6 @@
+import { beforeEach, describe, expect, it } from 'bun:test'
+
 import { renderToStaticMarkup } from 'react-dom/server'
-import { beforeEach, describe, expect, it } from 'vitest'
 
 import i18n from '../../i18n'
 import { AboutDialog } from './AboutDialog'

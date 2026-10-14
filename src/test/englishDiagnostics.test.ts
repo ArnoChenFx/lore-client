@@ -1,8 +1,7 @@
+import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-
-import { describe, expect, test } from 'vitest'
 
 const HAN_TEXT = /\p{Script=Han}/u
 // 本测试已归入 `src/test`，因此需要回到两级父目录才能定位项目根。

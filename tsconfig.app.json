@@ -17,7 +17,7 @@
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["vite/client", "node", "vitest/importMeta"]
+    "types": ["vite/client", "node", "bun"]
   },
   "include": ["src"]
 }
