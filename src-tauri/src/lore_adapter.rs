@@ -96,6 +96,8 @@ mod configuration;
 mod external_tools;
 mod file_content;
 pub(crate) mod history;
+#[cfg(test)]
+mod live_server_tests;
 pub(crate) mod maintenance;
 mod operation_support;
 pub(crate) mod operations;
@@ -104,6 +106,8 @@ pub(crate) mod repository;
 mod repository_lifecycle;
 mod revision_storage;
 mod runtime;
+#[cfg(test)]
+mod runtime_e2e_tests;
 mod tags;
 #[cfg(test)]
 mod tests;
@@ -233,9 +237,30 @@ struct LoreRepositoryNotificationEvent {
 }
 
 fn emit_operation_stream(event: LoreOperationStreamEvent) {
+    capture_operation_stream_for_tests(&event);
     if let Some(app_handle) = EVENT_APP_HANDLE.get() {
         let _ = app_handle.emit("lore://operation-stream", event);
     }
+}
+
+#[cfg(test)]
+static CAPTURED_OPERATION_STREAM: Mutex<Vec<Value>> = Mutex::new(Vec::new());
+
+#[cfg(test)]
+fn capture_operation_stream_for_tests(event: &LoreOperationStreamEvent) {
+    if let Ok(mut captured) = CAPTURED_OPERATION_STREAM.lock() {
+        captured.push(serde_json::to_value(event).unwrap_or(Value::Null));
+    }
+}
+
+#[cfg(not(test))]
+fn capture_operation_stream_for_tests(_event: &LoreOperationStreamEvent) {}
+
+/// Drains the operation-stream events that `emit_operation_stream` produced. Live tests
+/// use it to check the progress numbers the frontend receives, without a Tauri AppHandle.
+#[cfg(test)]
+pub(crate) fn take_captured_operation_stream() -> Vec<Value> {
+    std::mem::take(&mut *CAPTURED_OPERATION_STREAM.lock().expect("capture lock"))
 }
 
 /// 上次向 WebView 广播“远端需要重新认证”信号的时间（毫秒时间戳）。
