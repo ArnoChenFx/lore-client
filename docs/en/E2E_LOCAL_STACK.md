@@ -186,7 +186,7 @@ These were reproduced on this stack. They are in `lore-auth-service` and the ima
 3. Request body limit. `parseJsonBody` refuses a request whose `Content-Length` is above 64 KiB, and the handler then answers `400 Missing username or password`, even when the password is correct. A request without `Content-Length` (chunked) is read in full, so the same oversized body reaches the password check (wrong password 401, correct password 200). The cap applies only to clients that declare their length.
 4. A deleted user's access token keeps working until it expires. With the default `TOKEN_TTL` of 10 days, `/auth/me` returned 200 after the user was deleted, while `/auth/refresh` returned 401. Refresh tokens and permissions are removed by `ON DELETE CASCADE`.
 5. `ADMIN_PASSWORD` defaults to `changeme`. The service logs only a `[security]` warning at startup.
-6. The `lore-server:0.10.1` image labels name the auth service (see "What runs").
+6. The `lore-server:0.10.1` image's `title`, `description` and `url` labels name the auth service, while its `source` label names `EpicGames/lore` (see "What runs").
 
 ## Troubleshooting
 

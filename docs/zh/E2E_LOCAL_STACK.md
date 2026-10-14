@@ -188,7 +188,7 @@ work/                    实时测试运行的临时目录
 3. 请求体大小限制。`parseJsonBody` 会拒绝 `Content-Length` 超过 64 KiB 的请求，处理器随后返回 `400 Missing username or password`，即使密码正确。没有 `Content-Length`（分块传输）的请求会被完整读取，因此同样的超大请求体会进入密码校验（错误密码 401，正确密码 200）。这个上限只对声明了长度的客户端生效。
 4. 已删除用户的访问令牌在过期前仍然有效。默认 `TOKEN_TTL` 为 10 天，用户删除后 `/auth/me` 仍返回 200，而 `/auth/refresh` 返回 401。刷新令牌和权限通过 `ON DELETE CASCADE` 被删除。
 5. `ADMIN_PASSWORD` 默认为 `changeme`。服务只在启动时输出一条 `[security]` 警告日志。
-6. `lore-server:0.10.1` 镜像的标签指向认证服务（参见“运行的组件”）。
+6. `lore-server:0.10.1` 镜像的 `title`、`description` 和 `url` 标签指向认证服务，而 `source` 标签指向 `EpicGames/lore`（参见“运行的组件”）。
 
 ## 故障排查
 
