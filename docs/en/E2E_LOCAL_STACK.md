@@ -166,7 +166,7 @@ node scripts/e2e/auth-service-probes.mjs                 # all four groups
 node scripts/e2e/auth-service-probes.mjs login session   # only the named groups
 ```
 
-Each check prints `PASS` or `FAIL` with status codes and counts. The script exits 1 when any check fails. It creates `probe-*` users and never prints passwords, tokens or session codes.
+Each check prints `PASS` or `FAIL` with status codes and counts. The script exits 1 when any check fails. It creates `probe-*` users with a suffix that is new on each run, deletes them when the run ends, and never prints passwords, tokens or session codes.
 
 | Group | Check | Expected on the fixed service |
 | --- | --- | --- |
@@ -220,10 +220,16 @@ Against the pre-fix commit (`LORE_AUTH_SERVICE_REF=f257d43 scripts/e2e/setup-sta
 
 ### Re-running the probes
 
-Each run records ten failed sign-ins from `127.0.0.1`: five on `/auth/login` and five on browser approval. The wrong-password live test records one more. A count is forgotten an hour after its last failure (or `LOGIN_LOCK_MAX_SECONDS` after it, if that is longer). Once one address has 100 failures (`LOGIN_MAX_FAILURES_PER_IP`), each further failed sign-in from `127.0.0.1` extends the refusal, up to `LOGIN_LOCK_MAX_SECONDS` (900 seconds by default), and sign-ins from `127.0.0.1` get `429` in the meantime. After one live-test run and one probe run on this stack, the address counter held 11. Before another full pass, either:
+Each run uses new `probe-*` users and deletes them when it ends, so the username counters from an earlier run do not carry over. Each run still records ten failed sign-ins from `127.0.0.1`: five on `/auth/login` and five on browser approval. The wrong-password live test records one more. Those failures go into the address counter (`LOGIN_MAX_FAILURES_PER_IP`, 100 by default), which a new username does not reset. A counter restarts after one hour without a failure, or after `LOGIN_LOCK_MAX_SECONDS` if that is longer.
 
-- stop the stack, delete `auth/lore-auth.db*` (this also removes the counters and the `alice` and `bob` users, which `start-stack.sh` creates again), and start the stack again; or
-- start the stack with `LOGIN_MAX_FAILURES_PER_IP=0 scripts/e2e/start-stack.sh`. This turns off only the per-address scope, and it is meant for local repeat runs.
+Measured on a fresh database with the default settings, ten runs in a row each passed 12 of 12 checks, and the address counter reached 100 at the end of the tenth. The eleventh and twelfth runs stopped at the admin sign-in with `FAIL admin sign-in: admin login failed with HTTP 429` and exited 1. A run started after the 60-second lock had expired, while the counter was still 100, got `401` for its first wrong guess and `429` for the rest, so that failure raised the lock to 120 seconds. That run reported `10 of 12 checks passed`, and some checks passed for the wrong reason: every session guess returned `429:locked`. Read the `FAIL` lines, not only the count.
+
+To run the probes again, use one of these:
+
+- Stop the stack, then start it with the per-address scope off: `scripts/e2e/stop-stack.sh`, then `LOGIN_MAX_FAILURES_PER_IP=0 scripts/e2e/start-stack.sh`. This turns off only that scope; the username-and-address and account scopes stay on. Measured: ten runs in a row passed 12 of 12 after the switch, and the address counter stayed at 101.
+- Stop the stack, delete `auth/lore-auth.db*` (this also removes the counters and the `alice` and `bob` users, which `start-stack.sh` creates again), and start the stack again. Measured: a run on the new database passed 12 of 12.
+
+`start-stack.sh` leaves a running service in place, so the override takes effect only when the stack is stopped first.
 
 ## Packaged-app check (WebDriver)
 
