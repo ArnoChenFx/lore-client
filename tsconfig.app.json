@@ -17,7 +17,8 @@
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["vite/client", "node", "bun"]
+    "types": ["vite/client", "node"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**"]
 }
