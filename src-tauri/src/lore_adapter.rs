@@ -99,6 +99,9 @@ pub(crate) mod history;
 #[cfg(test)]
 mod live_server_tests;
 pub(crate) mod maintenance;
+mod operation_context;
+#[cfg(test)]
+mod operation_context_tests;
 mod operation_support;
 pub(crate) mod operations;
 mod progress;
@@ -124,6 +127,8 @@ use branch::*;
 use configuration::*;
 use external_tools::*;
 use history::*;
+pub use operation_context::OperationContext;
+use operation_context::*;
 use operation_support::*;
 use repository::*;
 use repository_lifecycle::*;
@@ -225,6 +230,8 @@ fn bound_auth_identity(repository_path: &Path) -> Result<Option<String>, LoreCom
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LoreOperationStreamEvent {
+    request_id: String,
+    workspace_key: Option<String>,
     operation_id: String,
     operation: &'static str,
     phase: &'static str,
@@ -242,6 +249,17 @@ struct LoreRepositoryNotificationEvent {
 }
 
 fn emit_operation_stream(event: LoreOperationStreamEvent) {
+    if event.phase != "streaming" {
+        log::debug!(
+            "Lore stream requestId={:?} workspaceKey={:?} operationId={:?} operation={:?} phase={} status={:?}",
+            event.request_id,
+            event.workspace_key,
+            event.operation_id,
+            event.operation,
+            event.phase,
+            event.status
+        );
+    }
     capture_operation_stream_for_tests(&event);
     if let Some(app_handle) = EVENT_APP_HANDLE.get() {
         let _ = app_handle.emit("lore://operation-stream", event);
@@ -343,6 +361,8 @@ pub struct LoreRuntimeInfo {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoreOperationResult {
+    pub request_id: String,
+    pub workspace_key: Option<String>,
     pub operation: &'static str,
     pub status: i32,
     pub duration_ms: u128,
@@ -365,6 +385,8 @@ pub struct LoreRevisionHistoryEntry {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoreRevisionHistoryResult {
+    pub request_id: String,
+    pub workspace_key: Option<String>,
     pub operation: &'static str,
     pub status: i32,
     pub duration_ms: u128,

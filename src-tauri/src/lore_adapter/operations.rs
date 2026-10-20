@@ -7,6 +7,7 @@ use super::*;
 /// 提交当前已经 Stage 的文件。
 #[tauri::command]
 pub async fn lore_commit(
+    operation_context: OperationContext,
     repository_path: String,
     message: String,
     default_identity: Option<String>,
@@ -19,7 +20,7 @@ pub async fn lore_commit(
         ));
     }
 
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         /*
          * Lore 自身的显式 global identity 优先于仓库配置，因此不能直接把客户端
          * 默认值塞进去。这里先从磁盘解析仓库配置，只有仓库值不存在时才采用默认值，
@@ -53,6 +54,7 @@ pub async fn lore_commit(
 /// 同步工作目录到当前 Branch 的目标 Revision。
 #[tauri::command]
 pub async fn lore_sync(
+    operation_context: OperationContext,
     repository_path: String,
     dependency_root_files: Vec<String>,
     dependency_tags: Vec<String>,
@@ -62,7 +64,7 @@ pub async fn lore_sync(
     let dependency_root_files = validate_optional_dependency_paths(dependency_root_files)?;
     let dependency_tags = validate_dependency_tags(dependency_tags)?;
     validate_dependency_depth_limit(dependency_depth_limit)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("revision.sync", move |callback| {
             lore::runtime().block_on(lore::revision::sync(
@@ -84,10 +86,11 @@ pub async fn lore_sync(
 /// 将当前或指定 Branch 推送到远端。
 #[tauri::command]
 pub async fn lore_push(
+    operation_context: OperationContext,
     repository_path: String,
     branch: Option<String>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("branch.push", move |callback| {
             lore::runtime().block_on(lore::branch::push(
@@ -109,6 +112,7 @@ pub async fn lore_push(
 /// Lore Switch 会视为无需切换，因此 Branch 检出入口必须传入列表快照中的 latest。
 #[tauri::command]
 pub async fn lore_branch_switch(
+    operation_context: OperationContext,
     repository_path: String,
     branch: String,
     revision: Option<String>,
@@ -119,7 +123,7 @@ pub async fn lore_branch_switch(
         .map(|revision| validate_revision(&revision))
         .transpose()?;
 
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("branch.switch", move |callback| {
             lore::runtime().block_on(lore::branch::switch(
@@ -144,13 +148,14 @@ pub async fn lore_branch_switch(
 /// Lore Core 的丢失保护。
 #[tauri::command]
 pub async fn lore_revision_checkout(
+    operation_context: OperationContext,
     repository_path: String,
     branch: String,
     revision: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let branch = validate_branch_name(&branch)?;
     let revision = validate_revision(&revision)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("revision.checkout", move |callback| {
             lore::runtime().block_on(lore::branch::switch(
@@ -171,11 +176,12 @@ pub async fn lore_revision_checkout(
 /// 把指定 Revision 的变更应用到当前 Branch；无冲突时沿用源 Revision 说明自动提交。
 #[tauri::command]
 pub async fn lore_revision_cherry_pick(
+    operation_context: OperationContext,
     repository_path: String,
     revision: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let revision = validate_revision(&revision)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("revision.cherry-pick", move |callback| {
             lore::runtime().block_on(lore::revision::cherry_pick(
@@ -203,11 +209,12 @@ pub async fn lore_revision_cherry_pick(
 /// 在当前 Branch 创建一个撤销目标 Revision 的新 Revision。
 #[tauri::command]
 pub async fn lore_revision_revert(
+    operation_context: OperationContext,
     repository_path: String,
     revision: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let revision = validate_revision(&revision)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("revision.revert", move |callback| {
             lore::runtime().block_on(lore::revision::revert(
@@ -228,12 +235,13 @@ pub async fn lore_revision_revert(
 /// 把指定源 Branch 合并到当前 Branch；无冲突时自动创建合并 Revision。
 #[tauri::command]
 pub async fn lore_branch_merge(
+    operation_context: OperationContext,
     repository_path: String,
     branch: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let branch = validate_branch_name(&branch)?;
     let message = format!("Merge branch {branch}");
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("branch.merge-start", move |callback| {
             lore::runtime().block_on(lore::branch::merge_start(
@@ -261,9 +269,10 @@ pub async fn lore_branch_merge(
 /// 固定版本的程序化接口，不解析 CLI 文本，也不读取 `.lore` 内部二进制格式。
 #[tauri::command]
 pub async fn lore_conflict_session(
+    operation_context: OperationContext,
     repository_path: String,
 ) -> Result<Option<LoreConflictSession>, LoreCommandError> {
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let status_globals = global_args(&repository_path)?;
         let status = run_operation("conflict.session.status", move |callback| {
             lore::runtime().block_on(lore::repository::status(
@@ -347,6 +356,7 @@ fn recover_conflict_session(
 /// staged State 的真实类型；即使前端持有旧快照，也不会把 Merge 命令误用于 Revert。
 #[tauri::command]
 pub async fn lore_conflict_action(
+    operation_context: OperationContext,
     repository_path: String,
     operation: LoreConflictOperationKind,
     action: LoreConflictAction,
@@ -360,7 +370,7 @@ pub async fn lore_conflict_action(
     }
     let paths = validate_conflict_action_paths(action, paths)?;
 
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         let lore_paths = || to_lore_array(paths.clone());
         match (operation, action) {
@@ -585,6 +595,7 @@ pub struct LoreConflictResolutionWriteResult {
 /// 冲突标记时只写回不标记，全部区域解决后 Lore 才把该路径标记为 resolved。
 #[tauri::command]
 pub async fn lore_write_conflict_resolution(
+    operation_context: OperationContext,
     repository_path: String,
     expected_session: LoreConflictSession,
     path: String,
@@ -605,7 +616,7 @@ pub async fn lore_write_conflict_resolution(
         ));
     }
 
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let status_globals = global_args(&repository_path)?;
         let status = run_operation("conflict.resolve-write.status", move |callback| {
             lore::runtime().block_on(lore::repository::status(
@@ -712,7 +723,10 @@ pub async fn lore_write_conflict_resolution(
                 }
             }?
         } else {
+            let context = current_operation_context()?;
             LoreOperationResult {
+                request_id: context.request_id,
+                workspace_key: context.workspace_key,
                 operation: "conflict.resolve-write",
                 status: 0,
                 duration_ms: 0,
@@ -773,12 +787,13 @@ pub(super) fn contains_conflict_markers(content: &str) -> bool {
 /// 由用户在确认弹窗中显式选择，适配层不会默认递归。
 #[tauri::command]
 pub async fn lore_branch_archive(
+    operation_context: OperationContext,
     repository_path: String,
     branch: String,
     include_layers: bool,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let branch = validate_branch_name(&branch)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("branch.archive", move |callback| {
             lore::runtime().block_on(lore::branch::archive(

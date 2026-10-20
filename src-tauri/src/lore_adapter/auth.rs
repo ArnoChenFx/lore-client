@@ -33,8 +33,10 @@ pub fn lore_runtime_info() -> LoreRuntimeInfo {
 
 /// 列出脱敏后的本机账户缓存；固定关闭 `with_token`，原始 Token 永不跨 IPC 返回。
 #[tauri::command]
-pub async fn lore_auth_list() -> Result<LoreOperationResult, LoreCommandError> {
-    run_lore_task(move || {
+pub async fn lore_auth_list(
+    operation_context: OperationContext,
+) -> Result<LoreOperationResult, LoreCommandError> {
+    run_lore_task(operation_context, move || {
         run_operation("auth.list", move |callback| {
             lore::runtime().block_on(lore::auth::list(
                 LoreGlobalArgs::default(),
@@ -56,11 +58,12 @@ pub async fn lore_auth_list() -> Result<LoreOperationResult, LoreCommandError> {
  */
 #[tauri::command]
 pub async fn lore_auth_local_user_info(
+    operation_context: OperationContext,
     auth_url: String,
     user_ids: Vec<String>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let (auth_url, user_ids) = validate_auth_user_info_request(auth_url, user_ids)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         run_operation("auth.local-user-info", move |callback| {
             lore::runtime().block_on(lore::auth::local_user_info(
                 LoreGlobalArgs::default(),
@@ -88,11 +91,12 @@ pub async fn lore_auth_local_user_info(
  */
 #[tauri::command]
 pub async fn lore_auth_user_info(
+    operation_context: OperationContext,
     repository_path: String,
     user_ids: Vec<String>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let user_ids = normalize_auth_user_ids(user_ids)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("auth.user-info", move |callback| {
             lore::runtime().block_on(lore::auth::resolve_user_info(
@@ -115,11 +119,12 @@ pub async fn lore_auth_user_info(
  */
 #[tauri::command]
 pub async fn lore_auth_repository_local_user_info(
+    operation_context: OperationContext,
     repository_path: String,
     user_ids: Vec<String>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let user_ids = normalize_auth_user_ids(user_ids)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let repository_path = validate_repository_path(&repository_path)?;
         let binding = bound_auth_account(&repository_path)?.ok_or_else(|| {
             LoreCommandError::new(
@@ -158,10 +163,11 @@ pub async fn lore_auth_repository_local_user_info(
 /// 启动 Lore 原生交互认证；浏览器打开与回调均由 Rust 上游持有。
 #[tauri::command]
 pub async fn lore_auth_login_interactive(
+    operation_context: OperationContext,
     remote_url: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let remote_url = validate_server_url(&remote_url)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let result = run_operation("auth.login-interactive", move |callback| {
             lore::runtime().block_on(lore::auth::login_interactive(
                 LoreGlobalArgs::default(),
@@ -183,6 +189,7 @@ pub async fn lore_auth_login_interactive(
 /// 使用一次性 Token 登录；Token 只在本命令栈与 Lore 凭据存储之间流转。
 #[tauri::command]
 pub async fn lore_auth_login_with_token(
+    operation_context: OperationContext,
     remote_url: String,
     token: String,
     token_type: String,
@@ -210,7 +217,7 @@ pub async fn lore_auth_login_with_token(
             "The authentication service URL is invalid",
         ));
     }
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let result = run_operation("auth.login-with-token", move |callback| {
             lore::runtime().block_on(lore::auth::login_with_token(
                 LoreGlobalArgs::default(),
@@ -234,6 +241,7 @@ pub async fn lore_auth_login_with_token(
 /// 删除一个用户在指定认证端点下的全部认证与授权 Token。
 #[tauri::command]
 pub async fn lore_auth_logout(
+    operation_context: OperationContext,
     auth_url: String,
     user_id: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
@@ -249,7 +257,7 @@ pub async fn lore_auth_logout(
             "The authentication endpoint and user identity are required",
         ));
     }
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let result = run_operation("auth.logout", move |callback| {
             lore::runtime().block_on(lore::auth::logout(
                 LoreGlobalArgs::default(),
@@ -272,8 +280,10 @@ pub async fn lore_auth_logout(
 
 /// 清空 Lore 凭据存储中的全部身份；只在全局危险确认后调用。
 #[tauri::command]
-pub async fn lore_auth_clear() -> Result<LoreOperationResult, LoreCommandError> {
-    run_lore_task(move || {
+pub async fn lore_auth_clear(
+    operation_context: OperationContext,
+) -> Result<LoreOperationResult, LoreCommandError> {
+    run_lore_task(operation_context, move || {
         let result = run_operation("auth.clear", move |callback| {
             lore::runtime().block_on(lore::auth::clear(
                 LoreGlobalArgs::default(),
@@ -310,6 +320,7 @@ pub(super) fn invalidate_authentication_connections_with<F>(
 /// Status 不会复用认证变化前建立的底层对象。
 #[tauri::command]
 pub async fn lore_auth_repository_contexts_refresh(
+    operation_context: OperationContext,
     repository_paths: Vec<String>,
 ) -> Result<(), LoreCommandError> {
     if repository_paths.len() > 1_000 {
@@ -318,7 +329,7 @@ pub async fn lore_auth_repository_contexts_refresh(
             "At most 1000 repository authentication contexts can be refreshed at once",
         ));
     }
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let repository_paths = repository_paths
             .iter()
             .map(|path| validate_repository_path(path))
@@ -333,11 +344,12 @@ pub async fn lore_auth_repository_contexts_refresh(
 /// 立即切换单个本地仓库的认证账户；`None` 恢复 Lore 自动选择。
 #[tauri::command]
 pub async fn lore_auth_repository_binding_set(
+    operation_context: OperationContext,
     repository_path: String,
     user_id: Option<String>,
     auth_url: Option<String>,
 ) -> Result<(), LoreCommandError> {
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let repository_path = validate_repository_path(&repository_path)?;
         let user_id = user_id.map(|value| value.trim().to_owned());
         let auth_url = auth_url.map(|value| value.trim().to_owned());

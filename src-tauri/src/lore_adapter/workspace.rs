@@ -95,10 +95,11 @@ fn reset_legacy_dirty_only_anchor_before_stage(
 /// Stage 指定路径；空路径数组表示递归扫描并暂存整个仓库。
 #[tauri::command]
 pub async fn lore_stage(
+    operation_context: OperationContext,
     repository_path: String,
     paths: Vec<String>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         reset_legacy_dirty_only_anchor_before_stage(&repository_path)?;
         let globals = global_args(&repository_path)?;
         let paths = normalize_paths(paths, true);
@@ -125,6 +126,7 @@ pub async fn lore_stage(
 /// 边界再次校验两个仓库相对路径，防止前端旧快照越过工作区边界。
 #[tauri::command]
 pub async fn lore_stage_move(
+    operation_context: OperationContext,
     repository_path: String,
     source_path: String,
     target_path: String,
@@ -143,7 +145,7 @@ pub async fn lore_stage_move(
         ));
     }
 
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         reset_legacy_dirty_only_anchor_before_stage(&repository_path)?;
         let globals = global_args(&repository_path)?;
         run_operation("file.stage-move", move |callback| {
@@ -163,10 +165,11 @@ pub async fn lore_stage_move(
 /// 从待提交集合中移除指定路径；空路径数组表示全部路径。
 #[tauri::command]
 pub async fn lore_unstage(
+    operation_context: OperationContext,
     repository_path: String,
     paths: Vec<String>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         let paths = normalize_paths(paths, true);
         run_operation("file.unstage", move |callback| {
@@ -188,6 +191,7 @@ pub async fn lore_unstage(
 /// `purge` 固定关闭，避免一次文件级操作顺带删除未跟踪内容。
 #[tauri::command]
 pub async fn lore_file_reset(
+    operation_context: OperationContext,
     repository_path: String,
     paths: Vec<String>,
     revision: String,
@@ -200,7 +204,7 @@ pub async fn lore_file_reset(
         ));
     }
 
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         let paths = validate_repository_relative_paths(paths)?;
         run_operation("file.reset", move |callback| {
@@ -225,13 +229,14 @@ pub async fn lore_file_reset(
 /// 读取 Store 或猜测当前 Branch latest。
 #[tauri::command]
 pub async fn lore_workspace_diff(
+    operation_context: OperationContext,
     repository_path: String,
     paths: Vec<String>,
     context_lines: Option<u32>,
     ignore_whitespace_eol: Option<bool>,
     ignore_whitespace_inline: Option<bool>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
-    run_heavy_lore_task(&WORKSPACE_DIFF_READ_LANE, move || {
+    run_heavy_lore_task(operation_context, &WORKSPACE_DIFF_READ_LANE, move || {
         let globals = global_args(&repository_path)?;
         let paths = validate_repository_relative_paths(paths)?;
         run_operation("file.diff", move |callback| {
@@ -259,11 +264,12 @@ pub async fn lore_workspace_diff(
 /// 混入 Inspector 文件树。目录由前端根据仓库相对路径投影，Rust 端只返回文件。
 #[tauri::command]
 pub async fn lore_revision_files(
+    operation_context: OperationContext,
     repository_path: String,
     revision: String,
 ) -> Result<Vec<LoreRevisionFile>, LoreCommandError> {
     let revision = validate_revision(&revision)?;
-    run_heavy_lore_task(&REVISION_FILES_READ_LANE, move || {
+    run_heavy_lore_task(operation_context, &REVISION_FILES_READ_LANE, move || {
         collect_revision_tree_files(&repository_path, &revision).map(|files| {
             files
                 .into_iter()
@@ -289,6 +295,7 @@ pub async fn lore_revision_files(
 /// 较大响应。
 #[tauri::command]
 pub async fn lore_file_preview_stream(
+    operation_context: OperationContext,
     repository_path: String,
     path: String,
     revision: Option<String>,
@@ -302,7 +309,7 @@ pub async fn lore_file_preview_stream(
     let preview_limit_bytes =
         binary_preview_limit_bytes(preview_limit_mib.unwrap_or(DEFAULT_BINARY_PREVIEW_LIMIT_MIB))
             .map_err(|error| LoreCommandError::new(error.code, error.message))?;
-    run_heavy_lore_task(&FILE_PREVIEW_READ_LANE, move || {
+    run_heavy_lore_task(operation_context, &FILE_PREVIEW_READ_LANE, move || {
         let envelope = build_file_preview(
             &repository_path,
             &path,
@@ -351,6 +358,7 @@ pub async fn lore_file_preview_stream(
 /// 此时来源为 `None`，适配层把目标树与空树比较并从 Store 读取每个文本文件内容。
 #[tauri::command]
 pub async fn lore_revision_diff(
+    operation_context: OperationContext,
     repository_path: String,
     source_revision: Option<String>,
     target_revision: String,
@@ -363,7 +371,7 @@ pub async fn lore_revision_diff(
         .map(|revision| validate_revision(&revision))
         .transpose()?;
     let target_revision = validate_revision(&target_revision)?;
-    run_heavy_lore_task(&REVISION_DIFF_READ_LANE, move || {
+    run_heavy_lore_task(operation_context, &REVISION_DIFF_READ_LANE, move || {
         let paths = validate_optional_diff_paths(paths)?;
         let context_lines = context_lines.unwrap_or(3).min(100);
 
@@ -425,6 +433,7 @@ pub async fn lore_revision_diff(
 /// 全部标记为新增；普通 Revision 通过路径与内容地址比较新增、删除、修改和移动。
 #[tauri::command]
 pub async fn lore_revision_changes(
+    operation_context: OperationContext,
     repository_path: String,
     source_revision: Option<String>,
     target_revision: String,
@@ -433,7 +442,7 @@ pub async fn lore_revision_changes(
         .map(|revision| validate_revision(&revision))
         .transpose()?;
     let target_revision = validate_revision(&target_revision)?;
-    run_heavy_lore_task(&REVISION_CHANGES_READ_LANE, move || {
+    run_heavy_lore_task(operation_context, &REVISION_CHANGES_READ_LANE, move || {
         let target_files = collect_revision_tree_files(&repository_path, &target_revision)?;
         let source_files = source_revision
             .as_deref()
@@ -472,6 +481,7 @@ pub async fn lore_revision_changes(
 /// 读取单个文件的真实 Lore 历史事件。
 #[tauri::command]
 pub async fn lore_file_history(
+    operation_context: OperationContext,
     repository_path: String,
     path: String,
     branch: Option<String>,
@@ -483,7 +493,7 @@ pub async fn lore_file_history(
         .replace(std::path::MAIN_SEPARATOR, "/");
     let (branch, revision) = validate_file_history_start(branch, revision)?;
 
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("file.history", move |callback| {
             lore::runtime().block_on(lore::file::history(
@@ -509,12 +519,13 @@ pub async fn lore_file_history(
 /// 一并清理。
 #[tauri::command]
 pub async fn lore_discard_workspace_files(
+    operation_context: OperationContext,
     repository_path: String,
     paths: Vec<String>,
     revision: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let revision = validate_revision(&revision)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         let paths = validate_repository_relative_paths(paths)?;
         run_operation("file.discard-workspace", move |callback| {
@@ -553,6 +564,7 @@ pub fn lore_open_workspace_file(
 /// 有界读取工作区文本文件内容，供行内冲突解决等真实内容预览使用。
 #[tauri::command]
 pub async fn lore_read_workspace_text(
+    operation_context: OperationContext,
     repository_path: String,
     relative_path: String,
     max_bytes: Option<u64>,
@@ -560,7 +572,7 @@ pub async fn lore_read_workspace_text(
     let limit = max_bytes
         .unwrap_or(DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES)
         .min(DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES);
-    run_heavy_lore_task(&WORKSPACE_TEXT_READ_LANE, move || {
+    run_heavy_lore_task(operation_context, &WORKSPACE_TEXT_READ_LANE, move || {
         let target_path = validate_existing_workspace_file(&repository_path, &relative_path)?;
         let classification = classify_file_content(&target_path).map_err(|error| {
             LoreCommandError::new(
@@ -622,6 +634,7 @@ pub async fn lore_read_workspace_text(
 /// 失败都返回结构化错误，绝不把截断内容或二进制当成文本交给 Diff 视图。
 #[tauri::command]
 pub async fn lore_read_revision_text(
+    operation_context: OperationContext,
     repository_path: String,
     revision: String,
     relative_path: String,
@@ -635,7 +648,7 @@ pub async fn lore_read_revision_text(
     let limit = max_bytes
         .unwrap_or(DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES)
         .min(DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES);
-    run_heavy_lore_task(&REVISION_TEXT_READ_LANE, move || {
+    run_heavy_lore_task(operation_context, &REVISION_TEXT_READ_LANE, move || {
         // 沿目标路径的祖先目录遍历不可变树，只返回精确匹配的文件，不做越界读取。
         let files = collect_revision_tree_files_at_paths(
             &repository_path,
@@ -677,12 +690,16 @@ pub async fn lore_read_revision_text(
 /// 兼容先启动窗口再由子进程延迟读取文件的桌面工具。
 #[tauri::command]
 pub async fn lore_open_external_diff(
+    operation_context: OperationContext,
     repository_path: String,
     tool: ExternalDiffTool,
     before: ExternalDiffSide,
     after: ExternalDiffSide,
 ) -> Result<ExternalDiffLaunchResult, LoreCommandError> {
-    run_lore_task(move || launch_external_diff(&repository_path, tool, before, after)).await
+    run_lore_task(operation_context, move || {
+        launch_external_diff(&repository_path, tool, before, after)
+    })
+    .await
 }
 
 /// 探测已配置工具的显式路径或系统 PATH；失效工具不返回，前端据此隐藏菜单入口。
@@ -690,9 +707,10 @@ pub async fn lore_open_external_diff(
 /// 因此整体放到后台线程执行。
 #[tauri::command]
 pub async fn lore_detect_external_tools(
+    operation_context: OperationContext,
     tools: Vec<ExternalDiffTool>,
 ) -> Result<Vec<ExternalToolAvailability>, LoreCommandError> {
-    run_lore_task(move || detect_external_tools(tools)).await
+    run_lore_task(operation_context, move || detect_external_tools(tools)).await
 }
 
 fn detect_external_tools(
@@ -718,6 +736,7 @@ fn detect_external_tools(
 /// 为真实冲突文件启动四路外部 Merge。
 #[tauri::command]
 pub async fn lore_open_external_merge(
+    operation_context: OperationContext,
     repository_path: String,
     tool: ExternalDiffTool,
     path: String,
@@ -725,7 +744,7 @@ pub async fn lore_open_external_merge(
     incoming_revision: String,
     labels: ExternalMergeLabels,
 ) -> Result<ExternalDiffLaunchResult, LoreCommandError> {
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         launch_external_merge(
             &repository_path,
             tool,
@@ -747,11 +766,15 @@ pub async fn lore_open_external_merge(
 /// 确认覆盖时通过同目录临时文件原子替换，符号链接会被拒绝而不是跟随写入。
 #[tauri::command]
 pub async fn lore_write_patch_file(
+    operation_context: OperationContext,
     destination_path: String,
     patch: String,
     replace_existing: bool,
 ) -> Result<(), LoreCommandError> {
-    run_lore_task(move || write_patch_file(destination_path, patch, replace_existing)).await
+    run_lore_task(operation_context, move || {
+        write_patch_file(destination_path, patch, replace_existing)
+    })
+    .await
 }
 
 fn write_patch_file(

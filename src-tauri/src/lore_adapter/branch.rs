@@ -7,10 +7,11 @@ use super::*;
 /// 读取本地与远端 Branch 列表。
 #[tauri::command]
 pub async fn lore_branch_list(
+    operation_context: OperationContext,
     repository_path: String,
     include_archived: bool,
 ) -> Result<LoreOperationResult, LoreCommandError> {
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("branch.list", move |callback| {
             lore::runtime().block_on(lore::branch::list(
@@ -28,11 +29,12 @@ pub async fn lore_branch_list(
 /// 读取单个 Branch 的上游信息。
 #[tauri::command]
 pub async fn lore_branch_info(
+    operation_context: OperationContext,
     repository_path: String,
     branch: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let branch = validate_branch_name(&branch)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("branch.info", move |callback| {
             lore::runtime().block_on(lore::branch::info(
@@ -55,11 +57,12 @@ pub async fn lore_branch_info(
 /// 因此这里显式读取 `protect` 元数据，前端不需要猜测事件或错误文本。
 #[tauri::command]
 pub async fn lore_branch_protection_info(
+    operation_context: OperationContext,
     repository_path: String,
     branch: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let branch = validate_branch_name(&branch)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("branch.protection-info", move |callback| {
             lore::runtime().block_on(lore::branch::metadata_get(
@@ -78,6 +81,7 @@ pub async fn lore_branch_protection_info(
 /// 比较两个 Branch，可选按仓库相对路径缩小范围。
 #[tauri::command]
 pub async fn lore_branch_diff(
+    operation_context: OperationContext,
     repository_path: String,
     source: String,
     target: String,
@@ -96,7 +100,7 @@ pub async fn lore_branch_diff(
         })
         .transpose()?
         .unwrap_or_default();
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("branch.diff", move |callback| {
             lore::runtime().block_on(lore::branch::diff(
@@ -121,13 +125,14 @@ pub async fn lore_branch_diff(
 /// 读取 Branch 的本地 Latest 指针历史。
 #[tauri::command]
 pub async fn lore_branch_latest_list(
+    operation_context: OperationContext,
     repository_path: String,
     branch: String,
     limit: Option<u32>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let branch = validate_branch_name(&branch)?;
     let limit = limit.unwrap_or(30).clamp(1, 200);
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("branch.latest-list", move |callback| {
             lore::runtime().block_on(lore::branch::latest_list(
@@ -146,12 +151,13 @@ pub async fn lore_branch_latest_list(
 /// 设置或移除 Branch 写保护。
 #[tauri::command]
 pub async fn lore_branch_set_protected(
+    operation_context: OperationContext,
     repository_path: String,
     branch: String,
     protected: bool,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let branch = validate_branch_name(&branch)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         if protected {
             run_operation("branch.protect", move |callback| {
@@ -185,6 +191,7 @@ pub async fn lore_branch_set_protected(
 /// “确认弹窗打开后仓库已变化”的竞态，不会被当成事实来源。
 #[tauri::command]
 pub async fn lore_branch_reset(
+    operation_context: OperationContext,
     repository_path: String,
     branch: String,
     revision: String,
@@ -195,7 +202,7 @@ pub async fn lore_branch_reset(
     let revision = validate_revision(&revision)?;
     let expected_workspace_revision = validate_revision(&expected_workspace_revision)?;
     let expected_latest = validate_revision(&expected_latest)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         ensure_repository_view_can_apply(&repository_path, &expected_workspace_revision)?;
 
         let protection = read_branch_protection(&repository_path, &branch)?;
@@ -341,6 +348,7 @@ pub(super) fn read_branch_latest_history(
 /// 的 Branch/Revision。所有切换都关闭 `reset`，不会静默丢弃 Stage 内容。
 #[tauri::command]
 pub async fn lore_branch_create_from(
+    operation_context: OperationContext,
     repository_path: String,
     branch: String,
     source_branch: String,
@@ -354,7 +362,7 @@ pub async fn lore_branch_create_from(
     let previous_branch = validate_branch_name(&previous_branch)?;
     let previous_revision = validate_revision(&previous_revision)?;
 
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         run_branch_create_from(
             repository_path,
             branch,
@@ -376,6 +384,7 @@ pub(super) fn run_branch_create_from(
     previous_branch: String,
     previous_revision: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
+    let context = current_operation_context()?;
     let started_at = Instant::now();
     let mut events = Vec::new();
 
@@ -408,6 +417,8 @@ pub(super) fn run_branch_create_from(
     events.extend(source_checkout.events);
     if source_status != 0 {
         return Ok(LoreOperationResult {
+            request_id: context.request_id,
+            workspace_key: context.workspace_key,
             operation: "branch.create-from",
             status: source_status,
             duration_ms: started_at.elapsed().as_millis(),
@@ -469,6 +480,8 @@ pub(super) fn run_branch_create_from(
     }
 
     Ok(LoreOperationResult {
+        request_id: context.request_id,
+        workspace_key: context.workspace_key,
         operation: "branch.create-from",
         status: create_status,
         duration_ms: started_at.elapsed().as_millis(),

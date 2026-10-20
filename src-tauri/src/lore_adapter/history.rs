@@ -146,6 +146,8 @@ fn history_result(
     entries: Vec<LoreRevisionHistoryEntry>,
 ) -> LoreRevisionHistoryResult {
     LoreRevisionHistoryResult {
+        request_id: result.request_id,
+        workspace_key: result.workspace_key,
         operation: result.operation,
         status: result.status,
         duration_ms: result.duration_ms,
@@ -348,6 +350,7 @@ pub(super) fn build_revision_history_args(
 /// 读取当前 Branch 的 Revision 历史，并补齐 Merge Revision 的其他父链。
 #[tauri::command]
 pub async fn lore_revision_history(
+    operation_context: OperationContext,
     repository_path: String,
     limit: Option<u32>,
     revision: Option<String>,
@@ -365,7 +368,7 @@ pub async fn lore_revision_history(
         .transpose()?;
     let date = date.unwrap_or_default();
     let only_branch = only_branch.unwrap_or(false);
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let limit = limit.unwrap_or(100).clamp(1, 1_000);
         collect_revision_history_with(limit, revision, move |revision, length| {
             let globals = global_args(&repository_path)?;
@@ -401,6 +404,7 @@ pub async fn lore_revision_history(
 /// 消费 `services/lore.ts` 归一化后的稳定 DTO。
 #[tauri::command]
 pub async fn lore_metadata_list(
+    operation_context: OperationContext,
     repository_path: String,
     scope: String,
     target: Option<String>,
@@ -412,7 +416,7 @@ pub async fn lore_metadata_list(
         .filter(|value| !value.trim().is_empty())
         .map(|value| validate_revision(&value))
         .transpose()?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         match scope.as_str() {
             "repository" => run_operation("repository.metadata-get", move |callback| {
@@ -483,13 +487,14 @@ pub async fn lore_metadata_list(
 /// 读取精确 Revision 的基础信息、父节点、文件 Delta 与元数据。
 #[tauri::command]
 pub async fn lore_revision_info(
+    operation_context: OperationContext,
     repository_path: String,
     revision: String,
     include_delta: bool,
     include_metadata: bool,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let revision = validate_revision(&revision)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("revision.info", move |callback| {
             lore::runtime().block_on(lore::revision::info(
@@ -509,6 +514,7 @@ pub async fn lore_revision_info(
 /// 按当前 Branch 的 Revision 编号或元数据查找一个精确 Revision。
 #[tauri::command]
 pub async fn lore_revision_find(
+    operation_context: OperationContext,
     repository_path: String,
     metadata_key: Option<String>,
     metadata_value: Option<String>,
@@ -529,7 +535,7 @@ pub async fn lore_revision_find(
             "Revision metadata search values must not contain control characters",
         ));
     }
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("revision.find", move |callback| {
             lore::runtime().block_on(lore::revision::find(
@@ -549,6 +555,7 @@ pub async fn lore_revision_find(
 /// 修改当前 Latest Revision 的消息，并在写入前重验工作区与分支指针。
 #[tauri::command]
 pub async fn lore_revision_amend(
+    operation_context: OperationContext,
     repository_path: String,
     message: String,
     branch: String,
@@ -557,7 +564,7 @@ pub async fn lore_revision_amend(
     let message = validate_revision_message(&message)?;
     let branch = validate_branch_name(&branch)?;
     let expected_revision = validate_revision(&expected_revision)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         ensure_repository_view_can_apply(&repository_path, &expected_revision)?;
         let latest = read_branch_latest(&repository_path, &branch)?;
         if latest != expected_revision {
@@ -583,6 +590,7 @@ pub async fn lore_revision_amend(
 /// 执行一步真实 Bisect，并把干净工作区同步到区间中点。
 #[tauri::command]
 pub async fn lore_revision_bisect(
+    operation_context: OperationContext,
     repository_path: String,
     start: String,
     end: String,
@@ -597,7 +605,7 @@ pub async fn lore_revision_bisect(
             "The known-good and known-bad revisions must be different",
         ));
     }
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         ensure_repository_view_can_apply(&repository_path, &expected_revision)?;
         let globals = global_args(&repository_path)?;
         run_operation("revision.bisect", move |callback| {
@@ -617,13 +625,14 @@ pub async fn lore_revision_bisect(
 /// 把当前已检出的历史内容重放到远端最新头并自动创建新 Revision。
 #[tauri::command]
 pub async fn lore_revision_restore(
+    operation_context: OperationContext,
     repository_path: String,
     message: String,
     expected_revision: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let message = validate_revision_message(&message)?;
     let expected_revision = validate_revision(&expected_revision)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         ensure_repository_view_can_apply(&repository_path, &expected_revision)?;
         let globals = global_args(&repository_path)?;
         run_operation("revision.restore", move |callback| {

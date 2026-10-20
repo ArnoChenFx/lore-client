@@ -70,20 +70,24 @@ impl LiveStack {
 
     fn sign_in(&self, user: &str) -> String {
         std::env::set_var("LORE_E2E_LOGIN_USER", user);
-        let login =
-            tauri::async_runtime::block_on(lore_auth_login_interactive(self.server_url.clone()))
-                .expect("interactive login should return a result");
+        let login = tauri::async_runtime::block_on(lore_auth_login_interactive(
+            test_operation_context(),
+            self.server_url.clone(),
+        ))
+        .expect("interactive login should return a result");
         assert_eq!(
             login.status, 0,
             "{user} should sign in through the auth service"
         );
         token_store_user_id(
-            &tauri::async_runtime::block_on(lore_auth_list()).expect("auth list should succeed"),
+            &tauri::async_runtime::block_on(lore_auth_list(test_operation_context()))
+                .expect("auth list should succeed"),
         )
     }
 
     fn publish(&self, repository: &Path, name: &str, user_id: &str) -> LoreRepositoryPublishResult {
         tauri::async_runtime::block_on(lore_repository_publish(
+            test_operation_context(),
             text(repository),
             name.to_owned(),
             "Live E2E".to_owned(),
@@ -100,6 +104,7 @@ impl LiveStack {
         let parent = self.work_root.join(format!("clones-{}", self.run_id));
         std::fs::create_dir_all(&parent).expect("the clone parent should exist");
         tauri::async_runtime::block_on(lore_repository_clone(
+            test_operation_context(),
             self.server_url.clone(),
             name.to_owned(),
             text(&parent),
@@ -227,6 +232,7 @@ fn phases_for(events: &[Value], operation_prefix: &str) -> Vec<String> {
 #[test]
 #[ignore = "live: needs the local Lore server and lore-auth-service; see docs/en/E2E_LOCAL_STACK.md"]
 fn live_login_publish_clone_push_and_sync_round_trip() {
+    let _operation_scope = test_operation_scope();
     let stack = LiveStack::from_env();
     let user_id = stack.sign_in("alice");
 
@@ -243,11 +249,13 @@ fn live_login_publish_clone_push_and_sync_round_trip() {
     .expect("the local repository should initialize");
     std::fs::write(repository_a.join("notes.txt"), "first line\n").unwrap();
     tauri::async_runtime::block_on(lore_stage(
+        test_operation_context(),
         text(&repository_a),
         vec!["notes.txt".to_owned()],
     ))
     .expect("stage should succeed");
     let commit = tauri::async_runtime::block_on(lore_commit(
+        test_operation_context(),
         text(&repository_a),
         "Initial notes".to_owned(),
         Some("alice".to_owned()),
@@ -269,6 +277,7 @@ fn live_login_publish_clone_push_and_sync_round_trip() {
     assert!(published.pushed, "publish should push the first revision");
 
     tauri::async_runtime::block_on(lore_auth_repository_binding_set(
+        test_operation_context(),
         text(&repository_a),
         Some(user_id.clone()),
         None,
@@ -289,18 +298,24 @@ fn live_login_publish_clone_push_and_sync_round_trip() {
 
     std::fs::write(repository_a.join("notes.txt"), "first line\nsecond line\n").unwrap();
     tauri::async_runtime::block_on(lore_stage(
+        test_operation_context(),
         text(&repository_a),
         vec!["notes.txt".to_owned()],
     ))
     .expect("second stage should succeed");
     tauri::async_runtime::block_on(lore_commit(
+        test_operation_context(),
         text(&repository_a),
         "Add second line".to_owned(),
         Some("alice".to_owned()),
     ))
     .expect("second commit should succeed");
-    let pushed = tauri::async_runtime::block_on(lore_push(text(&repository_a), None))
-        .expect("push should return a result");
+    let pushed = tauri::async_runtime::block_on(lore_push(
+        test_operation_context(),
+        text(&repository_a),
+        None,
+    ))
+    .expect("push should return a result");
     evidence("push status", pushed.status);
     assert_eq!(
         pushed.status, 0,
@@ -308,6 +323,7 @@ fn live_login_publish_clone_push_and_sync_round_trip() {
     );
 
     let synced = tauri::async_runtime::block_on(lore_sync(
+        test_operation_context(),
         text(&repository_b),
         Vec::new(),
         Vec::new(),
@@ -329,6 +345,7 @@ fn live_login_publish_clone_push_and_sync_round_trip() {
 #[test]
 #[ignore = "live: needs the local Lore server and lore-auth-service; see docs/en/E2E_LOCAL_STACK.md"]
 fn live_clone_and_publish_report_progress_that_matches_the_transferred_bytes() {
+    let _operation_scope = test_operation_scope();
     let stack = LiveStack::from_env();
     let user_id = stack.sign_in("alice");
 
@@ -354,9 +371,14 @@ fn live_clone_and_publish_report_progress_that_matches_the_transferred_bytes() {
     let expected_bytes = FILE_COUNT * FILE_BYTES as u64;
     take_captured_operation_stream();
 
-    tauri::async_runtime::block_on(lore_stage(text(&repository), names.clone()))
-        .expect("stage should succeed");
+    tauri::async_runtime::block_on(lore_stage(
+        test_operation_context(),
+        text(&repository),
+        names.clone(),
+    ))
+    .expect("stage should succeed");
     tauri::async_runtime::block_on(lore_commit(
+        test_operation_context(),
         text(&repository),
         "Bulk payload".to_owned(),
         Some("alice".to_owned()),
@@ -377,6 +399,7 @@ fn live_clone_and_publish_report_progress_that_matches_the_transferred_bytes() {
     );
 
     tauri::async_runtime::block_on(lore_auth_repository_binding_set(
+        test_operation_context(),
         text(&repository),
         Some(user_id.clone()),
         None,
@@ -432,6 +455,7 @@ fn live_clone_and_publish_report_progress_that_matches_the_transferred_bytes() {
 #[test]
 #[ignore = "live: needs the local Lore server and lore-auth-service; see docs/en/E2E_LOCAL_STACK.md"]
 fn live_stage_and_commit_progress_counts_every_file() {
+    let _operation_scope = test_operation_scope();
     let stack = LiveStack::from_env();
     stack.sign_in("alice");
 
@@ -462,8 +486,12 @@ fn live_stage_and_commit_progress_counts_every_file() {
     take_captured_operation_stream();
 
     let stage_started = Instant::now();
-    tauri::async_runtime::block_on(lore_stage(text(&repository), names))
-        .expect("stage should succeed");
+    tauri::async_runtime::block_on(lore_stage(
+        test_operation_context(),
+        text(&repository),
+        names,
+    ))
+    .expect("stage should succeed");
     let stage_elapsed = stage_started.elapsed();
     let staged = take_captured_operation_stream();
     let stage_progress = progress_for(&staged, "file.stage");
@@ -498,6 +526,7 @@ fn live_stage_and_commit_progress_counts_every_file() {
 
     let commit_started = Instant::now();
     tauri::async_runtime::block_on(lore_commit(
+        test_operation_context(),
         text(&repository),
         "Many files".to_owned(),
         Some("alice".to_owned()),
@@ -529,8 +558,10 @@ fn live_stage_and_commit_progress_counts_every_file() {
 #[test]
 #[ignore = "live: needs the local Lore server and lore-auth-service; see docs/en/E2E_LOCAL_STACK.md"]
 fn live_wrong_access_token_is_rejected_by_the_auth_service() {
+    let _operation_scope = test_operation_scope();
     let stack = LiveStack::from_env();
     let operation = tauri::async_runtime::block_on(lore_auth_login_with_token(
+        test_operation_context(),
         stack.server_url.clone(),
         "not-a-real-access-token".to_owned(),
         "Bearer".to_owned(),
@@ -550,12 +581,15 @@ fn live_wrong_access_token_is_rejected_by_the_auth_service() {
 #[test]
 #[ignore = "live: needs the local Lore server and lore-auth-service; see docs/en/E2E_LOCAL_STACK.md"]
 fn live_wrong_password_interactive_login_fails_instead_of_signing_in() {
+    let _operation_scope = test_operation_scope();
     let stack = LiveStack::from_env();
     let _password = EnvGuard::set("LORE_E2E_LOGIN_PASSWORD", "definitely-wrong-password");
     let _user = EnvGuard::set("LORE_E2E_LOGIN_USER", "alice");
     let started = Instant::now();
-    let result =
-        tauri::async_runtime::block_on(lore_auth_login_interactive(stack.server_url.clone()));
+    let result = tauri::async_runtime::block_on(lore_auth_login_interactive(
+        test_operation_context(),
+        stack.server_url.clone(),
+    ));
     let elapsed = started.elapsed();
     evidence("wrong password elapsed", elapsed);
     let operation = result.unwrap_or_else(|error| {
@@ -575,8 +609,10 @@ fn live_wrong_password_interactive_login_fails_instead_of_signing_in() {
 #[test]
 #[ignore = "live: needs the local Lore server and lore-auth-service; see docs/en/E2E_LOCAL_STACK.md"]
 fn live_unreachable_server_fails_without_hanging() {
+    let _operation_scope = test_operation_scope();
     let started = Instant::now();
     let result = tauri::async_runtime::block_on(lore_repository_list(
+        test_operation_context(),
         "lore://127.0.0.1:41399".to_owned(),
         None,
     ));
@@ -604,6 +640,7 @@ const ANONYMOUS_PROBE_VARIABLE: &str = "LORE_E2E_ANONYMOUS_PROBE";
 #[test]
 #[ignore = "live: needs the local Lore server and lore-auth-service; see docs/en/E2E_LOCAL_STACK.md"]
 fn live_repository_list_requires_authentication_without_an_identity() {
+    let _operation_scope = test_operation_scope();
     if std::env::var_os(ANONYMOUS_PROBE_VARIABLE).is_some() {
         probe_anonymous_repository_list();
         return;
@@ -637,8 +674,11 @@ fn live_repository_list_requires_authentication_without_an_identity() {
 /// connections are process-wide, so only a new process proves that no identity is supplied.
 fn probe_anonymous_repository_list() {
     let stack = LiveStack::from_env();
-    let result =
-        tauri::async_runtime::block_on(lore_repository_list(stack.server_url.clone(), None));
+    let result = tauri::async_runtime::block_on(lore_repository_list(
+        test_operation_context(),
+        stack.server_url.clone(),
+        None,
+    ));
     match &result {
         Ok(operation) => {
             evidence("anonymous list status", operation.status);
@@ -659,6 +699,7 @@ fn probe_anonymous_repository_list() {
 #[test]
 #[ignore = "live: needs the local Lore server and lore-auth-service; see docs/en/E2E_LOCAL_STACK.md"]
 fn live_conflicting_edits_resolve_through_external_merge_and_push() {
+    let _operation_scope = test_operation_scope();
     let stack = LiveStack::from_env();
     let user_id = stack.sign_in("alice");
     let repository_name = format!("conflict-{}", stack.run_id);
@@ -676,11 +717,13 @@ fn live_conflicting_edits_resolve_through_external_merge_and_push() {
     .expect("the local repository should initialize");
     std::fs::write(repository_a.join("shared.txt"), "base\n").unwrap();
     tauri::async_runtime::block_on(lore_stage(
+        test_operation_context(),
         text(&repository_a),
         vec!["shared.txt".to_owned()],
     ))
     .unwrap();
     tauri::async_runtime::block_on(lore_commit(
+        test_operation_context(),
         text(&repository_a),
         "Base".to_owned(),
         Some("alice".to_owned()),
@@ -689,6 +732,7 @@ fn live_conflicting_edits_resolve_through_external_merge_and_push() {
     let published = stack.publish(&repository_a, &repository_name, &user_id);
     assert!(published.pushed, "publish should push the base revision");
     tauri::async_runtime::block_on(lore_auth_repository_binding_set(
+        test_operation_context(),
         text(&repository_a),
         Some(user_id.clone()),
         None,
@@ -699,6 +743,7 @@ fn live_conflicting_edits_resolve_through_external_merge_and_push() {
     assert_eq!(cloned.result.status, 0, "clone should succeed");
     let repository_b = PathBuf::from(&cloned.destination_path);
     tauri::async_runtime::block_on(lore_auth_repository_binding_set(
+        test_operation_context(),
         text(&repository_b),
         Some(user_id.clone()),
         None,
@@ -707,26 +752,35 @@ fn live_conflicting_edits_resolve_through_external_merge_and_push() {
 
     std::fs::write(repository_a.join("shared.txt"), "from alice\n").unwrap();
     tauri::async_runtime::block_on(lore_stage(
+        test_operation_context(),
         text(&repository_a),
         vec!["shared.txt".to_owned()],
     ))
     .unwrap();
     tauri::async_runtime::block_on(lore_commit(
+        test_operation_context(),
         text(&repository_a),
         "Alice edit".to_owned(),
         Some("alice".to_owned()),
     ))
     .unwrap();
-    let alice_push = tauri::async_runtime::block_on(lore_push(text(&repository_a), None)).unwrap();
+    let alice_push = tauri::async_runtime::block_on(lore_push(
+        test_operation_context(),
+        text(&repository_a),
+        None,
+    ))
+    .unwrap();
     assert_eq!(alice_push.status, 0, "alice's push should succeed");
 
     std::fs::write(repository_b.join("shared.txt"), "from bob\n").unwrap();
     tauri::async_runtime::block_on(lore_stage(
+        test_operation_context(),
         text(&repository_b),
         vec!["shared.txt".to_owned()],
     ))
     .unwrap();
     tauri::async_runtime::block_on(lore_commit(
+        test_operation_context(),
         text(&repository_b),
         "Bob edit".to_owned(),
         Some("alice".to_owned()),
@@ -734,6 +788,7 @@ fn live_conflicting_edits_resolve_through_external_merge_and_push() {
     .unwrap();
 
     let sync = tauri::async_runtime::block_on(lore_sync(
+        test_operation_context(),
         text(&repository_b),
         Vec::new(),
         Vec::new(),
@@ -749,9 +804,12 @@ fn live_conflicting_edits_resolve_through_external_merge_and_push() {
             .map(|event| event["tagName"].clone())
             .collect::<Vec<_>>(),
     );
-    let session = tauri::async_runtime::block_on(lore_conflict_session(text(&repository_b)))
-        .expect("the conflict session query should succeed")
-        .expect("bob's divergent edit should leave a merge conflict session");
+    let session = tauri::async_runtime::block_on(lore_conflict_session(
+        test_operation_context(),
+        text(&repository_b),
+    ))
+    .expect("the conflict session query should succeed")
+    .expect("bob's divergent edit should leave a merge conflict session");
     evidence("conflict session kind", session.kind);
     let incoming = session
         .incoming_revision
@@ -763,6 +821,7 @@ fn live_conflicting_edits_resolve_through_external_merge_and_push() {
         "printf 'merged by external tool\\n' > \"$4\"\nexit 0",
     );
     let launched = tauri::async_runtime::block_on(lore_open_external_merge(
+        test_operation_context(),
         text(&repository_b),
         tool,
         "shared.txt".to_owned(),
@@ -795,6 +854,7 @@ fn live_conflicting_edits_resolve_through_external_merge_and_push() {
     );
 
     let stale = tauri::async_runtime::block_on(lore_write_conflict_resolution(
+        test_operation_context(),
         text(&repository_b),
         session.clone(),
         "shared.txt".to_owned(),
@@ -815,6 +875,7 @@ fn live_conflicting_edits_resolve_through_external_merge_and_push() {
     );
 
     let resolved = tauri::async_runtime::block_on(lore_conflict_action(
+        test_operation_context(),
         text(&repository_b),
         session.kind,
         LoreConflictAction::Resolve,
@@ -823,20 +884,28 @@ fn live_conflicting_edits_resolve_through_external_merge_and_push() {
     .expect("marking the file resolved should succeed");
     assert_eq!(resolved.status, 0, "resolving the conflict should succeed");
     tauri::async_runtime::block_on(lore_stage(
+        test_operation_context(),
         text(&repository_b),
         vec!["shared.txt".to_owned()],
     ))
     .unwrap();
     tauri::async_runtime::block_on(lore_commit(
+        test_operation_context(),
         text(&repository_b),
         "Resolve conflict".to_owned(),
         Some("alice".to_owned()),
     ))
     .expect("the resolution should commit");
-    let pushed = tauri::async_runtime::block_on(lore_push(text(&repository_b), None)).unwrap();
+    let pushed = tauri::async_runtime::block_on(lore_push(
+        test_operation_context(),
+        text(&repository_b),
+        None,
+    ))
+    .unwrap();
     assert_eq!(pushed.status, 0, "bob's resolution should push");
 
     let synced = tauri::async_runtime::block_on(lore_sync(
+        test_operation_context(),
         text(&repository_a),
         Vec::new(),
         Vec::new(),
@@ -853,20 +922,22 @@ fn live_conflicting_edits_resolve_through_external_merge_and_push() {
 }
 
 fn status_file_paths(repository: &Path) -> Vec<String> {
-    tauri::async_runtime::block_on(lore_repository_status(text(repository)))
-        .expect("status should return a result")
-        .events
-        .iter()
-        .filter(|event| {
-            event["tagName"] == "repositoryStatusFile" && event["data"]["type"] == "file"
-        })
-        .filter_map(|event| event["data"]["path"].as_str().map(str::to_owned))
-        .collect()
+    tauri::async_runtime::block_on(lore_repository_status(
+        test_operation_context(),
+        text(repository),
+    ))
+    .expect("status should return a result")
+    .events
+    .iter()
+    .filter(|event| event["tagName"] == "repositoryStatusFile" && event["data"]["type"] == "file")
+    .filter_map(|event| event["data"]["path"].as_str().map(str::to_owned))
+    .collect()
 }
 
 #[test]
 #[ignore = "live: needs the local Lore server and lore-auth-service; see docs/en/E2E_LOCAL_STACK.md"]
 fn live_loreignore_rule_hides_matching_files_from_status() {
+    let _operation_scope = test_operation_scope();
     let stack = LiveStack::from_env();
     stack.sign_in("alice");
 
@@ -915,6 +986,7 @@ fn live_loreignore_rule_hides_matching_files_from_status() {
 #[test]
 #[ignore = "live: needs the local Lore server and lore-auth-service; see docs/en/E2E_LOCAL_STACK.md"]
 fn live_repository_config_edit_is_read_back_by_the_runtime_and_stays_inside_the_repository() {
+    let _operation_scope = test_operation_scope();
     let stack = LiveStack::from_env();
     stack.sign_in("alice");
 
@@ -932,6 +1004,7 @@ fn live_repository_config_edit_is_read_back_by_the_runtime_and_stays_inside_the_
 
     let identity = "Alice E2E <alice@example.test>";
     let saved = tauri::async_runtime::block_on(lore_repository_config_update(
+        test_operation_context(),
         text(&repository),
         identity.to_owned(),
         stack.server_url.clone(),
@@ -941,6 +1014,7 @@ fn live_repository_config_edit_is_read_back_by_the_runtime_and_stays_inside_the_
     assert_eq!(saved.remote_url.as_deref(), Some(stack.server_url.as_str()));
 
     let read_back = tauri::async_runtime::block_on(lore_repository_config_get(
+        test_operation_context(),
         text(&repository),
         "identity".to_owned(),
     ))
@@ -964,6 +1038,7 @@ fn live_repository_config_edit_is_read_back_by_the_runtime_and_stays_inside_the_
     std::os::unix::fs::symlink(&outside, &config).unwrap();
 
     let refused = tauri::async_runtime::block_on(lore_repository_config_update(
+        test_operation_context(),
         text(&repository),
         "Mallory <mallory@example.test>".to_owned(),
         stack.server_url.clone(),

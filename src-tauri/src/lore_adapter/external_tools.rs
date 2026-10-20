@@ -490,6 +490,8 @@ pub(super) fn external_merge_ancestor_order(
 ) -> Result<Vec<String>, LoreCommandError> {
     let repository_path = repository_path.to_owned();
     let LoreRevisionHistoryResult {
+        request_id,
+        workspace_key,
         operation,
         status,
         duration_ms,
@@ -511,6 +513,8 @@ pub(super) fn external_merge_ancestor_order(
     )?;
     ensure_operation_success(
         &LoreOperationResult {
+            request_id,
+            workspace_key,
             operation,
             status,
             duration_ms,

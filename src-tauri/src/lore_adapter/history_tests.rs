@@ -13,6 +13,8 @@ fn metadata(key: &str, value: Value) -> Value {
 
 fn operation(events: Vec<Value>) -> LoreOperationResult {
     LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "revision.history",
         status: 0,
         duration_ms: 1,
@@ -22,6 +24,7 @@ fn operation(events: Vec<Value>) -> LoreOperationResult {
 
 #[test]
 fn history_dto_associates_metadata_once_and_keeps_author_facts() {
+    let _operation_scope = test_operation_scope();
     let events = vec![
         metadata("message", json!("orphan must not attach")),
         entry("newer", 2, &["older"]),
@@ -66,6 +69,7 @@ fn history_dto_associates_metadata_once_and_keeps_author_facts() {
 
 #[test]
 fn history_dto_distinguishes_empty_missing_and_fallback_authors() {
+    let _operation_scope = test_operation_scope();
     for (committed, created, expected) in [
         (Some(json!("author")), Some(json!("creator")), "author"),
         (Some(json!("")), Some(json!("creator")), ""),
@@ -87,6 +91,7 @@ fn history_dto_distinguishes_empty_missing_and_fallback_authors() {
 
 #[test]
 fn history_dto_normalizes_timestamp_units_and_date_range() {
+    let _operation_scope = test_operation_scope();
     for (raw, expected) in [
         (json!(1_753_392_600), Some(1_753_392_600_000_u64)),
         (json!(1_753_392_600_123_u64), Some(1_753_392_600_123)),
@@ -121,6 +126,7 @@ fn history_dto_normalizes_timestamp_units_and_date_range() {
 
 #[test]
 fn history_dto_normalizes_parents_without_reordering_the_first_parent() {
+    let _operation_scope = test_operation_scope();
     let groups = parse_revision_history_groups(
         &[entry(
             "child",
@@ -137,6 +143,7 @@ fn history_dto_normalizes_parents_without_reordering_the_first_parent() {
 
 #[test]
 fn history_dto_rejects_invalid_revision_identities() {
+    let _operation_scope = test_operation_scope();
     for revision in [
         Value::Null,
         json!(""),
@@ -157,6 +164,7 @@ fn history_dto_rejects_invalid_revision_identities() {
 
 #[test]
 fn history_dto_rejects_invalid_sequence_numbers_and_parent_shapes() {
+    let _operation_scope = test_operation_scope();
     for number in [Value::Null, json!(-1), json!(1.5), json!("1")] {
         let mut event = entry("valid", 1, &[]);
         event["data"]["revisionNumber"] = number;
@@ -187,6 +195,7 @@ fn history_dto_rejects_invalid_sequence_numbers_and_parent_shapes() {
 
 #[test]
 fn history_primary_failure_retains_diagnostics_without_partial_entries() {
+    let _operation_scope = test_operation_scope();
     let diagnostics = vec![
         json!({"tagName":"error","data":{"errorInner":"raw history detail"}}),
         json!({"tagName":"complete","data":{"status":401,"error":{
@@ -202,6 +211,8 @@ fn history_primary_failure_retains_diagnostics_without_partial_entries() {
         ];
         events.extend(diagnostics.clone());
         Ok(LoreOperationResult {
+            request_id: test_operation_context().request_id,
+            workspace_key: None,
             operation: "revision.history",
             status: 401,
             duration_ms: 7,
@@ -219,6 +230,7 @@ fn history_primary_failure_retains_diagnostics_without_partial_entries() {
 
 #[test]
 fn history_dto_payload_contains_the_same_facts_without_protocol_envelopes() {
+    let _operation_scope = test_operation_scope();
     let count = 1_000_u32;
     let mut events =
         vec![json!({"tagName":"revisionHistory","data":{"repository":"repo","branch":"main"}})];

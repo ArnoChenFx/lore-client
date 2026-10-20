@@ -917,6 +917,8 @@ mod recovery_tests {
                 assert!(backup.is_file());
                 ensure_operation_success(
                     &LoreOperationResult {
+                        request_id: test_operation_context().request_id,
+                        workspace_key: None,
                         operation: "repository.view-rollback",
                         status: 1,
                         duration_ms: 0,

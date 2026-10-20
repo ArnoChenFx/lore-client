@@ -364,12 +364,15 @@ pub(super) fn run_storage_get_operation(
     handle: LoreStore,
     items: Vec<LoreStorageGetItem>,
 ) -> Result<(LoreOperationResult, BTreeMap<u64, Vec<u8>>), LoreCommandError> {
+    let context = current_operation_context()?;
     const OPERATION: &str = "storage.get";
     let operation_id = format!(
         "lore-operation-{}",
         OPERATION_STREAM_COUNTER.fetch_add(1, Ordering::Relaxed)
     );
     emit_operation_stream(LoreOperationStreamEvent {
+        request_id: context.request_id.clone(),
+        workspace_key: context.workspace_key.clone(),
         operation_id: operation_id.clone(),
         operation: OPERATION,
         phase: "queued",
@@ -380,6 +383,8 @@ pub(super) fn run_storage_get_operation(
     });
     let started_at = Instant::now();
     emit_operation_stream(LoreOperationStreamEvent {
+        request_id: context.request_id.clone(),
+        workspace_key: context.workspace_key.clone(),
         operation_id: operation_id.clone(),
         operation: OPERATION,
         phase: "running",
@@ -460,6 +465,8 @@ pub(super) fn run_storage_get_operation(
 
     let duration_ms = started_at.elapsed().as_millis();
     emit_operation_stream(LoreOperationStreamEvent {
+        request_id: context.request_id.clone(),
+        workspace_key: context.workspace_key.clone(),
         operation_id,
         operation: OPERATION,
         phase: if status == 0 { "succeeded" } else { "failed" },
@@ -470,6 +477,8 @@ pub(super) fn run_storage_get_operation(
     });
     Ok((
         LoreOperationResult {
+            request_id: context.request_id,
+            workspace_key: context.workspace_key,
             operation: OPERATION,
             status,
             duration_ms,
@@ -504,12 +513,15 @@ pub(super) fn run_storage_range_get_operation(
     handle: LoreStore,
     item: LoreStorageGetItem,
 ) -> Result<Vec<u8>, LoreCommandError> {
+    let context = current_operation_context()?;
     const OPERATION: &str = "storage.get";
     let operation_id = format!(
         "lore-operation-{}",
         OPERATION_STREAM_COUNTER.fetch_add(1, Ordering::Relaxed)
     );
     emit_operation_stream(LoreOperationStreamEvent {
+        request_id: context.request_id.clone(),
+        workspace_key: context.workspace_key.clone(),
         operation_id: operation_id.clone(),
         operation: OPERATION,
         phase: "queued",
@@ -520,6 +532,8 @@ pub(super) fn run_storage_range_get_operation(
     });
     let started_at = Instant::now();
     emit_operation_stream(LoreOperationStreamEvent {
+        request_id: context.request_id.clone(),
+        workspace_key: context.workspace_key.clone(),
         operation_id: operation_id.clone(),
         operation: OPERATION,
         phase: "running",
@@ -584,6 +598,8 @@ pub(super) fn run_storage_range_get_operation(
 
     let duration_ms = started_at.elapsed().as_millis();
     emit_operation_stream(LoreOperationStreamEvent {
+        request_id: context.request_id.clone(),
+        workspace_key: context.workspace_key.clone(),
         operation_id,
         operation: OPERATION,
         phase: if status == 0 { "succeeded" } else { "failed" },
@@ -700,12 +716,15 @@ pub(super) fn run_storage_range_get_batch_operation(
     handle: LoreStore,
     items: Vec<LoreStorageGetItem>,
 ) -> Result<BTreeMap<u64, Vec<u8>>, LoreCommandError> {
+    let context = current_operation_context()?;
     const OPERATION: &str = "storage.get";
     let operation_id = format!(
         "lore-operation-{}",
         OPERATION_STREAM_COUNTER.fetch_add(1, Ordering::Relaxed)
     );
     emit_operation_stream(LoreOperationStreamEvent {
+        request_id: context.request_id.clone(),
+        workspace_key: context.workspace_key.clone(),
         operation_id: operation_id.clone(),
         operation: OPERATION,
         phase: "queued",
@@ -716,6 +735,8 @@ pub(super) fn run_storage_range_get_batch_operation(
     });
     let started_at = Instant::now();
     emit_operation_stream(LoreOperationStreamEvent {
+        request_id: context.request_id.clone(),
+        workspace_key: context.workspace_key.clone(),
         operation_id: operation_id.clone(),
         operation: OPERATION,
         phase: "running",
@@ -793,6 +814,8 @@ pub(super) fn run_storage_range_get_batch_operation(
 
     let duration_ms = started_at.elapsed().as_millis();
     emit_operation_stream(LoreOperationStreamEvent {
+        request_id: context.request_id.clone(),
+        workspace_key: context.workspace_key.clone(),
         operation_id,
         operation: OPERATION,
         phase: if status == 0 { "succeeded" } else { "failed" },
@@ -1605,7 +1628,10 @@ pub(super) fn build_initial_revision_diff(
         })
         .collect();
 
+    let context = current_operation_context()?;
     Ok(LoreOperationResult {
+        request_id: context.request_id,
+        workspace_key: context.workspace_key,
         operation: "file.diff.revision.initial",
         status: 0,
         duration_ms: started_at.elapsed().as_millis(),
