@@ -10,7 +10,7 @@
 
 请安装：
 
-- Bun 1.3 或更高版本。
+- Bun 最新稳定版（CI 使用 `bun-version: latest`）。
 - Rust stable 工具链与 Cargo。
 - Git LFS 3.x。
 - Tauri 所需的平台依赖：Windows 使用 WebView2 与 Windows 构建工具，Linux 使用 WebKitGTK 4.1 开发包，macOS 使用 Xcode Command Line Tools。
@@ -63,11 +63,13 @@ bun tauri build --debug --no-bundle
 
 不得提交生成的依赖、构建产物、Rust target、临时浏览器配置或生成的分析目录。
 
+`bun run test` 使用 Bun 的 `--isolate` 模式，隔离各测试文件的模块替身与全局状态。本地开发与 CI 均使用该脚本，以应用相同的隔离设置。
+
 ## 常见开发任务
 
 ### 修改界面
 
-先运行 `bun run dev`，修改对应组件与共享样式，再补充或更新邻近的 `bun test` 测试。使用语义化设计令牌，确保同一改动同时适用于深色与浅色主题。
+先运行 `bun run dev`，修改对应组件与共享样式，再补充或更新邻近的 `bun run test` 测试。使用语义化设计令牌，确保同一改动同时适用于深色与浅色主题。
 
 所有用户可见文案、可访问名称、提示、确认和错误信息都必须使用多语言资源。英文与简体中文资源必须同步更新。
 
@@ -158,14 +160,14 @@ git lfs ls-files
 | 改动类型 | 必需检查 |
 | --- | --- |
 | 仅文档 | 检查链接和双语一致性；运行 `git diff --check` |
-| 前端逻辑或组件 | `bun run check`、`bun test`、`bun run lint`、`bun run format:check`、`bun run build` |
+| 前端逻辑或组件 | `bun run check`、`bun run test`、`bun run lint`、`bun run format:check`、`bun run build` |
 | Rust 或 Lore 适配层 | `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`、`cargo check --manifest-path src-tauri/Cargo.toml`，以及针对性 Rust 测试 |
 | 桌面权限、壳或打包 | `bun tauri build --debug --no-bundle` |
 
 交付前的基础检查为：
 
 ```powershell
-bun test
+bun run test
 bun run build
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 cargo check --manifest-path src-tauri/Cargo.toml
