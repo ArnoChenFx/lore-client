@@ -300,19 +300,69 @@ async function main() {
     }
     await sleep(300)
 
+    const readActiveCount = () => execute(`
+      const button = document.querySelector('button[aria-label="Operation History"], button[aria-label="操作记录"]')
+      if (!button) throw new Error('Operation History button is missing')
+      return Number(button.querySelector('.icon-button__badge')?.textContent ?? 0)
+    `)
+    if (!await waitFor(async () => await readActiveCount() === 0, 5_000)) {
+      throw new Error('startup requests did not settle before the stall check')
+    }
     const operationId = `e2e-stall-${Date.now()}`
-    const operationContext = { requestId: randomUUID(), workspaceKey: null }
+    // Unknown native events (including events from an old page) must not create tasks.
+    await emitOperationStream({
+      requestId: randomUUID(), workspaceKey: null, operationId: `${operationId}-unknown`,
+      operation: 'shared_store.info', phase: 'streaming',
+      event: { tagName: 'fileStageProgress', data: { unit: 'files', current: 1200, elapsedMs: 900 } },
+      cancellable: false
+    })
+    await sleep(300)
+    record('unknown request progress is ignored',
+      await execute(`return !document.querySelector('.statusbar__progress')`) ? 'pass' : 'fail',
+      'progress requires a request admitted by this page')
+
+    // Exercise admission through a real app-generated IPC call. Hold delivery of its
+    // genuine native result while testing event transport/stall rendering; never fake
+    // a business response or add a production-only test entry point.
+    await execute(`
+      const original = window.__TAURI_INTERNALS__.invoke
+      const state = { original, context: null, held: false, release: null }
+      window.__loreE2EStall = state
+      window.__TAURI_INTERNALS__.invoke = function (command, args, options) {
+        const result = original.call(this, command, args, options)
+        if (command !== 'lore_shared_store_info' || state.held) return result
+        state.held = true
+        state.context = args.operationContext
+        const released = new Promise(resolve => { state.release = resolve })
+        return result.then(
+          value => released.then(() => value),
+          error => released.then(() => { throw error })
+        )
+      }
+      document.querySelector('button[aria-label="Client Settings"], button[aria-label="客户端设置"]').click()
+    `)
+    const storageTab = await waitFor(
+      () => execute(`return Boolean(document.querySelector('#settings-tab-storage'))`), 5_000)
+    if (!storageTab) throw new Error('settings storage tab did not render')
+    await execute(`document.querySelector('#settings-tab-storage').click()`)
+    const admitted = await waitFor(() => execute(`return window.__loreE2EStall.context`), 5_000)
+    if (!admitted) throw new Error('the app did not issue a traced Shared Store request')
+    const operationContext = admitted.value
+    if (!operationContext.requestId || operationContext.workspaceKey !== null) {
+      throw new Error('the device-level request must have its own ID and an explicit global scope')
+    }
+    await execute(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
     const emitted = await emitOperationStream({
       ...operationContext,
       operationId,
-      operation: 'file.stage',
+      operation: 'shared_store.info',
       phase: 'streaming',
       event: { tagName: 'fileStageProgress', data: { unit: 'files', current: 1200, elapsedMs: 900 } },
       cancellable: false
     })
     if (!/^emitted/.test(emitted)) throw new Error(`the progress event was not delivered: ${emitted}`)
     const bar = await waitFor(() => execute(`return Boolean(document.querySelector('.statusbar__progress'))`), 5_000)
-    record('a streamed progress snapshot shows in the status bar', bar ? 'pass' : 'fail', bar ? `after ${bar.elapsedMs} ms` : 'no progress element')
+    record('an admitted request progress snapshot shows in the status bar', bar ? 'pass' : 'fail', bar ? `after ${bar.elapsedMs} ms` : 'no progress element')
     await sleep(2_000)
     const early = await execute(`return document.querySelector('.statusbar__progress')?.classList.contains('is-stalled') ?? null`)
     record('no stall warning within the first 2 seconds', early === false ? 'pass' : 'fail', { isStalled: early })
@@ -328,8 +378,37 @@ async function main() {
       { isStalled: Boolean(stalled), warningText }
     )
     await screenshot('04-stall-warning')
-    await emitOperationStream({ ...operationContext, operationId, operation: 'file.stage', phase: 'succeeded', status: 0, durationMs: 17_000, cancellable: false })
+    await emitOperationStream({ ...operationContext, operationId, operation: 'shared_store.info', phase: 'succeeded', status: 0, durationMs: 17_000, cancellable: false })
+    await execute(`window.__loreE2EStall.release()`)
+    const ended = await waitFor(async () =>
+      await readActiveCount() === 0 && await execute(`return !document.querySelector('.statusbar__progress')`), 5_000)
+    record('completed request releases its last lease and leaves the status bar',
+      ended ? 'pass' : 'fail', { activeCount: await readActiveCount() })
+    await execute(`document.querySelector('button[aria-label="Operation History"], button[aria-label="操作记录"]').click()`)
+    if (!await waitFor(() => execute(`return Boolean(document.querySelector('.operation-dialog'))`), 5_000)) {
+      throw new Error('operation history did not open')
+    }
+    const previousRows = await execute(`return document.querySelectorAll('.operation-list article').length`)
+    await emitOperationStream({
+      ...operationContext, operationId: `${operationId}-late-new-child`, operation: 'shared_store.info', phase: 'streaming',
+      event: { tagName: 'fileStageProgress', data: { unit: 'files', current: 1300, elapsedMs: 18000 } },
+      cancellable: false
+    })
+    await sleep(300)
+    const lateRows = await execute(`return document.querySelectorAll('.operation-list article').length`)
+    record('late progress cannot create a new child for a completed request',
+      await readActiveCount() === 0 && lateRows === previousRows &&
+        await execute(`return !document.querySelector('.statusbar__progress')`) ? 'pass' : 'fail',
+      { previousRows, lateRows, activeCount: await readActiveCount() })
   } finally {
+    await execute(`
+      const state = window.__loreE2EStall
+      if (state) {
+        window.__TAURI_INTERNALS__.invoke = state.original
+        state.release?.()
+        delete window.__loreE2EStall
+      }
+    `).catch(() => {})
     await webdriver('DELETE', `/session/${sessionId}`).catch(() => {})
   }
 }
