@@ -5,7 +5,7 @@ interface PaneResizerProps {
   value: number
   direction: 'right' | 'left'
   container: HTMLElement | null
-  onChange: (nextValue: number, containerWidth: number) => void
+  onChange: (nextValue: number, containerWidth: number, commit?: boolean) => void
   onReset: () => void
 }
 
@@ -49,6 +49,7 @@ export function PaneResizer({ label, value, direction, container, onChange, onRe
     const pointerId = event.pointerId
     const target = event.currentTarget
     let finished = false
+    let lastChange: { value: number; containerWidth: number } | undefined
 
     const finishResize = () => {
       if (finished) return
@@ -74,6 +75,8 @@ export function PaneResizer({ label, value, direction, container, onChange, onRe
       if (localCleanupRef.current === finishResize) {
         localCleanupRef.current = null
       }
+      // 释放、取消、失焦和卸载都结束同一预览会话，只提交最后一次有效移动。
+      if (lastChange) onChange(lastChange.value, lastChange.containerWidth, true)
     }
 
     const handlePointerEnd = (endEvent: PointerEvent) => {
@@ -95,7 +98,8 @@ export function PaneResizer({ label, value, direction, container, onChange, onRe
       if (!container) return
       const delta = moveEvent.clientX - startX
       const signedDelta = direction === 'right' ? delta : -delta
-      onChange(startValue + signedDelta, container.clientWidth)
+      lastChange = { value: startValue + signedDelta, containerWidth: container.clientWidth }
+      onChange(lastChange.value, lastChange.containerWidth, false)
     }
 
     activePaneResizeCleanup = finishResize

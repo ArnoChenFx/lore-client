@@ -3,16 +3,19 @@ import type { ChangeFile, RepositoryFileReference } from '../../types'
 export type ChangeViewMode = 'flat' | 'tree'
 export type ChangeTreeScope = 'unstaged' | 'staged' | 'revision'
 
-export interface ChangeTreeRow {
+interface ChangeTreeRowBase {
   id: string
-  kind: 'directory' | 'file'
   name: string
   path: string
   depth: number
-  expanded?: boolean
-  file?: ChangeFile
   descendantIds: string[]
 }
+
+export type ChangeTreeRow = ChangeTreeRowBase &
+  (
+    | { kind: 'directory'; expanded: boolean; descendantFiles: ChangeFile[]; file?: undefined }
+    | { kind: 'file'; file: ChangeFile; expanded?: undefined }
+  )
 
 export interface ChangeSelectionResult {
   selectedIds: string[]
@@ -36,6 +39,7 @@ interface MutableDirectory {
   path: string
   directories: Map<string, MutableDirectory>
   files: ChangeFile[]
+  descendantFiles: ChangeFile[]
 }
 
 const pathCollator = new Intl.Collator('zh-CN', {
@@ -125,7 +129,8 @@ export function buildChangeTreeRows(
     name: '',
     path: '',
     directories: new Map(),
-    files: []
+    files: [],
+    descendantFiles: []
   }
 
   for (const file of files) {
@@ -139,19 +144,17 @@ export function buildChangeTreeRows(
           name: segment,
           path,
           directories: new Map(),
-          files: []
+          files: [],
+          descendantFiles: []
         }
         current.directories.set(segment, child)
       }
+      // 每个祖先只追加一次，保留输入快照的顺序供目录动作直接使用。
+      child.descendantFiles.push(file)
       current = child
     }
     current.files.push(file)
   }
-
-  const collectDescendants = (directory: MutableDirectory): string[] => [
-    ...directory.files.map((file) => file.id),
-    ...[...directory.directories.values()].flatMap(collectDescendants)
-  ]
 
   const rows: ChangeTreeRow[] = []
   const visit = (directory: MutableDirectory, depth: number) => {
@@ -167,7 +170,8 @@ export function buildChangeTreeRows(
         path: child.path,
         depth,
         expanded,
-        descendantIds: collectDescendants(child)
+        descendantIds: child.descendantFiles.map((file) => file.id),
+        descendantFiles: child.descendantFiles
       })
       if (expanded) {
         visit(child, depth + 1)

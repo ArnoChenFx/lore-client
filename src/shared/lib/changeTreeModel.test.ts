@@ -62,6 +62,22 @@ describe('local changes tree projection', () => {
     expect(collapsed.some((row) => row.path.endsWith('A.txt'))).toBe(false)
   })
 
+  it('preserves input order and file identity for directory actions across nested and collapsed rows', () => {
+    const input = [files[1], files[2], files[0], { ...files[0], id: 'sibling', path: 'Other', name: 'Sibling.txt' }]
+    const rows = buildChangeTreeRows(input, new Set(['Content/World']), 'unstaged')
+    for (const row of rows) {
+      if (row.kind !== 'directory') continue
+      const expected = input.filter((file) => file.path === row.path || file.path.startsWith(`${row.path}/`))
+      expect(row.descendantFiles).toEqual(expected)
+      expect(row.descendantIds).toEqual(expected.map((file) => file.id))
+      row.descendantFiles.forEach((file, index) => expect(file).toBe(expected[index]))
+    }
+    const world = rows.find((row) => row.path === 'Content/World')
+    expect(world?.descendantIds).toEqual(['content-b', 'content-a'])
+    expect(rows.some((row) => row.path === 'Content/World/Sub')).toBe(false)
+    expect(input.map((file) => file.id)).toEqual(['content-b', 'root', 'content-a', 'sibling'])
+  })
+
   it('does not prefix root file paths with an extra dot', () => {
     expect(changeFilePath(files[2])).toBe('README.md')
   })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useReducer, useState } from 'react'
 
 import type { WorkspaceLayout } from '../types'
 import { useClientPreferences } from './useClientPreferences'
@@ -46,6 +46,66 @@ function fitLayoutToContainer(layout: WorkspaceLayout, containerWidth: number): 
   }
 }
 
+export interface WorkspaceLayoutState {
+  layout: WorkspaceLayout
+  committedLayout: WorkspaceLayout
+}
+
+type WorkspaceLayoutAction =
+  | { type: 'hydrate'; layout: WorkspaceLayout; containerWidth: number }
+  | { type: 'fit' | 'reset'; containerWidth: number }
+  | { type: 'sidebar' | 'inspector'; width: number; containerWidth: number; commit: boolean }
+
+/** 拖动只更新预览；提交边界才更新偏好订阅者可见的布局。 */
+export function workspaceLayoutReducer(
+  state: WorkspaceLayoutState,
+  action: WorkspaceLayoutAction
+): WorkspaceLayoutState {
+  const current = state.layout
+  let layout: WorkspaceLayout
+  switch (action.type) {
+    case 'hydrate':
+      layout = fitLayoutToContainer(action.layout, action.containerWidth)
+      break
+    case 'fit':
+      layout = fitLayoutToContainer(current, action.containerWidth)
+      break
+    case 'reset':
+      layout = fitLayoutToContainer(DEFAULT_WORKSPACE_LAYOUT, action.containerWidth)
+      break
+    case 'sidebar':
+      layout = {
+        ...current,
+        sidebarWidth: clamp(
+          action.width,
+          SIDEBAR_MIN,
+          Math.min(SIDEBAR_MAX, action.containerWidth - current.inspectorWidth - CONTENT_MIN - RESIZER_TOTAL)
+        )
+      }
+      break
+    case 'inspector':
+      layout = {
+        ...current,
+        inspectorWidth: clamp(
+          action.width,
+          INSPECTOR_MIN,
+          action.containerWidth - current.sidebarWidth - CONTENT_MIN - RESIZER_TOTAL
+        )
+      }
+      break
+  }
+  if (layout.sidebarWidth === current.sidebarWidth && layout.inspectorWidth === current.inspectorWidth) {
+    layout = current
+  }
+  const commit = !('commit' in action) || action.commit
+  const saved = state.committedLayout
+  const committedLayout =
+    commit && (layout.sidebarWidth !== saved.sidebarWidth || layout.inspectorWidth !== saved.inspectorWidth)
+      ? layout
+      : saved
+  return layout === current && committedLayout === saved ? state : { layout, committedLayout }
+}
+
 /**
  * 管理三栏工作区尺寸，并在窗口变窄时始终给中间内容保留最低空间。
  */
@@ -60,8 +120,13 @@ export function useWorkspaceLayout() {
    * 渲染时机不同，分割条到达最小/最大宽度时便可能在相邻边界值间反复覆盖。
    */
   const [hydrated, setHydrated] = useState(ready)
-  const [layout, setLayout] = useState<WorkspaceLayout>(() =>
-    fitLayoutToContainer(preferences.workspaceLayout, readInitialContainerWidth())
+  const [{ layout, committedLayout }, dispatch] = useReducer(
+    workspaceLayoutReducer,
+    preferences.workspaceLayout,
+    (initial) => {
+      const fitted = fitLayoutToContainer(initial, readInitialContainerWidth())
+      return { layout: fitted, committedLayout: fitted }
+    }
   )
 
   /*
@@ -71,20 +136,20 @@ export function useWorkspaceLayout() {
    */
   if (ready && !hydrated) {
     setHydrated(true)
-    setLayout(
-      fitLayoutToContainer(
-        preferences.workspaceLayout,
+    dispatch({
+      type: 'hydrate',
+      layout: preferences.workspaceLayout,
+      containerWidth:
         typeof document === 'undefined'
           ? readInitialContainerWidth()
           : (document.querySelector<HTMLElement>('.workspace')?.clientWidth ?? readInitialContainerWidth())
-      )
-    )
+    })
   }
 
   useEffect(() => {
     // 水合前不能把内存默认值写回磁盘，否则会覆盖尚未读取完成的用户布局。
-    if (ready && hydrated) update({ workspaceLayout: layout })
-  }, [hydrated, layout, ready, update])
+    if (ready && hydrated) update({ workspaceLayout: committedLayout })
+  }, [committedLayout, hydrated, ready, update])
 
   useEffect(() => {
     /**
@@ -94,12 +159,7 @@ export function useWorkspaceLayout() {
     const fitToWindow = () => {
       const containerWidth =
         document.querySelector<HTMLElement>('.workspace')?.clientWidth ?? readInitialContainerWidth()
-      setLayout((current) => {
-        const fitted = fitLayoutToContainer(current, containerWidth)
-        return fitted.sidebarWidth === current.sidebarWidth && fitted.inspectorWidth === current.inspectorWidth
-          ? current
-          : fitted
-      })
+      dispatch({ type: 'fit', containerWidth })
     }
 
     fitToWindow()
@@ -107,38 +167,17 @@ export function useWorkspaceLayout() {
     return () => window.removeEventListener('resize', fitToWindow)
   }, [])
 
-  const resizeSidebar = useCallback((nextWidth: number, containerWidth: number) => {
-    setLayout((current) => {
-      const sidebarWidth = clamp(
-        nextWidth,
-        SIDEBAR_MIN,
-        Math.min(SIDEBAR_MAX, containerWidth - current.inspectorWidth - CONTENT_MIN - RESIZER_TOTAL)
-      )
-      // 指针压在边界外时会持续产生 pointermove；相同值必须复用原状态，
-      // 不能让无效事件继续触发偏好写入和全局订阅者重渲染。
-      return sidebarWidth === current.sidebarWidth ? current : { ...current, sidebarWidth }
-    })
+  const resizeSidebar = useCallback((nextWidth: number, containerWidth: number, commit = true) => {
+    dispatch({ type: 'sidebar', width: nextWidth, containerWidth, commit })
   }, [])
 
-  const resizeInspector = useCallback((nextWidth: number, containerWidth: number) => {
-    setLayout((current) => {
-      const inspectorWidth = clamp(
-        nextWidth,
-        INSPECTOR_MIN,
-        containerWidth - current.sidebarWidth - CONTENT_MIN - RESIZER_TOTAL
-      )
-      return inspectorWidth === current.inspectorWidth ? current : { ...current, inspectorWidth }
-    })
+  const resizeInspector = useCallback((nextWidth: number, containerWidth: number, commit = true) => {
+    dispatch({ type: 'inspector', width: nextWidth, containerWidth, commit })
   }, [])
 
   const resetLayout = useCallback(() => {
     const containerWidth = document.querySelector<HTMLElement>('.workspace')?.clientWidth ?? readInitialContainerWidth()
-    setLayout((current) => {
-      const next = fitLayoutToContainer(DEFAULT_WORKSPACE_LAYOUT, containerWidth)
-      return next.sidebarWidth === current.sidebarWidth && next.inspectorWidth === current.inspectorWidth
-        ? current
-        : next
-    })
+    dispatch({ type: 'reset', containerWidth })
   }, [])
 
   return {
