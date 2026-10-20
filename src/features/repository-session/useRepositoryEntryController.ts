@@ -240,7 +240,7 @@ export function useRepositoryEntryController({
       setBusyAction('openingRepository')
       if (probe.repositoryPath !== repositoryPath) request = requests.beginOpen(probe.repositoryPath)
       if (!request) return
-      const snapshot = await loadRepositorySnapshot(probe.repositoryPath, true)
+      const snapshot = await loadRepositorySnapshot(probe.repositoryPath)
       if (!isCurrent() || !applySnapshot(request, snapshot)) return
       activateSnapshot(snapshot)
       setActiveView('history')
@@ -301,7 +301,7 @@ export function useRepositoryEntryController({
         setInitializationTarget(null)
         try {
           const request = requests.beginOpen(initialized.repositoryPath)
-          const snapshot = await loadRepositorySnapshot(initialized.repositoryPath, true)
+          const snapshot = await loadRepositorySnapshot(initialized.repositoryPath)
           if (request && applySnapshot(request, snapshot)) {
             activateSnapshot(snapshot)
             setActiveView('changes')
@@ -588,7 +588,7 @@ export function useRepositoryEntryController({
           selectedRemote.userId
         )
         const request = requests.beginOpen(clone.destinationPath)
-        const snapshot = await loadRepositorySnapshot(clone.destinationPath, true)
+        const snapshot = await loadRepositorySnapshot(clone.destinationPath)
         if (request && applySnapshot(request, snapshot)) {
           activateSnapshot(snapshot)
           setActiveView('history')

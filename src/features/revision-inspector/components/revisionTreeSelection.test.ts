@@ -13,7 +13,7 @@ const firstFile: RevisionFile = {
   path: '.',
   name: 'first.txt',
   size: '1 B',
-  binary: false
+  contentClassification: { kind: 'text', source: 'utf8' }
 }
 
 const targetFile: RevisionFile = {
@@ -21,7 +21,7 @@ const targetFile: RevisionFile = {
   path: '.',
   name: 'target.txt',
   size: '1 B',
-  binary: false
+  contentClassification: { kind: 'text', source: 'utf8' }
 }
 
 describe('revision file-tree selection reconciliation', () => {

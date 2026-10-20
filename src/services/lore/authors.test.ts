@@ -50,7 +50,7 @@ describe('repository author name enrichment', () => {
         return remote.promise
       }
     })
-    const resolver = new RepositoryAuthorNameResolver(repository, service)
+    const resolver = new RepositoryAuthorNameResolver(repository, 'test-auth-scope', service)
     const updates: ReadonlyMap<string, string>[] = []
     let finished = false
     const task = resolver
@@ -66,7 +66,10 @@ describe('repository author name enrichment', () => {
     await task
 
     expect(updates.at(-1)).toEqual(new Map([['user', 'Current name']]))
-    expect(service.remember).toHaveBeenCalledWith(repository.id, new Map([['user', 'Current name']]))
+    expect(service.remember).toHaveBeenCalledWith(
+      expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
+      new Map([['user', 'Current name']])
+    )
   })
 
   it('deduplicates overlapping batches by identity and publishes only each caller’s candidates', async () => {
@@ -84,7 +87,7 @@ describe('repository author name enrichment', () => {
         return secondRemote.promise
       })
     })
-    const resolver = new RepositoryAuthorNameResolver(repository, service)
+    const resolver = new RepositoryAuthorNameResolver(repository, 'test-auth-scope', service)
     const firstUpdates: ReadonlyMap<string, string>[] = []
     const secondUpdates: ReadonlyMap<string, string>[] = []
     const first = resolver.hydrate(['a', 'b', 'a'], (names) => firstUpdates.push(names))
@@ -135,7 +138,7 @@ describe('repository author name enrichment', () => {
         return new Map(candidates.map((identity) => [identity, `Name ${identity}`]))
       }
     })
-    const resolver = new RepositoryAuthorNameResolver(repository, service)
+    const resolver = new RepositoryAuthorNameResolver(repository, 'test-auth-scope', service)
     const updates: ReadonlyMap<string, string>[] = []
     await resolver.hydrate(identities, (names) => updates.push(names))
 
@@ -153,7 +156,7 @@ describe('repository author name enrichment', () => {
       loadCached: async () => new Map([['user', 'Old disk name']]),
       loadRemote: vi.fn(async () => new Map([['user', name]]))
     })
-    const resolver = new RepositoryAuthorNameResolver(repository, service)
+    const resolver = new RepositoryAuthorNameResolver(repository, 'test-auth-scope', service)
     await resolver.hydrate(['user'], () => undefined)
 
     name = 'Renamed account'
@@ -173,7 +176,7 @@ describe('repository author name enrichment', () => {
   it('briefly caches unknown identities and retries them instead of querying every history refresh', async () => {
     let now = 1_000
     const service = dependencies({ now: () => now })
-    const resolver = new RepositoryAuthorNameResolver(repository, service)
+    const resolver = new RepositoryAuthorNameResolver(repository, 'test-auth-scope', service)
     const update = vi.fn()
     await resolver.hydrate(['free-form identity'], update)
     now += 29_999
@@ -197,7 +200,7 @@ describe('repository author name enrichment', () => {
         throw new Error('No bound account')
       })
     })
-    const resolver = new RepositoryAuthorNameResolver(repository, service)
+    const resolver = new RepositoryAuthorNameResolver(repository, 'test-auth-scope', service)
     const updates: ReadonlyMap<string, string>[] = []
     await resolver.hydrate(['user'], (names) => updates.push(names))
     expect(updates.at(-1)).toEqual(new Map([['user', 'Cached name']]))
@@ -214,7 +217,7 @@ describe('repository author name enrichment', () => {
         throw new Error('No bound local profile')
       }
     })
-    const resolver = new RepositoryAuthorNameResolver({ ...repository, online: false }, service)
+    const resolver = new RepositoryAuthorNameResolver({ ...repository, online: false }, 'test-auth-scope', service)
     const updates: ReadonlyMap<string, string>[] = []
     await resolver.hydrate(['user'], (names) => updates.push(names))
 
@@ -230,12 +233,15 @@ describe('repository author name enrichment', () => {
           ['unrequested-user', 'Other account']
         ])
     })
-    const resolver = new RepositoryAuthorNameResolver({ ...repository, online: false }, service)
+    const resolver = new RepositoryAuthorNameResolver({ ...repository, online: false }, 'test-auth-scope', service)
     const updates: ReadonlyMap<string, string>[] = []
     await resolver.hydrate(['bound-user', 'historical-user'], (names) => updates.push(names))
 
     expect(updates).toEqual([new Map([['bound-user', 'Local Author']])])
-    expect(service.remember).toHaveBeenCalledWith(repository.id, new Map([['bound-user', 'Local Author']]))
+    expect(service.remember).toHaveBeenCalledWith(
+      expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
+      new Map([['bound-user', 'Local Author']])
+    )
     expect(service.loadRemote).not.toHaveBeenCalled()
   })
 
@@ -248,7 +254,7 @@ describe('repository author name enrichment', () => {
         return remote.promise
       })
     })
-    const resolver = new RepositoryAuthorNameResolver(repository, service)
+    const resolver = new RepositoryAuthorNameResolver(repository, 'test-auth-scope', service)
     const update = vi.fn()
     const task = resolver.hydrate(['user'], update)
     await remoteStarted.promise
@@ -271,7 +277,7 @@ describe('repository author name enrichment', () => {
         return cache.promise
       }
     })
-    const resolver = new RepositoryAuthorNameResolver(repository, service)
+    const resolver = new RepositoryAuthorNameResolver(repository, 'test-auth-scope', service)
     const update = vi.fn()
     const task = resolver.hydrate(['user'], update)
     await cacheStarted.promise
@@ -294,7 +300,7 @@ describe('repository author name enrichment', () => {
         return remote.promise
       })
     })
-    const resolver = new RepositoryAuthorNameResolver(repository, service)
+    const resolver = new RepositoryAuthorNameResolver(repository, 'test-auth-scope', service)
     const oldUpdate = vi.fn()
     const newUpdate = vi.fn()
     const controller = new AbortController()
@@ -320,7 +326,7 @@ describe('repository author name enrichment', () => {
       loadRemote: vi.fn(async () => new Map([['user', 'Name']])),
       remember: () => write.promise
     })
-    const resolver = new RepositoryAuthorNameResolver(repository, service)
+    const resolver = new RepositoryAuthorNameResolver(repository, 'test-auth-scope', service)
     await resolver.hydrate(['user'], () => undefined)
     now += 5 * 60_000
     await resolver.hydrate(['user'], () => undefined)
@@ -337,9 +343,9 @@ describe('repository author name enrichment', () => {
       }
     })
     const scope = JSON.stringify({ path: '/long/'.repeat(200), authUrl: 'https://auth', userId: 'one' })
-    const sameA = new RepositoryAuthorNameResolver(repository, service, scope)
-    const sameB = new RepositoryAuthorNameResolver(repository, service, scope)
-    const different = new RepositoryAuthorNameResolver(repository, service, `${scope}-other-account`)
+    const sameA = new RepositoryAuthorNameResolver(repository, scope, service)
+    const sameB = new RepositoryAuthorNameResolver(repository, scope, service)
+    const different = new RepositoryAuthorNameResolver(repository, `${scope}-other-account`, service)
 
     await sameA.hydrate(['user'], () => undefined)
     await sameB.hydrate(['user'], () => undefined)
@@ -354,7 +360,7 @@ describe('repository author name enrichment', () => {
     const digest = vi.spyOn(globalThis.crypto.subtle, 'digest').mockRejectedValue(new Error('Crypto unavailable'))
     const service = dependencies({ loadRemote: async () => new Map([['user', 'Remote name']]) })
     try {
-      const resolver = new RepositoryAuthorNameResolver(repository, service, 'account-scope')
+      const resolver = new RepositoryAuthorNameResolver(repository, 'account-scope', service)
       const update = vi.fn()
       await resolver.hydrate(['user'], update)
       expect(update).toHaveBeenCalledWith(new Map([['user', 'Remote name']]))
@@ -377,12 +383,15 @@ describe('repository author name enrichment', () => {
           ])
       )
     })
-    const resolver = new RepositoryAuthorNameResolver(repository, service)
+    const resolver = new RepositoryAuthorNameResolver(repository, 'test-auth-scope', service)
     const update = vi.fn()
     await resolver.hydrate(['user', 'same-name', 'bad-name', '', '<unknown>', 'bad\nid', 'a'.repeat(513)], update)
 
     expect(service.loadRemote).toHaveBeenCalledWith(repository.path, ['user', 'same-name', 'bad-name'])
     expect(update).toHaveBeenCalledWith(new Map([['user', 'Valid name']]))
-    expect(service.remember).toHaveBeenCalledWith(repository.id, new Map([['user', 'Valid name']]))
+    expect(service.remember).toHaveBeenCalledWith(
+      expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
+      new Map([['user', 'Valid name']])
+    )
   })
 })

@@ -84,11 +84,9 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
         repository_path.join(target_name),
     )
     .expect("The retained copy should be created");
-    let first_scan = tauri::async_runtime::block_on(lore_repository_status(
-        repository_path_string.clone(),
-        true,
-    ))
-    .expect("The first working-tree scan should succeed");
+    let first_scan =
+        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
+            .expect("The first working-tree scan should succeed");
     let reported_staged_revision = first_scan
         .events
         .iter()
@@ -102,11 +100,9 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
         is_zero_hash(reported_staged_revision),
         "The scan should start without a staged revision: {reported_staged_revision}",
     );
-    let state_after_scan = tauri::async_runtime::block_on(lore_repository_status(
-        repository_path_string.clone(),
-        false,
-    ))
-    .expect("Reading repository state after the scan should succeed");
+    let state_after_scan =
+        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
+            .expect("Reading repository state after the scan should succeed");
     let persisted_staged_revision = state_after_scan
         .events
         .iter()
@@ -125,11 +121,9 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
         .expect("The transient directory should be deleted");
     std::fs::remove_file(repository_path.join(source_name))
         .expect("The original source should be deleted");
-    let result = tauri::async_runtime::block_on(lore_repository_status(
-        repository_path_string.clone(),
-        true,
-    ))
-    .expect("The second working-tree scan should succeed");
+    let result =
+        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
+            .expect("The second working-tree scan should succeed");
     let status_files = result
         .events
         .iter()
@@ -153,11 +147,9 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
         target_name.to_owned(),
     ))
     .expect("The move should be staged through the native move operation");
-    let staged_result = tauri::async_runtime::block_on(lore_repository_status(
-        repository_path_string.clone(),
-        true,
-    ))
-    .expect("Status after staging the move should succeed");
+    let staged_result =
+        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
+            .expect("Status after staging the move should succeed");
     let staged_status_files = staged_result
         .events
         .iter()
@@ -223,11 +215,9 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
     )
     .expect("The legacy write-style status simulation should succeed");
     assert_eq!(legacy_scan.status, 0);
-    let legacy_persisted_state = tauri::async_runtime::block_on(lore_repository_status(
-        repository_path_string.clone(),
-        false,
-    ))
-    .expect("The persisted legacy staged anchor should be readable");
+    let legacy_persisted_state =
+        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
+            .expect("The persisted legacy staged anchor should be readable");
     assert!(
         legacy_persisted_state
             .events
@@ -247,11 +237,9 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
         target_name.to_owned(),
     ))
     .expect("The exact move should be staged after deleting transient copies");
-    let final_result = tauri::async_runtime::block_on(lore_repository_status(
-        repository_path_string.clone(),
-        true,
-    ))
-    .expect("Final status should succeed after removing transient additions");
+    let final_result =
+        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
+            .expect("Final status should succeed after removing transient additions");
     let final_status_files = final_result
         .events
         .iter()
@@ -330,11 +318,9 @@ fn commit_includes_only_explicitly_staged_files_after_read_only_scan() {
     std::fs::write(repository_path.join("working-only.txt"), "excluded")
         .expect("The working-tree-only file should be created");
 
-    let scan = tauri::async_runtime::block_on(lore_repository_status(
-        repository_path_string.clone(),
-        true,
-    ))
-    .expect("The read-only working-tree scan should succeed");
+    let scan =
+        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
+            .expect("The read-only working-tree scan should succeed");
     assert_eq!(
         scan.events
             .iter()
@@ -350,11 +336,9 @@ fn commit_includes_only_explicitly_staged_files_after_read_only_scan() {
     .expect("The selected file should be staged");
     std::fs::write(repository_path.join("staged.txt"), "working edit")
         .expect("The staged file should be edited again in the working tree");
-    let staged_status = tauri::async_runtime::block_on(lore_repository_status(
-        repository_path_string.clone(),
-        false,
-    ))
-    .expect("The read-only status after editing a staged path should succeed");
+    let staged_status =
+        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
+            .expect("The read-only status after editing a staged path should succeed");
     let staged_path_events = staged_status
         .events
         .iter()
@@ -801,27 +785,21 @@ fn conflict_marker_detection_accepts_clean_content() {
 }
 
 #[test]
-fn explicit_empty_publish_account_bypasses_repository_binding() {
-    assert_eq!(
-        resolve_publish_auth_identity(None, Some("bound-user"), false),
-        ""
-    );
-}
-
-#[test]
-fn selected_publish_account_overrides_repository_binding() {
-    assert_eq!(
-        resolve_publish_auth_identity(Some("selected-user"), Some("bound-user"), true),
-        "selected-user"
-    );
-}
-
-#[test]
-fn legacy_publish_request_falls_back_to_repository_binding() {
-    assert_eq!(
-        resolve_publish_auth_identity(None, Some("bound-user"), true),
-        "bound-user"
-    );
+fn publish_command_rejects_invalid_authentication_identity_before_repository_access() {
+    for user_id in ["".to_owned(), "user\nid".to_owned(), "x".repeat(513)] {
+        let error = tauri::async_runtime::block_on(lore_repository_publish(
+            "unused-repository".to_owned(),
+            "repository".to_owned(),
+            String::new(),
+            "Author".to_owned(),
+            None,
+            "lore://127.0.0.1:41337".to_owned(),
+            "main".to_owned(),
+            Some(user_id),
+        ))
+        .expect_err("Invalid authentication identities must fail before accessing a repository");
+        assert_eq!(error.code, "auth_identity_invalid");
+    }
 }
 
 #[test]
@@ -3461,7 +3439,6 @@ fn ordinary_nonempty_directory_can_be_initialized_without_persisting_client_iden
      */
     let status = tauri::async_runtime::block_on(lore_repository_status(
         repository_path.to_string_lossy().into_owned(),
-        true,
     ))
     .expect("A newly initialized repository should be readable immediately");
     assert_eq!(status.status, 0);
@@ -3743,7 +3720,7 @@ fn operation_success_error_renders_known_ffi_code_name() {
 
 #[test]
 fn operation_success_unknown_status_code_keeps_numeric_detail() {
-    // 未知或旧版 -1 码必须保持数字原样，绝不猜测错误语义。
+    // 内部错误 -1 必须保留数字原样，绝不猜测更具体的错误语义。
     let result = LoreOperationResult {
         operation: "revision_tree.child",
         status: -1,
@@ -4433,11 +4410,9 @@ fn measure_status_event_volume() {
 
     let before_peak = peak_resident_kib();
     let started = std::time::Instant::now();
-    let status = tauri::async_runtime::block_on(lore_repository_status(
-        repository_path_string.clone(),
-        true,
-    ))
-    .expect("The status read should succeed");
+    let status =
+        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
+            .expect("The status read should succeed");
     let elapsed = started.elapsed();
     let after_peak = peak_resident_kib();
     let json_bytes = serde_json::to_vec(&status)

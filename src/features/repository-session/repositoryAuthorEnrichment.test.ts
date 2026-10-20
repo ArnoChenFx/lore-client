@@ -11,6 +11,8 @@ function revision(id: string, authorIdentity = 'user-42'): Revision {
     id,
     shortId: id,
     title: id,
+    revisionNumber: 1,
+    committedAt: null,
     authorIdentity,
     author: authorIdentity,
     initials: authorIdentity.slice(0, 1).toLocaleUpperCase(),
@@ -205,9 +207,9 @@ describe('repository author enrichment lifecycle', () => {
           if (current[0].revisions[0].author === 'New authentication') markDisplayed()
           return changed
         },
-        (repository) => {
+        (repository, scope) => {
           resolverCount += 1
-          return new RepositoryAuthorNameResolver(repository, {
+          return new RepositoryAuthorNameResolver(repository, scope, {
             loadCached: async () => new Map(),
             loadRemote: async () => {
               remoteCalls += 1
@@ -345,19 +347,15 @@ describe('repository author enrichment lifecycle', () => {
       },
       (repository, scope) => {
         resolverCount += 1
-        return new RepositoryAuthorNameResolver(
-          repository,
-          {
-            loadCached: async () => new Map(),
-            loadRemote: async () => {
-              remoteCalls += 1
-              markStarted()
-              return remote
-            },
-            remember: async () => undefined
+        return new RepositoryAuthorNameResolver(repository, scope, {
+          loadCached: async () => new Map(),
+          loadRemote: async () => {
+            remoteCalls += 1
+            markStarted()
+            return remote
           },
-          scope
-        )
+          remember: async () => undefined
+        })
       }
     )
     try {

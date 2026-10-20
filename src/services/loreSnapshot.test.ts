@@ -56,16 +56,16 @@ const {
   listRemoteRepositories,
   listRepositoryInstances,
   loadSharedStoreRegistry,
-  loreEventParsers,
   publishRepository,
   runConflictAction,
   stageMove,
   switchBranch,
   writeConflictResolution
 } = await import('./lore')
+const { parseRepository } = await import('./lore/repositories')
 
 async function hydrateAuthors(repository: Repository, identities: readonly string[]): Promise<Map<string, string>> {
-  const resolver = new RepositoryAuthorNameResolver(repository)
+  const resolver = new RepositoryAuthorNameResolver(repository, 'snapshot-test-auth-scope')
   let resolved = new Map<string, string>()
   try {
     await resolver.hydrate(identities, (names) => {
@@ -388,7 +388,7 @@ describe('repository snapshot branch loading', () => {
         if (!fallbackInvoke) throw new Error(`The test does not handle command: ${command}`)
         return fallbackInvoke(command, args)
       })
-      const repository = loreEventParsers.parseRepository('E:\\Worlds\\RealLore', repositoryStatusEvents)
+      const repository = parseRepository('E:\\Worlds\\RealLore', repositoryStatusEvents)
       const pending =
         kind === 'snapshot'
           ? loadRepositorySnapshot(repository.path).then((snapshot) => snapshot.revisions)
@@ -421,7 +421,10 @@ describe('repository snapshot branch loading', () => {
     const fallbackInvoke = invokeMock.getMockImplementation()
     invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
       if (command === 'lore_revision_author_cache_get') {
-        expect(args).toEqual({ repositoryId: 'repository-id', userIds: ['user-42'] })
+        expect(args).toEqual({
+          repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
+          userIds: ['user-42']
+        })
         return [{ userId: 'user-42', displayName: 'Cached Arno' }]
       }
       if (command === 'lore_auth_repository_local_user_info') {
@@ -476,9 +479,12 @@ describe('repository snapshot branch loading', () => {
     ])
   })
 
-  it('includes archived local branches in a complete snapshot request', async () => {
+  it('requests complete status and archived local branches without a scan mode', async () => {
     await loadRepositorySnapshot('E:\\Worlds\\RealLore')
 
+    expect(invokeMock).toHaveBeenCalledWith('lore_repository_status', {
+      repositoryPath: 'E:\\Worlds\\RealLore'
+    })
     expect(invokeMock).toHaveBeenCalledWith('lore_branch_list', {
       repositoryPath: 'E:\\Worlds\\RealLore',
       includeArchived: true
@@ -591,7 +597,6 @@ describe('repository snapshot branch loading', () => {
         path: 'Scenes',
         name: 'Main.tscn',
         status: 'added',
-        binary: false,
         contentClassification: { kind: 'unknown', source: 'deferred' }
       }),
       expect.objectContaining({
@@ -599,7 +604,6 @@ describe('repository snapshot branch loading', () => {
         path: 'assets',
         name: 'hero.glb',
         status: 'renamed',
-        binary: false,
         contentClassification: { kind: 'unknown', source: 'deferred' },
         previousPath: 'assets/legacy-hero.glb'
       })
@@ -674,7 +678,7 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('resolves revision user IDs in one repository-scoped Auth request and preserves unresolved identities', async () => {
-    const repository = loreEventParsers.parseRepository('E:\\Worlds\\RealLore', [
+    const repository = parseRepository('E:\\Worlds\\RealLore', [
       {
         tagName: 'repositoryStatusRevision',
         data: {
@@ -732,12 +736,15 @@ describe('repository snapshot branch loading', () => {
         }
       }
       if (command === 'lore_revision_author_cache_get') {
-        expect(args).toEqual({ repositoryId: 'repository-id', userIds: ['user-42', 'Artist Team'] })
+        expect(args).toEqual({
+          repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
+          userIds: ['user-42', 'Artist Team']
+        })
         return []
       }
       if (command === 'lore_revision_author_cache_store') {
         expect(args).toEqual({
-          repositoryId: 'repository-id',
+          repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
           authors: [{ userId: 'user-42', displayName: 'Arno Chen <arno@example.com>' }]
         })
         return null
@@ -760,7 +767,7 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('keeps revision identities when remote author resolution is unavailable', async () => {
-    const repository = loreEventParsers.parseRepository('E:\\Worlds\\RealLore', [
+    const repository = parseRepository('E:\\Worlds\\RealLore', [
       {
         tagName: 'repositoryStatusRevision',
         data: {
@@ -803,7 +810,7 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('uses only the bound local Auth profile while the repository is offline', async () => {
-    const repository = loreEventParsers.parseRepository('E:\\Worlds\\RealLore', [
+    const repository = parseRepository('E:\\Worlds\\RealLore', [
       {
         tagName: 'repositoryStatusRevision',
         data: { repository: 'repository-id', branchName: 'main', revision: 'tip' }
@@ -835,7 +842,7 @@ describe('repository snapshot branch loading', () => {
       }
       if (command === 'lore_revision_author_cache_store') {
         expect(args).toEqual({
-          repositoryId: 'repository-id',
+          repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
           authors: [{ userId: 'user-42', displayName: 'Arno Chen' }]
         })
         return null
@@ -850,7 +857,7 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('uses the persistent author cache without a bound account while the repository is offline', async () => {
-    const repository = loreEventParsers.parseRepository('E:\\Worlds\\RealLore', [
+    const repository = parseRepository('E:\\Worlds\\RealLore', [
       {
         tagName: 'repositoryStatusRevision',
         data: { repository: 'repository-id', branchName: 'main', revision: 'tip' }
@@ -871,7 +878,10 @@ describe('repository snapshot branch loading', () => {
         }
       }
       if (command === 'lore_revision_author_cache_get') {
-        expect(args).toEqual({ repositoryId: 'repository-id', userIds: ['user-42'] })
+        expect(args).toEqual({
+          repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
+          userIds: ['user-42']
+        })
         return [{ userId: 'user-42', displayName: 'Cached Author <cached@example.com>' }]
       }
       if (command === 'lore_auth_user_info') throw new Error('Offline history must not query remote Auth')
@@ -1028,7 +1038,7 @@ describe('repository snapshot branch loading', () => {
     expect(resolved).toEqual([])
   })
 
-  it('passes the bound authentication account when publishing a local repository', async () => {
+  it('passes the explicitly selected authentication account when publishing a local repository', async () => {
     invokeMock.mockResolvedValueOnce({
       repositoryUrl: 'lore://192.168.11.20:41337/test-new-repo',
       remoteCreated: true,
@@ -1065,12 +1075,11 @@ describe('repository snapshot branch loading', () => {
       defaultIdentity: null,
       serverUrl: 'lore://192.168.11.20:41337',
       branch: 'main',
-      userId: 'authenticated-user-id',
-      useAuthAccount: true
+      userId: 'authenticated-user-id'
     })
   })
 
-  it('explicitly disables repository binding fallback for anonymous publishing', async () => {
+  it('passes a null authentication account for anonymous publishing', async () => {
     invokeMock.mockResolvedValueOnce({
       repositoryUrl: 'lore://192.168.11.20:41337/public-repo',
       remoteCreated: true,
@@ -1106,8 +1115,7 @@ describe('repository snapshot branch loading', () => {
       defaultIdentity: null,
       serverUrl: 'lore://192.168.11.20:41337',
       branch: 'main',
-      userId: null,
-      useAuthAccount: false
+      userId: null
     })
   })
 

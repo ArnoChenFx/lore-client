@@ -292,21 +292,15 @@ export interface Revision {
   shortId: string
   title: string
   /** Revision 编号与提交时间保留原始事实，展示文案由界面按当前语言生成。 */
-  revisionNumber?: number
-  /** Unix 纪元毫秒；null 表示原生历史没有有效时间，undefined 兼容旧演示数据。 */
-  committedAt?: number | null
-  /** @deprecated 仅兼容旧演示数据；原生历史使用 revisionNumber。 */
-  description?: string
+  revisionNumber: number
+  /** Unix 纪元毫秒；null 表示历史没有有效时间。 */
+  committedAt: number | null
   author: string
   /** 提交时的原始身份；作者名补全以此关联，不从可变展示名称反推。 */
   authorIdentity?: string
   /** 从提交时 identity 拆出的邮箱；只用于头像哈希，不替代历史作者文字。 */
   authorEmail?: string
   initials: string
-  /** @deprecated 仅兼容旧演示数据；原生历史使用 committedAt。 */
-  timestamp?: string
-  /** @deprecated 相对时间应在展示时计算，不能存入原生历史快照。 */
-  relativeTime?: string
   /** 当前精确指向该 Revision 的 Branch，以及工作区 HEAD；不表示历史归属。 */
   branchPointers: RevisionBranchPointer[]
   parentCount: number
@@ -319,7 +313,6 @@ export interface Revision {
   filesChanged: number
   additions: number
   deletions: number
-  size?: string
 }
 
 /** Revision Info 的文件级父子变化。 */
@@ -390,13 +383,8 @@ export interface RepositoryFileReference {
   id: string
   path: string
   name: string
-  /**
-   * 权威内容分类。旧演示夹具可能暂时缺省，此时兼容层才读取 `binary`。
-   * 新的真实后端结果不得再根据扩展名生成该字段。
-   */
-  contentClassification?: FileContentClassification
-  /** @deprecated 仅保留给旧组件与演示夹具；真实结果由 `contentClassification` 投影。 */
-  binary?: boolean
+  /** 权威三态内容分类；尚未读取正文时必须明确携带 unknown，不能按扩展名猜测。 */
+  contentClassification: FileContentClassification
   size?: string
 }
 
@@ -423,7 +411,6 @@ export interface ChangeFile extends RepositoryFileReference {
  */
 export interface RevisionFile extends RepositoryFileReference {
   size: string
-  binary: boolean
 }
 
 /** Lore `file::diff` 的稳定前端投影；`patch` 保留标准 unified diff 文本。 */
@@ -618,10 +605,7 @@ export interface ApplicationLogInfo {
 }
 
 export interface LoreRuntimeInfo {
-  application: string
-  available: boolean
   integrationMode: string
-  loreCoreStatus: string
   libraryVersion: string
   sourceRevision: string
 }

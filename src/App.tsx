@@ -453,7 +453,7 @@ function App() {
           projectSnapshot,
           successDetail,
           nextView,
-          loadSnapshot: (repositoryPath) => loadRepositorySnapshot(repositoryPath, false),
+          loadSnapshot: loadRepositorySnapshot,
           applySnapshot: (snapshot) => {
             if (applySnapshot(request, snapshot) && ownsActiveView()) activateSnapshot(snapshot)
           },

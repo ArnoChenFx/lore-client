@@ -8,18 +8,16 @@ const revision = (id: string, parentIds: string[]): Revision =>
     id,
     shortId: id,
     title: id,
-    description: id,
+    revisionNumber: 1,
     author: 'Arno',
     initials: 'A',
-    timestamp: '',
-    relativeTime: '',
+    committedAt: null,
     branchPointers: [],
     parentCount: parentIds.length,
     parentIds,
     filesChanged: 0,
     additions: 0,
-    deletions: 0,
-    size: '—'
+    deletions: 0
   }) satisfies Revision
 
 describe('Revision checkout target branch', () => {

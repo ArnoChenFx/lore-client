@@ -9,7 +9,7 @@ import { changeFilePath } from './changeTreeModel'
  */
 export function createDemoWorkingTreeDiff(file: ChangeFile): WorkingTreeDiff {
   const path = changeFilePath(file)
-  if (file.binary) {
+  if (file.contentClassification.kind === 'binary') {
     return { path, patch: '', action: file.status }
   }
 

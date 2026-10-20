@@ -6,7 +6,6 @@ import {
   type ConflictRegionAction,
   ConflictResolutionView,
   normalizeLoreConflictContent,
-  normalizeLoreConflictMarkerBoundaries,
   prepareConflictResolution,
   resolvePreparedConflict
 } from './ConflictResolutionView'
@@ -81,7 +80,10 @@ describe('ConflictResolutionView', () => {
       '>>>>>>> theirs'
     ].join('\n')
 
-    expect(normalizeLoreConflictMarkerBoundaries(rawContents)).toBe(normalizedContents)
+    expect(normalizeLoreConflictContent(rawContents)).toEqual({
+      contents: normalizedContents,
+      syntheticMarkerLineIndices: new Set([2, 4, 6])
+    })
     await expect(
       prepareConflictResolution({ name: 'lore-conflict.txt', contents: rawContents }, { themeType: 'dark' })
     ).resolves.toMatchObject({

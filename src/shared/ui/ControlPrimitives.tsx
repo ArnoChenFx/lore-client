@@ -15,13 +15,12 @@ export interface ControlInputProps extends InputHTMLAttributes<HTMLInputElement>
  * 所有紧凑输入框的底层入口。
  *
  * 该组件不持有值，也不改变浏览器原生校验；日期等非文本类型可以直接使用它。
- * `tool-input` 是迁移期兼容类，页面只应依赖新的 `control-input` 语义类。
  */
 export const ControlInput = forwardRef<HTMLInputElement, ControlInputProps>(function ControlInput(
   { className, ...inputProps },
   ref
 ) {
-  return <input ref={ref} className={joinClassNames('control-input', 'tool-input', className)} {...inputProps} />
+  return <input ref={ref} className={joinClassNames('control-input', className)} {...inputProps} />
 })
 
 export type TextInputProps = Omit<ControlInputProps, 'type'>
@@ -42,7 +41,7 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(functi
     <ControlInput
       ref={ref}
       type="number"
-      className={joinClassNames('control-input--numeric', 'tool-input--numeric', className)}
+      className={joinClassNames('control-input--numeric', className)}
       {...inputProps}
     />
   )
@@ -60,14 +59,7 @@ export const CheckboxInput = forwardRef<HTMLInputElement, CheckboxInputProps>(fu
   { className, ...inputProps },
   ref
 ) {
-  return (
-    <input
-      ref={ref}
-      type="checkbox"
-      className={joinClassNames('control-checkbox', 'tool-checkbox', className)}
-      {...inputProps}
-    />
-  )
+  return <input ref={ref} type="checkbox" className={joinClassNames('control-checkbox', className)} {...inputProps} />
 })
 
 export interface SelectInputProps extends SelectHTMLAttributes<HTMLSelectElement> {
@@ -86,7 +78,7 @@ export const SelectInput = forwardRef<HTMLSelectElement, SelectInputProps>(funct
   ref
 ) {
   return (
-    <span className={joinClassNames('control-select', 'tool-select', containerClassName)}>
+    <span className={joinClassNames('control-select', containerClassName)}>
       <select ref={ref} className={joinClassNames('control-select__input', className)} {...selectProps}>
         {children}
       </select>
@@ -116,7 +108,6 @@ export const TextButton = forwardRef<HTMLButtonElement, TextButtonProps>(functio
       type={type}
       className={joinClassNames(
         'control-button',
-        'tool-button',
         variant === 'primary' && 'is-primary',
         variant === 'danger' && 'is-danger',
         className

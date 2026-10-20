@@ -985,10 +985,10 @@ pub(super) fn ensure_command_success(
 /// Lore 0.10.0 把 `lore-base/src/error.rs` 的错误码按失败类别重新分块编号
 /// （输入校验 3–15、认证鉴权 16–27、连接与可用性 28–39、仓库状态 40–55、
 /// 已存在 56–63、未找到 79–99、配置 110–117、资源限制 118–125、生命周期 193–200）。
-/// 旧版本的 `NotAuthenticated` 是 12，现在是 16，名称见 `lore_error_code_name`。
+/// `NotAuthenticated` 是 16，名称见 `lore_error_code_name`。
 pub(super) const LORE_FFI_ERROR_NOT_AUTHENTICATED: i32 = 16;
 
-/// 上游 `lore-base` 的 `NotConnected` FFI 错误码（旧版本为 17）。
+/// 上游 `lore-base` 的 `NotConnected` FFI 错误码。
 ///
 /// Lore 在**连接建立阶段**缺少可用凭据时会直接以 `NotConnected` 终止
 /// （如 Revision Diff 报 "Not connected to remote: Not authenticated"），
@@ -1000,10 +1000,10 @@ pub(super) const LORE_FFI_ERROR_NOT_CONNECTED: i32 = 29;
  *
  * 识别三种形态：
  * 1. 结构化 `NotAuthenticated`（码 16），无需文本佐证；
- * 2. `NotConnected`（码 29）或旧格式的笼统 `-1`，此时必须由事件文本中的
- *    "Not authenticated" 或旧 gRPC 认证描述佐证，避免把服务器宕机等纯网络
+ * 2. `NotConnected`（码 29）或内部错误（码 -1），此时必须由事件文本中的
+ *    "Not authenticated" 或 gRPC 认证描述佐证，避免把服务器宕机等纯网络
  *    失败误判成需要重新登录；
- * 3. 文本匹配大小写不敏感，覆盖上游不同版本的大小写变体。
+ * 3. 文本匹配大小写不敏感，覆盖上游不同错误来源的大小写变体。
  *
  * `NotAuthorized`（已认证但无权限）属于账户权限问题而不是凭据失效，
  * 绝不触发重新认证流程；它的取值跨版本发生过变化，因此这里不按码判定。

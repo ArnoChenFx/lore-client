@@ -1,5 +1,3 @@
-import { t } from '../../i18n'
-
 /** Git 风格身份的稳定前端投影；Lore 磁盘与 IPC 边界仍只传递单个 identity 字符串。 */
 export interface CommitIdentityParts {
   name: string
@@ -50,15 +48,6 @@ export function formatCommitIdentity(name: string, email: string): string {
     return `${normalizedName} <${normalizedEmail}>`
   }
   return normalizedName || normalizedEmail
-}
-
-/** 返回 Revision 列表的可读作者名；纯邮箱历史仍原样显示，避免产生虚构姓名。 */
-export function revisionAuthorFromIdentity(identity: string) {
-  const parts = parseCommitIdentity(identity)
-  return {
-    author: parts.name || parts.email || t('unknownAuthor'),
-    email: parts.email || undefined
-  }
 }
 
 /**

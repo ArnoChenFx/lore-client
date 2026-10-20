@@ -29,7 +29,7 @@ describe('local change collaborative lock selection', () => {
       staged: false,
       additions: 0,
       deletions: 0,
-      binary: true
+      contentClassification: { kind: 'binary', source: 'signature' }
     },
     {
       id: 'Content/New.uasset',
@@ -39,7 +39,7 @@ describe('local change collaborative lock selection', () => {
       staged: false,
       additions: 0,
       deletions: 0,
-      binary: true
+      contentClassification: { kind: 'binary', source: 'signature' }
     },
     {
       id: 'Content/Removed.uasset',
@@ -49,7 +49,7 @@ describe('local change collaborative lock selection', () => {
       staged: false,
       additions: 0,
       deletions: 0,
-      binary: true
+      contentClassification: { kind: 'binary', source: 'signature' }
     }
   ]
 

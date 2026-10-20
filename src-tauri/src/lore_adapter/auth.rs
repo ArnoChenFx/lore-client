@@ -25,10 +25,7 @@ pub(super) fn display_library_version(raw: &str) -> String {
 #[tauri::command]
 pub fn lore_runtime_info() -> LoreRuntimeInfo {
     LoreRuntimeInfo {
-        application: "Lore Client",
-        available: true,
         integration_mode: "embedded-rust",
-        lore_core_status: "ready",
         library_version: display_library_version(lore::LORE_LIBRARY_VERSION.as_str()),
         source_revision: LORE_SOURCE_REVISION,
     }

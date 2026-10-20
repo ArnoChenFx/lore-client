@@ -122,7 +122,7 @@ export function useRepositoryRefresh({
   }, [])
 
   const loadAndUpsertSnapshot = useCallback(
-    async (path: string, scan: boolean, reportError: boolean): Promise<RepositorySnapshot | null> => {
+    async (path: string, reportError: boolean): Promise<RepositorySnapshot | null> => {
       const pending = snapshotRefreshPaths.current.get(path)
       if (!enabled || !path || mutationInFlight.current || (pending && requests.isCurrent(pending))) {
         return null
@@ -137,7 +137,7 @@ export function useRepositoryRefresh({
         return next
       })
       try {
-        const snapshot = await loadSnapshot(path, scan)
+        const snapshot = await loadSnapshot(path)
         return applySnapshot(request, snapshot) ? snapshot : null
       } catch (error) {
         if (reportError && requests.isCurrent(request)) onRefreshError(error)
@@ -157,7 +157,7 @@ export function useRepositoryRefresh({
   )
 
   const refreshActiveRepositorySnapshot = useCallback(async () => {
-    await loadAndUpsertSnapshot(repositoryPath, true, true)
+    await loadAndUpsertSnapshot(repositoryPath, true)
   }, [loadAndUpsertSnapshot, repositoryPath])
 
   useEffect(() => {
@@ -173,7 +173,7 @@ export function useRepositoryRefresh({
       const delay = immediate ? 0 : getRepositoryRecoveryDelay(attempt++)
       recoveryTimer = setTimeout(() => {
         recoveryTimer = null
-        void loadAndUpsertSnapshot(repositoryPath, false, false).then((snapshot) => {
+        void loadAndUpsertSnapshot(repositoryPath, false).then((snapshot) => {
           if (disposed) return
           /*
            * 成功恢复、远端被移除或明确未授权都会由新快照终止轮询；失败和仍离线才
@@ -219,7 +219,7 @@ export function useRepositoryRefresh({
     const refreshAfterNotification = () => {
       if (notificationRefreshTimer.current) clearTimeout(notificationRefreshTimer.current)
       notificationRefreshTimer.current = setTimeout(() => {
-        void loadAndUpsertSnapshot(repositoryPath, false, false)
+        void loadAndUpsertSnapshot(repositoryPath, false)
       }, 300)
     }
 
@@ -245,7 +245,7 @@ export function useRepositoryRefresh({
       }
       if (!checkedSnapshotAfterLoss) {
         checkedSnapshotAfterLoss = true
-        void loadAndUpsertSnapshot(repositoryPath, false, false)
+        void loadAndUpsertSnapshot(repositoryPath, false)
       }
       scheduleReconnect()
     }
@@ -276,7 +276,7 @@ export function useRepositoryRefresh({
         /* 通知是附加能力；失败后退避重试，但不打断本地工作流或连续弹 Toast。 */
         if (!checkedSnapshotAfterLoss) {
           checkedSnapshotAfterLoss = true
-          void loadAndUpsertSnapshot(repositoryPath, false, false)
+          void loadAndUpsertSnapshot(repositoryPath, false)
         }
         scheduleReconnect()
       } finally {

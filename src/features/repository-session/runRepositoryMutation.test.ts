@@ -5,6 +5,7 @@ import { runRepositoryMutationLifecycle } from './runRepositoryMutation'
 
 function snapshot(conflict = false): RepositorySnapshot {
   const conflictFile: ChangeFile = {
+    contentClassification: { kind: 'unknown', source: 'deferred' },
     id: 'conflict-file',
     name: 'file.ts',
     path: 'src',

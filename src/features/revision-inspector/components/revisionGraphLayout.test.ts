@@ -8,18 +8,16 @@ function createRevision(id: string, parentIds: string[]): Revision {
     id,
     shortId: id,
     title: id,
-    description: '',
+    revisionNumber: 1,
     author: 'Test Author',
     initials: 'T',
-    timestamp: '2026-07-25 10:00',
-    relativeTime: 'just now',
+    committedAt: Date.parse('2026-07-25T10:00Z'),
     branchPointers: [],
     parentCount: parentIds.length,
     parentIds,
     filesChanged: 0,
     additions: 0,
-    deletions: 0,
-    size: '0 B'
+    deletions: 0
   }
 }
 

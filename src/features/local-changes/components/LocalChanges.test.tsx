@@ -15,7 +15,7 @@ const files: ChangeFile[] = [
     staged: false,
     additions: 0,
     deletions: 0,
-    binary: true
+    contentClassification: { kind: 'binary', source: 'signature' }
   }
 ]
 
@@ -47,7 +47,7 @@ describe('local changes tree toolbar', () => {
         id: 'Content/Conflict.txt',
         path: 'Content',
         name: 'Conflict.txt',
-        binary: false,
+        contentClassification: { kind: 'text', source: 'utf8' },
         staged: true,
         conflict: true,
         conflictUnresolved: true
@@ -105,7 +105,7 @@ describe('local changes tree toolbar', () => {
         id: 'Content/Conflict.txt',
         path: 'Content',
         name: 'Conflict.txt',
-        binary: false,
+        contentClassification: { kind: 'text', source: 'utf8' },
         staged: true,
         conflict: true,
         conflictUnresolved: false
@@ -159,7 +159,7 @@ describe('local changes tree toolbar', () => {
         id: 'Content/Conflict.txt',
         path: 'Content',
         name: 'Conflict.txt',
-        binary: false,
+        contentClassification: { kind: 'text', source: 'utf8' },
         staged: true,
         conflict: true,
         conflictUnresolved: false

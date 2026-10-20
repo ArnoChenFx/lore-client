@@ -66,8 +66,8 @@ interface InspectorProps {
   treeLoading?: boolean
   treeError?: string | null
   diffs: WorkingTreeDiff[]
-  changeListLoading?: boolean
-  changeListError?: string | null
+  changeListLoading: boolean
+  changeListError: string | null
   /** 区分“真实 0 个变化”和“尚未加载轻量变化清单”。 */
   changeListReady: boolean
   /** 当前 Revision 变更相对的父节点；仅多父 Revision 需要显式展示。 */
@@ -106,7 +106,7 @@ interface FileSelectionModifiers {
 }
 
 function fileIcon(file: ChangeFile | RevisionFile) {
-  if (file.binary) {
+  if (file.contentClassification.kind === 'binary') {
     return <Binary size={14} />
   }
   if (file.name.endsWith('.json')) {
@@ -662,8 +662,8 @@ export function Inspector({
   diffs,
   diffLoading,
   diffError,
-  changeListLoading = diffLoading,
-  changeListError = diffError,
+  changeListLoading,
+  changeListError,
   changeListReady,
   revisionDiffSource,
   onRevisionDiffSourceChange,
@@ -703,7 +703,7 @@ export function Inspector({
         path: file.path,
         name: file.name,
         size: file.size ?? '—',
-        binary: Boolean(file.binary)
+        contentClassification: file.contentClassification
       })),
     [files, treeFiles]
   )

@@ -27,28 +27,15 @@ function formatRelativeTime(committedAt: number, now: number, translate: TFuncti
 
 /**
  * 只在展示边界生成文案。显式传入响应式 t 和当前时间，使 React Compiler 的
- * 缓存同样能观察语言/时钟变化；旧演示夹具继续使用原有展示字段。
+ * 缓存同样能观察语言/时钟变化。
  */
 export function revisionPresentation(revision: Revision, translate: TFunction, now = Date.now()) {
-  const description =
-    revision.revisionNumber === undefined && revision.description !== undefined
-      ? revision.description
-      : translate('status.revisionLabel', { number: revision.revisionNumber ?? 0, id: revision.shortId })
+  const description = translate('status.revisionLabel', { number: revision.revisionNumber, id: revision.shortId })
   const author = revision.author || translate('unknownAuthor')
   const date = revision.committedAt == null ? null : new Date(revision.committedAt)
   const validDate = date !== null && Number.isFinite(date.getTime()) ? date : null
-  const timestamp =
-    revision.committedAt === undefined
-      ? (revision.timestamp ?? translate('unknownTime'))
-      : validDate
-        ? formatTimestamp(validDate)
-        : translate('unknownTime')
-  const relativeTime =
-    revision.committedAt === undefined
-      ? (revision.relativeTime ?? translate('unknownTime'))
-      : validDate
-        ? formatRelativeTime(validDate.getTime(), now, translate)
-        : translate('unknownTime')
+  const timestamp = validDate ? formatTimestamp(validDate) : translate('unknownTime')
+  const relativeTime = validDate ? formatRelativeTime(validDate.getTime(), now, translate) : translate('unknownTime')
 
   return {
     title: revision.title || description,
@@ -56,8 +43,7 @@ export function revisionPresentation(revision: Revision, translate: TFunction, n
     author,
     initials: revision.initials || author.slice(0, 1).toLocaleUpperCase(),
     timestamp,
-    shortTimestamp:
-      validDate || (revision.committedAt === undefined && revision.timestamp) ? timestamp.slice(5, 16) : '',
+    shortTimestamp: validDate ? timestamp.slice(5, 16) : '',
     relativeTime,
     dateTime: validDate?.toISOString()
   }

@@ -6,6 +6,7 @@ import type { ChangeFile } from '../../types'
 import { createDemoWorkingTreeDiff } from './createDemoWorkingTreeDiff'
 
 const demoFile: ChangeFile = {
+  contentClassification: { kind: 'text', source: 'utf8' },
   id: 'Config/render.json',
   path: 'Config',
   name: 'render.json',
@@ -27,7 +28,9 @@ describe('createDemoWorkingTreeDiff', () => {
   })
 
   it('keeps binary demo files metadata-only', () => {
-    expect(createDemoWorkingTreeDiff({ ...demoFile, binary: true })).toEqual({
+    expect(
+      createDemoWorkingTreeDiff({ ...demoFile, contentClassification: { kind: 'binary', source: 'signature' } })
+    ).toEqual({
       path: 'Config/render.json',
       patch: '',
       action: 'modified'

@@ -249,7 +249,7 @@ export function ChangeContextMenu({
   const single = files.length === 1
   const unstaged = files.filter((file) => !file.staged)
   const staged = files.filter((file) => file.staged)
-  const textFiles = files.filter((file) => !file.binary)
+  const textFiles = files.filter((file) => file.contentClassification.kind !== 'binary')
   const canOpenExternalSubmenu = canOpenChangeContextSubmenu('external', {
     textFileCount: textFiles.length,
     busy

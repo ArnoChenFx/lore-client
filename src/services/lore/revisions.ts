@@ -175,7 +175,6 @@ export async function loadRevisionChanges(
       additions: 0,
       deletions: 0,
       contentClassification,
-      binary: contentClassification.kind === 'binary',
       size: formatBytes(change.size),
       previousPath: change.sourcePath?.replaceAll('\\', '/') || undefined
     }
@@ -209,8 +208,7 @@ export async function loadRevisionFiles(repositoryPath: string, revision: string
       path: separatorIndex >= 0 ? fullPath.slice(0, separatorIndex) : '.',
       name: separatorIndex >= 0 ? fullPath.slice(separatorIndex + 1) : fullPath,
       size: formatBytes(file.size),
-      contentClassification,
-      binary: contentClassification.kind === 'binary'
+      contentClassification
     }
   })
 }
@@ -254,8 +252,7 @@ export function revisionDiffsToChangeFiles(diffs: readonly WorkingTreeDiff[]): C
        * Lore 已经按真实内容识别二进制。只要没有明确 marker，就不能再因为 `.gd`
        * 或无扩展名等未列入白名单的路径把内容隐藏；空补丁表示零字节结构变化。
        */
-      contentClassification,
-      binary: contentClassification.kind === 'binary'
+      contentClassification
     }
   })
 }
@@ -398,7 +395,6 @@ export function parseChanges(events: LoreEvent[]): ChangeFile[] {
         additions: 0,
         deletions: 0,
         contentClassification,
-        binary: contentClassification.kind === 'binary',
         size: formatBytes(readNumber(event.data.size)),
         previousPath: readString(event.data.fromPath).replaceAll('\\', '/') || undefined,
         conflict: readBoolean(event.data.flagConflict),
@@ -429,12 +425,7 @@ export function parseFileHistory(events: LoreEvent[]): FileHistoryEntry[] {
     .filter((entry) => entry.path.length > 0 && entry.revision.length > 0)
 }
 
-export function parseRevisions(
-  events: LoreEvent[],
-  repository: Repository,
-  branches: Branch[] = [],
-  resolvedAuthorNames: ReadonlyMap<string, string> = new Map()
-): Revision[] {
+export function parseRevisions(events: LoreEvent[], repository: Repository, branches: Branch[] = []): Revision[] {
   type PendingRevision = {
     entry: Record<string, unknown>
     metadata: Map<string, unknown>
@@ -475,13 +466,8 @@ export function parseRevisions(
      * 形成后被修改，因此绝不能用来回填旧 Revision 的作者。
      */
     const historicalIdentity = readString(metadata.get('committed-by') ?? metadata.get('created-by'))
-    /*
-     * Auth 只会为真实 userId 返回名称；未返回的候选值必须继续使用
-     * Revision 中固化的 identity。解析后统一走 `Name <email>` / 纯 email /
-     * 自由文本规则，确保 username 携带邮箱时也能获得 Gravatar。
-     */
-    const displayIdentity = resolvedAuthorNames.get(historicalIdentity) ?? historicalIdentity
-    const { name, email } = parseCommitIdentity(displayIdentity)
+    // Auth 名称由会话后台补全；核心历史只解析提交时存下的自由文本、姓名或邮箱。
+    const { name, email } = parseCommitIdentity(historicalIdentity)
     const author = name || email
     const message = readString(metadata.get('message'))
     const parents = Array.isArray(entry.parent) ? entry.parent : []

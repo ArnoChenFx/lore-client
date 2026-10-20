@@ -16,6 +16,7 @@ import {
 
 const files: ChangeFile[] = [
   {
+    contentClassification: { kind: 'unknown', source: 'deferred' },
     id: 'content-a',
     path: 'Content/World',
     name: 'A.txt',
@@ -25,6 +26,7 @@ const files: ChangeFile[] = [
     deletions: 0
   },
   {
+    contentClassification: { kind: 'unknown', source: 'deferred' },
     id: 'content-b',
     path: 'Content/World/Sub',
     name: 'B.txt',
@@ -34,6 +36,7 @@ const files: ChangeFile[] = [
     deletions: 0
   },
   {
+    contentClassification: { kind: 'unknown', source: 'deferred' },
     id: 'root',
     path: '.',
     name: 'README.md',

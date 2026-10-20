@@ -15,7 +15,7 @@ describe('ControlPrimitives', () => {
     )
 
     expect(html).toContain('type="text"')
-    expect(html).toContain('class="control-input tool-input"')
+    expect(html).toContain('class="control-input"')
     expect(html).toContain('type="number"')
     expect(html).toContain('control-input--numeric')
   })
@@ -27,7 +27,7 @@ describe('ControlPrimitives', () => {
       </SelectInput>
     )
 
-    expect(html).toContain('class="control-select tool-select"')
+    expect(html).toContain('class="control-select"')
     expect(html).toContain('<select')
     expect(html).toContain('aria-hidden="true"')
   })
@@ -38,7 +38,7 @@ describe('ControlPrimitives', () => {
     )
 
     expect(html).toContain('type="checkbox"')
-    expect(html).toContain('class="control-checkbox tool-checkbox dependency-checkbox"')
+    expect(html).toContain('class="control-checkbox dependency-checkbox"')
     expect(html).toContain('checked=""')
     expect(html).toContain('disabled=""')
   })
@@ -49,7 +49,7 @@ describe('ControlPrimitives', () => {
     const dangerHtml = renderToStaticMarkup(<TextButton variant="danger">清理</TextButton>)
 
     expect(neutralHtml).toContain('type="button"')
-    expect(neutralHtml).toContain('class="control-button tool-button"')
+    expect(neutralHtml).toContain('class="control-button"')
     expect(primaryHtml).toContain('is-primary')
     expect(dangerHtml).toContain('is-danger')
   })

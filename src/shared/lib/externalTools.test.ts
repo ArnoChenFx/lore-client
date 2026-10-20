@@ -6,13 +6,12 @@ import {
   createRevisionExternalDiffRequest,
   createWorkspaceExternalDiffRequest,
   DEFAULT_EXTERNAL_DIFF_TOOLS,
-  externalDiffToolPreset,
-  isExternalDiffToolConfigured,
+  externalToolPreset,
   isExternalToolConfigured,
   orderExternalTools
 } from './externalTools'
 
-const tool = externalDiffToolPreset('vscode')
+const tool = externalToolPreset('diff', 'vscode')
 
 function change(overrides: Partial<ChangeFile> = {}): ChangeFile {
   return {
@@ -23,16 +22,16 @@ function change(overrides: Partial<ChangeFile> = {}): ChangeFile {
     staged: false,
     additions: 0,
     deletions: 0,
-    binary: false,
+    contentClassification: { kind: 'text', source: 'utf8' },
     ...overrides
   }
 }
 
 describe('external diff configuration', () => {
   it('requires an executable and both path placeholders', () => {
-    expect(isExternalDiffToolConfigured(tool)).toBe(true)
-    expect(isExternalDiffToolConfigured({ ...tool, executable: '' })).toBe(false)
-    expect(isExternalDiffToolConfigured({ ...tool, arguments: ['{before}'] })).toBe(false)
+    expect(isExternalToolConfigured(tool, 'diff')).toBe(true)
+    expect(isExternalToolConfigured({ ...tool, executable: '' }, 'diff')).toBe(false)
+    expect(isExternalToolConfigured({ ...tool, arguments: ['{before}'] }, 'diff')).toBe(false)
   })
 
   it('keeps multiple configured tools and orders the primary tool first', () => {

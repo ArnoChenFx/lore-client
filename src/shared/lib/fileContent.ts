@@ -1,18 +1,9 @@
 import type { FileContentKind, RepositoryFileReference, WorkingTreeDiff } from '../../types'
 import { binaryPreviewKind } from './binaryPreview'
 
-/**
- * 返回文件当前最可靠的内容分类。
- *
- * 真实后端结果始终优先使用结构化三态；`binary` 只兼容尚未迁移的演示数据和测试夹具，
- * 不得在这里重新引入路径或扩展名推断。
- */
+/** 返回文件的三态内容分类；没有选中文件时才回退为 unknown。 */
 export function repositoryFileContentKind(file: RepositoryFileReference | null | undefined): FileContentKind {
-  if (!file) return 'unknown'
-  if (file.contentClassification) return file.contentClassification.kind
-  if (file.binary === true) return 'binary'
-  if (file.binary === false) return 'text'
-  return 'unknown'
+  return file?.contentClassification.kind ?? 'unknown'
 }
 
 /** Lore Diff 已加载时，其正文 marker 比列表阶段分类更权威。 */
@@ -21,11 +12,6 @@ export function resolvedDiffContentKind(
   diff: WorkingTreeDiff | null | undefined
 ): FileContentKind {
   return diff?.contentClassification?.kind ?? repositoryFileContentKind(file)
-}
-
-/** 兼容旧调用方的布尔查询；`unknown` 不会被武断地当作二进制。 */
-export function isBinaryRepositoryFile(file: RepositoryFileReference | null | undefined): boolean {
-  return repositoryFileContentKind(file) === 'binary'
 }
 
 /**

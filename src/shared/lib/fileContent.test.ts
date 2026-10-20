@@ -9,6 +9,7 @@ import {
 } from './fileContent'
 
 const createFile = (overrides: Partial<ChangeFile> = {}): ChangeFile => ({
+  contentClassification: { kind: 'unknown', source: 'deferred' },
   id: 'file-1',
   path: 'content-without-extension',
   name: 'content-without-extension',
@@ -20,9 +21,8 @@ const createFile = (overrides: Partial<ChangeFile> = {}): ChangeFile => ({
 })
 
 describe('file content classification helpers', () => {
-  it('prefers structured classification over the legacy binary flag', () => {
+  it('keeps deferred content unknown without inferring from its path', () => {
     const file = createFile({
-      binary: true,
       contentClassification: { kind: 'unknown', source: 'deferred' }
     })
 
@@ -43,10 +43,16 @@ describe('file content classification helpers', () => {
     expect(resolvedDiffContentKind(file, diff)).toBe('binary')
   })
 
-  it('keeps the legacy boolean as a compatibility fallback only', () => {
-    expect(repositoryFileContentKind(createFile({ binary: false }))).toBe('text')
-    expect(repositoryFileContentKind(createFile({ binary: true }))).toBe('binary')
+  it('preserves all three classifications and treats an absent selection as unknown', () => {
+    expect(repositoryFileContentKind(createFile({ contentClassification: { kind: 'text', source: 'utf8' } }))).toBe(
+      'text'
+    )
+    expect(
+      repositoryFileContentKind(createFile({ contentClassification: { kind: 'binary', source: 'signature' } }))
+    ).toBe('binary')
     expect(repositoryFileContentKind(createFile())).toBe('unknown')
+    expect(repositoryFileContentKind(null)).toBe('unknown')
+    expect(repositoryFileContentKind(undefined)).toBe('unknown')
   })
 
   it('switches text-backed CSV and SVG between bounded previews and text diffs', () => {
