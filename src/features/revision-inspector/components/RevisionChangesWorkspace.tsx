@@ -70,9 +70,9 @@ interface RevisionChangesWorkspaceProps {
   /** 多父 Revision 当前采用的比较基线。 */
   diffSourceRevision?: string | null
   onDiffSourceRevisionChange?: (sourceRevision: string) => void
-  /** 右侧主要选择文件的按需 Diff 状态；未提供时兼容旧调用方并沿用清单状态。 */
-  diffLoading?: boolean
-  diffError?: string | null
+  /** 右侧主要选择文件的按需 Diff 状态，独立于变更清单的加载状态。 */
+  diffLoading: boolean
+  diffError: string | null
   notice?: string | null
   selectionRequest?: RevisionWorkspaceSelectionRequest | null
   onLoadBinaryPreview?: (path: string, revision?: string, metadataOnly?: boolean) => Promise<BinaryFilePreview>
@@ -147,8 +147,8 @@ export function RevisionChangesWorkspace({
   error,
   diffSourceRevision,
   onDiffSourceRevisionChange,
-  diffLoading = loading,
-  diffError = error,
+  diffLoading,
+  diffError,
   notice,
   selectionRequest,
   onLoadBinaryPreview,

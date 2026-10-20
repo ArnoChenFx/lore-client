@@ -4147,9 +4147,7 @@ button.sidebar__repo-mark:focus-visible {
 }
 
 .control-input,
-.tool-input,
-.control-select select,
-.tool-select select {
+.control-select select {
   width: 100%;
   height: 30px;
   min-width: 0;
@@ -4164,14 +4162,11 @@ button.sidebar__repo-mark:focus-visible {
 }
 
 .control-input:hover:not(:disabled),
-.tool-input:hover:not(:disabled),
-.control-select:hover select:not(:disabled):not(:focus),
-.tool-select:hover select:not(:disabled):not(:focus) {
+.control-select:hover select:not(:disabled):not(:focus) {
   border-color: var(--accent-solid);
 }
 
-.control-input:focus-visible,
-.tool-input:focus-visible {
+.control-input:focus-visible {
   outline: 1px solid var(--accent-solid);
   outline-offset: 1px;
 }
@@ -4180,40 +4175,34 @@ button.sidebar__repo-mark:focus-visible {
  * 原生下拉菜单展开期间会一直保持焦点。聚焦态必须覆盖 hover 的中性亮边框，
  * 并把 outline 压到同一条品牌蓝边界上，避免 Windows WebView 显示白、蓝双圈。
  */
-.control-select select:focus,
-.tool-select select:focus {
+.control-select select:focus {
   border-color: var(--accent-solid);
   outline: 1px solid var(--accent-solid);
   outline-offset: -1px;
 }
 
-.control-input::placeholder,
-.tool-input::placeholder {
+.control-input::placeholder {
   color: var(--faint);
 }
 
-.control-input--numeric,
-.tool-input--numeric {
+.control-input--numeric {
   width: 72px;
   justify-self: end;
   font-variant-numeric: tabular-nums;
 }
 
-.control-select,
-.tool-select {
+.control-select {
   position: relative;
   display: block;
   min-width: 0;
 }
 
-.control-select select,
-.tool-select select {
+.control-select select {
   appearance: none;
   padding-right: 26px;
 }
 
-.control-select > svg,
-.tool-select > svg {
+.control-select > svg {
   position: absolute;
   top: 50%;
   right: 8px;
@@ -4222,8 +4211,7 @@ button.sidebar__repo-mark:focus-visible {
   transform: translateY(-50%);
 }
 
-.control-button,
-.tool-button {
+.control-button {
   display: inline-flex;
   min-height: 30px;
   align-items: center;
@@ -4238,15 +4226,13 @@ button.sidebar__repo-mark:focus-visible {
   font-weight: 560;
 }
 
-.control-button:hover:not(:disabled),
-.tool-button:hover:not(:disabled) {
+.control-button:hover:not(:disabled) {
   border-color: var(--accent-solid);
   background: var(--bg-hover);
   color: var(--text);
 }
 
-.control-button.is-primary,
-.tool-button.is-primary {
+.control-button.is-primary {
   border-color: var(--button-primary-border);
   background: var(--button-primary-bg);
   color: var(--button-primary-text);
@@ -4257,33 +4243,27 @@ button.sidebar__repo-mark:focus-visible {
  * 主按钮的蓝色填充表达操作层级，不能被通用 hover 规则降级成中性按钮。
  * 鼠标按住时只把边框切到更强的蓝色，背景和文字保持稳定，避免出现白色闪烁。
  */
-.control-button.is-primary:hover:not(:disabled),
-.tool-button.is-primary:hover:not(:disabled) {
+.control-button.is-primary:hover:not(:disabled) {
   border-color: var(--button-primary-border);
   background: var(--button-primary-bg-hover);
   color: var(--button-primary-text);
 }
 
-.control-button.is-primary:active:not(:disabled),
-.tool-button.is-primary:active:not(:disabled) {
+.control-button.is-primary:active:not(:disabled) {
   border-color: var(--accent-strong) !important;
   background: var(--button-primary-bg-hover);
   color: var(--button-primary-text);
 }
 
-.control-button.is-danger,
-.tool-button.is-danger {
+.control-button.is-danger {
   border-color: var(--danger-border);
   background: var(--danger-surface);
   color: var(--danger);
 }
 
 .control-button:disabled,
-.tool-button:disabled,
 .control-input:disabled,
-.tool-input:disabled,
-.control-select select:disabled,
-.tool-select select:disabled {
+.control-select select:disabled {
   cursor: default;
   opacity: 0.45;
 }

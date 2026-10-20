@@ -104,11 +104,6 @@ export function normalizeLoreConflictContent(content: string): NormalizedLoreCon
   return { contents, syntheticMarkerLineIndices }
 }
 
-/** 只需要解析正文的兼容入口；解决写回必须同时消费上面的合成换行元数据。 */
-export function normalizeLoreConflictMarkerBoundaries(content: string): string {
-  return normalizeLoreConflictContent(content).contents
-}
-
 /**
  * 使用 Diffs 自己的解析器预检冲突正文，并把所有解析异常收敛为稳定结果。
  *
@@ -121,7 +116,7 @@ export async function prepareConflictResolution(
   options: Parameters<typeof preloadUnresolvedFile>[0]['options']
 ): Promise<{ status: 'ready'; value: PreparedConflictResolution } | { status: 'invalid' }> {
   try {
-    const normalizedFile = { ...file, contents: normalizeLoreConflictMarkerBoundaries(file.contents) }
+    const normalizedFile = { ...file, contents: normalizeLoreConflictContent(file.contents).contents }
     return { status: 'ready', value: await preloadUnresolvedFile({ file: normalizedFile, options }) }
   } catch {
     return { status: 'invalid' }

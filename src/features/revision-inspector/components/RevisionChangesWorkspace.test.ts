@@ -100,6 +100,8 @@ describe('revision change default selection', () => {
         diffs: [],
         loading: false,
         error: null,
+        diffLoading: false,
+        diffError: null,
         onOpenContextMenu: () => undefined
       })
     )
@@ -137,6 +139,7 @@ describe('revision change default selection', () => {
         loading: true,
         error: null,
         diffLoading: true,
+        diffError: null,
         onOpenContextMenu: () => undefined
       })
     )
