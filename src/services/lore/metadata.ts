@@ -1,6 +1,6 @@
 /** 仓库元数据条目的读取与解析。 */
 import { t } from '../../i18n'
-import type { LoreEvent, LoreMetadataEntry, LoreMetadataScope } from '../../types'
+import type { OperationContext, LoreEvent, LoreMetadataEntry, LoreMetadataScope } from '../../types'
 import { runOperation } from './core'
 import { isRecord, readString } from './utils'
 
@@ -9,14 +9,19 @@ export async function loadMetadata(
   repositoryPath: string,
   scope: LoreMetadataScope,
   target?: string,
-  revision?: string
+  revision?: string,
+  operationContext?: OperationContext
 ): Promise<LoreMetadataEntry[]> {
-  const result = await runOperation('lore_metadata_list', {
-    repositoryPath,
-    scope,
-    target: target?.trim() || null,
-    revision: revision?.trim() || null
-  })
+  const result = await runOperation(
+    'lore_metadata_list',
+    {
+      repositoryPath,
+      scope,
+      target: target?.trim() || null,
+      revision: revision?.trim() || null
+    },
+    operationContext
+  )
   return parseMetadataEntries(result.events)
 }
 

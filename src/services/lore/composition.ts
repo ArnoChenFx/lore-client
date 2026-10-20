@@ -1,6 +1,7 @@
 /** Layer 与 Link 的列表、增删改与事件解析。 */
 import { t } from '../../i18n'
 import type {
+  OperationContext,
   LoreEvent,
   LoreLayer,
   LoreLayerAddRequest,
@@ -12,6 +13,7 @@ import type {
   LoreLinkUpdateRequest,
   LoreOperationResult
 } from '../../types'
+import { createOperationContext, withOperationRequest } from '../operationRequests'
 import { LoreCommandClientError, runOperation } from './core'
 import { ZERO_HASH_PATTERN, isRecord, readNumber, readString } from './utils'
 
@@ -119,53 +121,78 @@ export function parseLinkInfo(events: LoreEvent[]): LoreLinkDetails | null {
   }
 }
 
-export async function listLayers(repositoryPath: string): Promise<LoreLayer[]> {
-  const [result, staged] = await Promise.all([
-    runOperation('lore_layer_list', { repositoryPath }),
-    runOperation('lore_layer_list_staged', { repositoryPath })
-  ])
-  return parseLayers(result.events, staged.events)
+export async function listLayers(repositoryPath: string, operationContext?: OperationContext): Promise<LoreLayer[]> {
+  return withOperationRequest(operationContext ?? createOperationContext(repositoryPath), async (requestContext) => {
+    const [result, staged] = await Promise.all([
+      runOperation('lore_layer_list', { repositoryPath }, requestContext),
+      runOperation('lore_layer_list_staged', { repositoryPath }, requestContext)
+    ])
+    return parseLayers(result.events, staged.events)
+  })
 }
 
-export async function addLayer(repositoryPath: string, request: LoreLayerAddRequest): Promise<LoreOperationResult> {
-  return runOperation('lore_layer_add', {
-    repositoryPath,
-    targetPath: request.targetPath,
-    sourceRepository: request.sourceRepository,
-    sourcePath: request.sourcePath,
-    metadata: request.metadata?.trim() || null
-  })
+export async function addLayer(
+  repositoryPath: string,
+  request: LoreLayerAddRequest,
+  operationContext?: OperationContext
+): Promise<LoreOperationResult> {
+  return runOperation(
+    'lore_layer_add',
+    {
+      repositoryPath,
+      targetPath: request.targetPath,
+      sourceRepository: request.sourceRepository,
+      sourcePath: request.sourcePath,
+      metadata: request.metadata?.trim() || null
+    },
+    operationContext
+  )
 }
 
 export async function removeLayer(
   repositoryPath: string,
-  request: LoreLayerRemoveRequest
+  request: LoreLayerRemoveRequest,
+  operationContext?: OperationContext
 ): Promise<LoreOperationResult> {
-  return runOperation('lore_layer_remove', {
-    repositoryPath,
-    targetPath: request.targetPath,
-    sourceRepository: request.sourceRepository,
-    purge: request.purge
+  return runOperation(
+    'lore_layer_remove',
+    {
+      repositoryPath,
+      targetPath: request.targetPath,
+      sourceRepository: request.sourceRepository,
+      purge: request.purge
+    },
+    operationContext
+  )
+}
+
+export async function listLinks(repositoryPath: string, operationContext?: OperationContext): Promise<LoreLink[]> {
+  return withOperationRequest(operationContext ?? createOperationContext(repositoryPath), async (requestContext) => {
+    const [result, staged] = await Promise.all([
+      runOperation('lore_link_list', { repositoryPath }, requestContext),
+      runOperation('lore_link_list_staged', { repositoryPath }, requestContext)
+    ])
+    return parseLinks(result.events, staged.events)
   })
 }
 
-export async function listLinks(repositoryPath: string): Promise<LoreLink[]> {
-  const [result, staged] = await Promise.all([
-    runOperation('lore_link_list', { repositoryPath }),
-    runOperation('lore_link_list_staged', { repositoryPath })
-  ])
-  return parseLinks(result.events, staged.events)
-}
-
-export async function addLink(repositoryPath: string, request: LoreLinkAddRequest): Promise<LoreOperationResult> {
-  return runOperation('lore_link_add', {
-    repositoryPath,
-    link: request.repositoryUrl,
-    linkPath: request.linkPath,
-    sourcePath: request.sourcePath,
-    pin: request.pin?.trim() || null,
-    disableBranching: request.disableBranching
-  })
+export async function addLink(
+  repositoryPath: string,
+  request: LoreLinkAddRequest,
+  operationContext?: OperationContext
+): Promise<LoreOperationResult> {
+  return runOperation(
+    'lore_link_add',
+    {
+      repositoryPath,
+      link: request.repositoryUrl,
+      linkPath: request.linkPath,
+      sourcePath: request.sourcePath,
+      pin: request.pin?.trim() || null,
+      disableBranching: request.disableBranching
+    },
+    operationContext
+  )
 }
 
 /**
@@ -174,8 +201,12 @@ export async function addLink(repositoryPath: string, request: LoreLinkAddReques
  * 仅消费 Lore 的 `linkInfo` 专用事件；事件缺失时抛出结构化错误，
  * 绝不用列表 DTO 字段伪造详情。
  */
-export async function loadLinkInfo(repositoryPath: string, linkPath: string): Promise<LoreLinkDetails> {
-  const result = await runOperation('lore_link_info', { repositoryPath, linkPath })
+export async function loadLinkInfo(
+  repositoryPath: string,
+  linkPath: string,
+  operationContext?: OperationContext
+): Promise<LoreLinkDetails> {
+  const result = await runOperation('lore_link_info', { repositoryPath, linkPath }, operationContext)
   const details = parseLinkInfo(result.events)
   if (!details) {
     throw new LoreCommandClientError({ code: 'link_info_unavailable' }, 'lore_link_info')
@@ -183,14 +214,26 @@ export async function loadLinkInfo(repositoryPath: string, linkPath: string): Pr
   return details
 }
 
-export async function updateLink(repositoryPath: string, request: LoreLinkUpdateRequest): Promise<LoreOperationResult> {
-  return runOperation('lore_link_update', {
-    repositoryPath,
-    linkPath: request.linkPath,
-    pin: request.pin?.trim() || null
-  })
+export async function updateLink(
+  repositoryPath: string,
+  request: LoreLinkUpdateRequest,
+  operationContext?: OperationContext
+): Promise<LoreOperationResult> {
+  return runOperation(
+    'lore_link_update',
+    {
+      repositoryPath,
+      linkPath: request.linkPath,
+      pin: request.pin?.trim() || null
+    },
+    operationContext
+  )
 }
 
-export async function removeLink(repositoryPath: string, linkPath: string): Promise<LoreOperationResult> {
-  return runOperation('lore_link_remove', { repositoryPath, linkPath })
+export async function removeLink(
+  repositoryPath: string,
+  linkPath: string,
+  operationContext?: OperationContext
+): Promise<LoreOperationResult> {
+  return runOperation('lore_link_remove', { repositoryPath, linkPath }, operationContext)
 }

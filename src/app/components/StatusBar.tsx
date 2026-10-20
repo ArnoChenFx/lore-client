@@ -8,13 +8,13 @@ import '../../i18n'
 interface StatusBarProps {
   repository: Repository
   runtimeInfo: LoreRuntimeInfo | null
-  busyLabel: string | null
-  /** 正在进行且已有归一化进度的 Lore 流；缺省或 null 时只显示 busyLabel。 */
+  operationLabel: string | null
+  /** 正在进行且已有归一化进度的 Lore 流；缺省或 null 时只显示 operationLabel。 */
   progress?: LoreOperationStreamRecord | null
   demoMode: boolean
 }
 
-export function StatusBar({ repository, runtimeInfo, busyLabel, progress = null, demoMode }: StatusBarProps) {
+export function StatusBar({ repository, runtimeInfo, operationLabel, progress = null, demoMode }: StatusBarProps) {
   const { t } = useTranslation()
   const now = useProgressClock(progress !== null)
   const conflictLabel =
@@ -31,7 +31,7 @@ export function StatusBar({ repository, runtimeInfo, busyLabel, progress = null,
         : repository.remoteState === 'offline'
           ? t('offline')
           : t('localMode')
-  const operationLabel = busyLabel ?? t('idle')
+  const idleOrOperationLabel = operationLabel ?? t('idle')
   const storeLabel = demoMode ? t('cache187Gb28Gb') : t('storeIsManagedByLoreCore')
   const versionLabel = `Lore Core ${runtimeInfo?.libraryVersion ?? t('checking')}${demoMode ? t('browserDemo') : ''}`
 
@@ -46,11 +46,11 @@ export function StatusBar({ repository, runtimeInfo, busyLabel, progress = null,
         {remoteLabel}
       </span>
       {progress ? (
-        <OperationProgressStatus record={progress} label={busyLabel} now={now} />
+        <OperationProgressStatus record={progress} label={operationLabel} now={now} />
       ) : (
-        <span title={t('status.operationStatusTooltip', { value: operationLabel })}>
+        <span title={t('status.operationStatusTooltip', { value: idleOrOperationLabel })}>
           <Activity size={12} />
-          {operationLabel}
+          {idleOrOperationLabel}
         </span>
       )}
       <span className="statusbar__spacer" />

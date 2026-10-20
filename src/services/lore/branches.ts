@@ -1,6 +1,7 @@
 /** 分支的协作信息、比较、切换、合并、Cherry-pick 与 Revert。 */
 import { t } from '../../i18n'
 import type {
+  OperationContext,
   Branch,
   LoreBranchDiff,
   LoreBranchDiffChange,
@@ -10,6 +11,7 @@ import type {
   LoreOperationResult,
   Repository
 } from '../../types'
+import { createOperationContext, withOperationRequest } from '../operationRequests'
 import { runOperation } from './core'
 import {
   eventData,
@@ -25,17 +27,20 @@ import {
 /** 读取 BranchInfo、保护元数据与 Latest 指针历史，并投影成稳定 DTO。 */
 export async function loadBranchCollaboration(
   repositoryPath: string,
-  branch: string
+  branch: string,
+  operationContext?: OperationContext
 ): Promise<{ info: LoreBranchInfo; latest: LoreBranchLatestEntry[] }> {
-  const [infoResult, protectionResult, latestResult] = await Promise.all([
-    runOperation('lore_branch_info', { repositoryPath, branch }),
-    runOperation('lore_branch_protection_info', { repositoryPath, branch }),
-    runOperation('lore_branch_latest_list', { repositoryPath, branch, limit: 50 })
-  ])
-  return {
-    info: parseBranchInfo(infoResult.events, protectionResult.events),
-    latest: parseBranchLatest(latestResult.events)
-  }
+  return withOperationRequest(operationContext ?? createOperationContext(repositoryPath), async (requestContext) => {
+    const [infoResult, protectionResult, latestResult] = await Promise.all([
+      runOperation('lore_branch_info', { repositoryPath, branch }, requestContext),
+      runOperation('lore_branch_protection_info', { repositoryPath, branch }, requestContext),
+      runOperation('lore_branch_latest_list', { repositoryPath, branch, limit: 50 }, requestContext)
+    ])
+    return {
+      info: parseBranchInfo(infoResult.events, protectionResult.events),
+      latest: parseBranchLatest(latestResult.events)
+    }
+  })
 }
 
 /** 执行只读 Branch Diff；`path` 为空时比较完整 Branch。 */
@@ -43,14 +48,19 @@ export async function loadBranchDiff(
   repositoryPath: string,
   source: string,
   target: string,
-  path?: string
+  path?: string,
+  operationContext?: OperationContext
 ): Promise<LoreBranchDiff> {
-  const result = await runOperation('lore_branch_diff', {
-    repositoryPath,
-    source,
-    target,
-    path: path?.trim() || null
-  })
+  const result = await runOperation(
+    'lore_branch_diff',
+    {
+      repositoryPath,
+      source,
+      target,
+      path: path?.trim() || null
+    },
+    operationContext
+  )
   return parseBranchDiff(result.events, source, target)
 }
 
@@ -58,13 +68,18 @@ export async function loadBranchDiff(
 export async function setBranchProtected(
   repositoryPath: string,
   branch: string,
-  protectedValue: boolean
+  protectedValue: boolean,
+  operationContext?: OperationContext
 ): Promise<LoreOperationResult> {
-  return runOperation('lore_branch_set_protected', {
-    repositoryPath,
-    branch,
-    protected: protectedValue
-  })
+  return runOperation(
+    'lore_branch_set_protected',
+    {
+      repositoryPath,
+      branch,
+      protected: protectedValue
+    },
+    operationContext
+  )
 }
 
 /**
@@ -77,31 +92,41 @@ export async function resetBranchLatest(
   branch: string,
   revision: string,
   expectedWorkspaceRevision: string,
-  expectedLatest: string
+  expectedLatest: string,
+  operationContext?: OperationContext
 ): Promise<LoreOperationResult> {
-  return runOperation('lore_branch_reset', {
-    repositoryPath,
-    branch,
-    revision,
-    expectedWorkspaceRevision,
-    expectedLatest
-  })
+  return runOperation(
+    'lore_branch_reset',
+    {
+      repositoryPath,
+      branch,
+      revision,
+      expectedWorkspaceRevision,
+      expectedLatest
+    },
+    operationContext
+  )
 }
 
 export async function switchBranch(
   repositoryPath: string,
   branch: string,
-  revision?: string
+  revision?: string,
+  operationContext?: OperationContext
 ): Promise<LoreOperationResult> {
-  return runOperation('lore_branch_switch', {
-    repositoryPath,
-    branch,
-    /*
-     * 同一 Branch 上的旧工作区锚点不能依赖空 Revision Switch 自动前进；
-     * Branch 检出入口应传入列表快照中的精确 latest。
-     */
-    revision: revision?.trim() || null
-  })
+  return runOperation(
+    'lore_branch_switch',
+    {
+      repositoryPath,
+      branch,
+      /*
+       * 同一 Branch 上的旧工作区锚点不能依赖空 Revision Switch 自动前进；
+       * Branch 检出入口应传入列表快照中的精确 latest。
+       */
+      revision: revision?.trim() || null
+    },
+    operationContext
+  )
 }
 
 /**
@@ -116,46 +141,72 @@ export async function createBranchFromSource(
   sourceBranch: string,
   sourceRevision: string,
   previousBranch: string,
-  previousRevision: string
+  previousRevision: string,
+  operationContext?: OperationContext
 ): Promise<LoreOperationResult> {
-  return runOperation('lore_branch_create_from', {
-    repositoryPath,
-    branch,
-    sourceBranch,
-    sourceRevision,
-    previousBranch,
-    previousRevision
-  })
+  return runOperation(
+    'lore_branch_create_from',
+    {
+      repositoryPath,
+      branch,
+      sourceBranch,
+      sourceRevision,
+      previousBranch,
+      previousRevision
+    },
+    operationContext
+  )
 }
 
 /** 把目标 Revision 的变更应用到当前 Branch，并由 Lore 在无冲突时自动提交。 */
-export async function cherryPickRevision(repositoryPath: string, revision: string): Promise<LoreOperationResult> {
-  return runOperation('lore_revision_cherry_pick', {
-    repositoryPath,
-    revision
-  })
+export async function cherryPickRevision(
+  repositoryPath: string,
+  revision: string,
+  operationContext?: OperationContext
+): Promise<LoreOperationResult> {
+  return runOperation(
+    'lore_revision_cherry_pick',
+    {
+      repositoryPath,
+      revision
+    },
+    operationContext
+  )
 }
 
 /** 在当前 Branch 创建撤销目标 Revision 的新 Revision。 */
-export async function revertRevision(repositoryPath: string, revision: string): Promise<LoreOperationResult> {
-  return runOperation('lore_revision_revert', {
-    repositoryPath,
-    revision
-  })
+export async function revertRevision(
+  repositoryPath: string,
+  revision: string,
+  operationContext?: OperationContext
+): Promise<LoreOperationResult> {
+  return runOperation(
+    'lore_revision_revert',
+    {
+      repositoryPath,
+      revision
+    },
+    operationContext
+  )
 }
 
 /** 把指定源 Branch 合并到当前 Branch，并在无冲突时自动创建合并 Revision。 */
-export async function mergeBranch(repositoryPath: string, branch: string): Promise<LoreOperationResult> {
-  return runOperation('lore_branch_merge', { repositoryPath, branch })
+export async function mergeBranch(
+  repositoryPath: string,
+  branch: string,
+  operationContext?: OperationContext
+): Promise<LoreOperationResult> {
+  return runOperation('lore_branch_merge', { repositoryPath, branch }, operationContext)
 }
 
 /** 归档本地 Branch；联网模式下 Lore 会同步归档远端指针。 */
 export async function archiveBranch(
   repositoryPath: string,
   branch: string,
-  includeLayers = false
+  includeLayers = false,
+  operationContext?: OperationContext
 ): Promise<LoreOperationResult> {
-  return runOperation('lore_branch_archive', { repositoryPath, branch, includeLayers })
+  return runOperation('lore_branch_archive', { repositoryPath, branch, includeLayers }, operationContext)
 }
 
 export function parseBranches(events: LoreEvent[], repository: Repository): Branch[] {

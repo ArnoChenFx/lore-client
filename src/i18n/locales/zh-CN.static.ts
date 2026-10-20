@@ -1533,7 +1533,11 @@ const zhCNStatic = {
     storageItemFinished: '存储项读取完成',
     storageOpened: '存储已打开'
   },
+  operationScopeGlobal: '全局',
+  operationInProgress: '操作进行中',
+  operationFinalProgressUnavailable: '暂无最终进度结果',
   operationPhase: {
+    ended: '已结束',
     queued: '排队',
     running: '运行中',
     streaming: '流式传输',

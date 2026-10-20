@@ -51,9 +51,11 @@ import {
   verifyRepositoryFragment,
   verifyRepositoryPath
 } from '../../services/lore'
+import { createOperationContext, withOperationRequest } from '../../services/operationRequests'
 import { changeFilePath, LatestTaskQueue, readErrorMessage, repositoryPathKey } from '../../shared/lib'
 import type {
   ApplicationMode,
+  OperationContext,
   LoreDependencyGraphQuery,
   LoreDependencySelection,
   LoreDiagnosticReport,
@@ -265,7 +267,7 @@ interface UseRepositoryToolsControllerOptions {
   onAuthAccountBindingsChange: (bindings: RepositoryAuthAccountBinding[]) => void
   authStateVersion: number
   onAuthenticationRequired: (serverUrl: string) => void
-  onAuthStateChange: (serverUrl?: string) => Promise<unknown>
+  onAuthStateChange: (serverUrl?: string, context?: OperationContext) => Promise<unknown>
   defaultIdentity: string
   busyAction: string | null
   initialDependencyQuery?: LoreDependencyGraphQuery | null
@@ -580,7 +582,7 @@ export function useRepositoryToolsController({
       }
       return runRepositoryMutation(
         protectedValue ? 'protectBranch' : 'unprotectBranch',
-        (repository) => setBranchProtected(repository.path, branch, protectedValue),
+        (repository, operationContext) => setBranchProtected(repository.path, branch, protectedValue, operationContext),
         operationMessage(protectedValue ? 'status.branchProtected' : 'status.branchUnprotected', { branch })
       )
     },
@@ -609,7 +611,15 @@ export function useRepositoryToolsController({
       }
       return runRepositoryMutation(
         'resetBranchLatest',
-        (repository) => resetBranchLatest(repository.path, branch, revision, expectedWorkspaceRevision, expectedLatest),
+        (repository, operationContext) =>
+          resetBranchLatest(
+            repository.path,
+            branch,
+            revision,
+            expectedWorkspaceRevision,
+            expectedLatest,
+            operationContext
+          ),
         operationMessage('status.branchLatestReset', {
           branch,
           revision: revision.slice(0, 12)
@@ -633,7 +643,8 @@ export function useRepositoryToolsController({
       }
       return runRepositoryMutation(
         'amendRevision',
-        (repository) => amendCurrentRevision(repository.path, repository.branch, repository.revision, message),
+        (repository, operationContext) =>
+          amendCurrentRevision(repository.path, repository.branch, repository.revision, message, operationContext),
         operationMessage('status.revisionAmended')
       )
     },
@@ -655,8 +666,10 @@ export function useRepositoryToolsController({
       }
       return runRepositoryMutation(
         'bisectRevision',
-        (repository) =>
-          bisectRevisionRange(repository.path, start, end, repository.revision).then(({ operation }) => operation),
+        (repository, operationContext) =>
+          bisectRevisionRange(repository.path, start, end, repository.revision, operationContext).then(
+            ({ operation }) => operation
+          ),
         operationMessage('status.bisectMidpointLoaded')
       )
     },
@@ -678,7 +691,8 @@ export function useRepositoryToolsController({
       }
       return runRepositoryMutation(
         'restoreRevision',
-        (repository) => restoreCurrentRevision(repository.path, repository.revision, message),
+        (repository, operationContext) =>
+          restoreCurrentRevision(repository.path, repository.revision, message, operationContext),
         operationMessage('status.revisionRestoredAsNew')
       )
     },
@@ -691,7 +705,8 @@ export function useRepositoryToolsController({
       if (uniquePaths.length === 0) return false
       const succeeded = await runRepositoryMutation(
         'acquireCollaborativeLock',
-        (repository) => acquireFileLocks(repository.path, repository.branch, uniquePaths),
+        (repository, operationContext) =>
+          acquireFileLocks(repository.path, repository.branch, uniquePaths, operationContext),
         uniquePaths.length === 1
           ? operationMessage('status.collaborativeLockAcquired', {
               path: uniquePaths[0]
@@ -718,7 +733,8 @@ export function useRepositoryToolsController({
       if (uniquePaths.length === 0) return false
       const succeeded = await runRepositoryMutation(
         'releaseCollaborativeLock',
-        (repository) => releaseFileLocks(repository.path, repository.branch, uniquePaths),
+        (repository, operationContext) =>
+          releaseFileLocks(repository.path, repository.branch, uniquePaths, operationContext),
         uniquePaths.length === 1
           ? operationMessage('status.collaborativeLockReleased', {
               path: uniquePaths[0]
@@ -805,7 +821,7 @@ export function useRepositoryToolsController({
       if (!activeSnapshot) return false
       const succeeded = await runRepositoryMutation(
         'addLayer',
-        (repository) => addLayer(repository.path, request),
+        (repository, operationContext) => addLayer(repository.path, request, operationContext),
         operationMessage('status.layerAdded', { path: request.targetPath })
       )
       if (succeeded) await refreshCompositionResources('layers', toolSession)
@@ -819,7 +835,7 @@ export function useRepositoryToolsController({
       if (!activeSnapshot) return false
       const succeeded = await runRepositoryMutation(
         'removeLayer',
-        (repository) => removeLayer(repository.path, request),
+        (repository, operationContext) => removeLayer(repository.path, request, operationContext),
         operationMessage('status.layerRemoved', { path: request.targetPath })
       )
       if (succeeded) await refreshCompositionResources('layers', toolSession)
@@ -833,7 +849,7 @@ export function useRepositoryToolsController({
       if (!activeSnapshot) return false
       const succeeded = await runRepositoryMutation(
         'addLink',
-        (repository) => addLink(repository.path, request),
+        (repository, operationContext) => addLink(repository.path, request, operationContext),
         operationMessage('status.linkAdded', { path: request.linkPath })
       )
       if (succeeded) await refreshCompositionResources('links', toolSession)
@@ -847,7 +863,7 @@ export function useRepositoryToolsController({
       if (!activeSnapshot) return false
       const succeeded = await runRepositoryMutation(
         'updateLinkPin',
-        (repository) => updateLink(repository.path, request),
+        (repository, operationContext) => updateLink(repository.path, request, operationContext),
         operationMessage('status.linkPinUpdated', { path: request.linkPath })
       )
       if (succeeded) await refreshCompositionResources('links', toolSession)
@@ -861,7 +877,7 @@ export function useRepositoryToolsController({
       if (!activeSnapshot) return false
       const succeeded = await runRepositoryMutation(
         'removeLink',
-        (repository) => removeLink(repository.path, linkPath),
+        (repository, operationContext) => removeLink(repository.path, linkPath, operationContext),
         operationMessage('status.linkRemoved', { path: linkPath })
       )
       if (succeeded) await refreshCompositionResources('links', toolSession)
@@ -905,7 +921,7 @@ export function useRepositoryToolsController({
       if (!activeSnapshot || !revision) return false
       const applied = await runRepositoryMutation(
         'applyRepositoryView',
-        (repository) => applyRepositoryView(repository.path, revision, content),
+        (repository, operationContext) => applyRepositoryView(repository.path, revision, content, operationContext),
         operationMessage('repositoryViewAppliedAndSynchronized')
       )
       if (applied && isToolSessionCurrent(toolSession)) {
@@ -945,7 +961,8 @@ export function useRepositoryToolsController({
       }
       await runRepositoryMutation(
         'updateRepositoryConfiguration',
-        (repository) => updateRepositoryConfig(repository.path, identity, remoteUrl),
+        (repository, operationContext) =>
+          updateRepositoryConfig(repository.path, identity, remoteUrl, operationContext),
         operationMessage('repositoryIdentityAndRemoteUrlSaved'),
         undefined,
         (snapshot, result) => projectRepositoryConfigurationSnapshot(snapshot, result as RepositoryConfiguration)
@@ -982,7 +999,7 @@ export function useRepositoryToolsController({
       }
       await runRepositoryMutation(
         'publishRepository',
-        async (repository) => {
+        async (repository, operationContext) => {
           const existingAccount = resolvePublishAuthAccount(repository.path, authAccountBindings, [])
           const selectedUserId = authUserId?.trim()
           const selectedIdentity = selectedUserId
@@ -998,7 +1015,12 @@ export function useRepositoryToolsController({
              * 目录读取继续使用同一 Token Store 身份。留空只影响本次发布，不会暗中
              * 删除用户在账户页维护的既有绑定。
              */
-            await setRepositoryAuthAccountBinding(repository.path, selectedUserId, selectedIdentity.authUrl)
+            await setRepositoryAuthAccountBinding(
+              repository.path,
+              selectedUserId,
+              selectedIdentity.authUrl,
+              operationContext
+            )
             const nextBindings = authAccountBindings.filter(
               (binding) => repositoryPathKey(binding.repositoryPath) !== repositoryPathKey(repository.path)
             )
@@ -1019,7 +1041,8 @@ export function useRepositoryToolsController({
               defaultIdentity,
               normalizedServerUrl,
               repository.branch,
-              selectedUserId
+              selectedUserId,
+              operationContext
             )
           try {
             return await publish()
@@ -1053,19 +1076,21 @@ export function useRepositoryToolsController({
 
   /** 账户是设备级资源；登录、退出和列表不得要求先打开本地仓库。 */
   const runAuthAction = useCallback(
-    async (action: () => Promise<unknown>, serverUrl?: string): Promise<boolean> => {
+    async (action: (context: OperationContext) => Promise<unknown>, serverUrl?: string): Promise<boolean> => {
       if (applicationMode !== 'tauri') return false
-      try {
-        setAuthActionsPending((count) => count + 1)
-        await action()
-        await onAuthStateChange(serverUrl)
-        return true
-      } catch (error) {
-        notify(t('accountOperationFailed'), readErrorMessage(error), 'warning')
-        return false
-      } finally {
-        setAuthActionsPending((count) => count - 1)
-      }
+      return withOperationRequest(createOperationContext(null), async (operationContext) => {
+        try {
+          setAuthActionsPending((count) => count + 1)
+          await action(operationContext)
+          await onAuthStateChange(serverUrl, operationContext)
+          return true
+        } catch (error) {
+          notify(t('accountOperationFailed'), readErrorMessage(error), 'warning')
+          return false
+        } finally {
+          setAuthActionsPending((count) => count - 1)
+        }
+      })
     },
     [applicationMode, notify, onAuthStateChange]
   )
@@ -1132,7 +1157,8 @@ export function useRepositoryToolsController({
       onAddDependency: (sourcePath, dependencyPath, tags, force) =>
         runRepositoryMutation(
           'addFileDependency',
-          (targetRepository) => addFileDependency(targetRepository.path, sourcePath, dependencyPath, tags, force),
+          (targetRepository, operationContext) =>
+            addFileDependency(targetRepository.path, sourcePath, dependencyPath, tags, force, operationContext),
           operationMessage('status.fileDependencyAdded', {
             source: sourcePath,
             dependency: dependencyPath
@@ -1141,7 +1167,8 @@ export function useRepositoryToolsController({
       onRemoveDependency: (sourcePath, dependencyPath, tags) =>
         runRepositoryMutation(
           'removeFileDependency',
-          (targetRepository) => removeFileDependency(targetRepository.path, sourcePath, dependencyPath, tags),
+          (targetRepository, operationContext) =>
+            removeFileDependency(targetRepository.path, sourcePath, dependencyPath, tags, operationContext),
           operationMessage('status.fileDependencyRemoved', {
             source: sourcePath,
             dependency: dependencyPath
@@ -1150,7 +1177,7 @@ export function useRepositoryToolsController({
       onDependencySync: (options) =>
         runRepositoryMutation(
           'dependencyDrivenSync',
-          (targetRepository) => syncRepository(targetRepository.path, options),
+          (targetRepository, operationContext) => syncRepository(targetRepository.path, options, operationContext),
           operationMessage('status.dependencyDrivenSyncCompleted', {
             count: options.rootFiles.length
           })
@@ -1174,32 +1201,40 @@ export function useRepositoryToolsController({
       accountRepositories: repositorySnapshots.map((snapshot) => snapshot.repository),
       authAccountBindings,
       onSetAuthAccountBinding: async (targetRepository, identity) => {
-        try {
-          setAuthActionsPending((count) => count + 1)
-          await setRepositoryAuthAccountBinding(targetRepository.path, identity?.userId, identity?.authUrl)
-          const nextBindings = authAccountBindings.filter(
-            (binding) => repositoryPathKey(binding.repositoryPath) !== repositoryPathKey(targetRepository.path)
-          )
-          if (identity) {
-            nextBindings.push({
-              repositoryPath: targetRepository.path,
-              authUrl: identity.authUrl,
-              userId: identity.userId
-            })
+        return withOperationRequest(createOperationContext(targetRepository.path), async (operationContext) => {
+          try {
+            setAuthActionsPending((count) => count + 1)
+            await setRepositoryAuthAccountBinding(
+              targetRepository.path,
+              identity?.userId,
+              identity?.authUrl,
+              operationContext
+            )
+            const nextBindings = authAccountBindings.filter(
+              (binding) => repositoryPathKey(binding.repositoryPath) !== repositoryPathKey(targetRepository.path)
+            )
+            if (identity) {
+              nextBindings.push({
+                repositoryPath: targetRepository.path,
+                authUrl: identity.authUrl,
+                userId: identity.userId
+              })
+            }
+            onAuthAccountBindingsChange(nextBindings)
+            await onAuthStateChange(targetRepository.serverUrl ?? targetRepository.remoteUrl, operationContext)
+            return true
+          } catch (error) {
+            notify(t('unableToUpdateRepositoryAccount'), readErrorMessage(error), 'warning')
+            return false
+          } finally {
+            setAuthActionsPending((count) => count - 1)
           }
-          onAuthAccountBindingsChange(nextBindings)
-          await onAuthStateChange(targetRepository.serverUrl ?? targetRepository.remoteUrl)
-          return true
-        } catch (error) {
-          notify(t('unableToUpdateRepositoryAccount'), readErrorMessage(error), 'warning')
-          return false
-        } finally {
-          setAuthActionsPending((count) => count - 1)
-        }
+        })
       },
-      onLoginAuthInteractive: (remoteUrl) => runAuthAction(() => loginAuthInteractive(remoteUrl), remoteUrl),
+      onLoginAuthInteractive: (remoteUrl) =>
+        runAuthAction((context) => loginAuthInteractive(remoteUrl, context), remoteUrl),
       onLoginAuthWithToken: (remoteUrl, token, tokenType, authUrl) =>
-        runAuthAction(() => loginAuthWithToken(remoteUrl, token, tokenType, authUrl), remoteUrl),
+        runAuthAction((context) => loginAuthWithToken(remoteUrl, token, tokenType, authUrl, context), remoteUrl),
       onLogoutAuthIdentity: (identity) => {
         if (
           !confirmLocalized(
@@ -1211,11 +1246,11 @@ export function useRepositoryToolsController({
         ) {
           return Promise.resolve(false)
         }
-        return runAuthAction(() => logoutAuthIdentity(identity.authUrl, identity.userId))
+        return runAuthAction((context) => logoutAuthIdentity(identity.authUrl, identity.userId, context))
       },
       onClearAuthIdentities: () => {
         if (!confirmLocalized(t('confirm.clearAuthIdentities'))) return Promise.resolve(false)
-        return runAuthAction(() => clearAuthIdentities())
+        return runAuthAction((context) => clearAuthIdentities(context))
       },
       onLoadMetadata: (scope, target, revision) => loadMetadata(repository.path, scope, target, revision),
       onVerifyPath: async (path, heal) => {
@@ -1223,8 +1258,8 @@ export function useRepositoryToolsController({
         let report: LoreDiagnosticReport | null = null
         const succeeded = await runRepositoryMutation(
           'healRepository',
-          async (targetRepository) => {
-            report = await verifyRepositoryPath(targetRepository.path, path, true)
+          async (targetRepository, operationContext) => {
+            report = await verifyRepositoryPath(targetRepository.path, path, true, operationContext)
           },
           operationMessage('status.repositoryPathHealed', {
             path: path || t('entireRepository')
@@ -1239,19 +1274,19 @@ export function useRepositoryToolsController({
       onPruneInstances: () =>
         runRepositoryMutation(
           'pruneRepositoryInstances',
-          (targetRepository) => pruneRepositoryInstances(targetRepository.path),
+          (targetRepository, operationContext) => pruneRepositoryInstances(targetRepository.path, operationContext),
           operationMessage('status.staleInstancesPruned')
         ),
       onUpdateInstancePath: () =>
         runRepositoryMutation(
           'updateRepositoryInstancePath',
-          (targetRepository) => updateRepositoryInstancePath(targetRepository.path),
+          (targetRepository, operationContext) => updateRepositoryInstancePath(targetRepository.path, operationContext),
           operationMessage('status.instancePathUpdated')
         ),
       onVerify: () => {
         void runRepositoryMutation(
           'verifyRepository',
-          (targetRepository) => verifyRepository(targetRepository.path),
+          (targetRepository, operationContext) => verifyRepository(targetRepository.path, operationContext),
           operationMessage('loreCoreFinishedReadConsistency_86d2')
         )
       },
@@ -1259,7 +1294,7 @@ export function useRepositoryToolsController({
         if (!confirmLocalized(t('confirm.runGc'))) return
         void runRepositoryMutation(
           'collectStorage',
-          (targetRepository) => collectRepositoryGarbage(targetRepository.path),
+          (targetRepository, operationContext) => collectRepositoryGarbage(targetRepository.path, operationContext),
           operationMessage('loreCoreFinishedCollectingUnreferencedContent')
         )
       },

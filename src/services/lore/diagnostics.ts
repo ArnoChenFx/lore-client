@@ -1,5 +1,6 @@
 /** 仓库校验、状态转储、实例管理与垃圾回收。 */
 import type {
+  OperationContext,
   LoreDiagnosticReport,
   LoreOperationResult,
   LoreRepositoryInstance,
@@ -8,21 +9,29 @@ import type {
 import { runOperation } from './core'
 import { normalizeDisplayPath, readBoolean, readString } from './utils'
 
-export async function verifyRepository(repositoryPath: string): Promise<LoreOperationResult> {
-  return runOperation('lore_repository_verify', { repositoryPath, path: null, heal: false })
+export async function verifyRepository(
+  repositoryPath: string,
+  operationContext?: OperationContext
+): Promise<LoreOperationResult> {
+  return runOperation('lore_repository_verify', { repositoryPath, path: null, heal: false }, operationContext)
 }
 
 /** 对指定路径执行只读验证或用户确认后的受控修复。 */
 export async function verifyRepositoryPath(
   repositoryPath: string,
   path: string,
-  heal = false
+  heal = false,
+  operationContext?: OperationContext
 ): Promise<LoreDiagnosticReport> {
-  const result = await runOperation('lore_repository_verify', {
-    repositoryPath,
-    path: path.trim() || null,
-    heal
-  })
+  const result = await runOperation(
+    'lore_repository_verify',
+    {
+      repositoryPath,
+      path: path.trim() || null,
+      heal
+    },
+    operationContext
+  )
   return parseDiagnosticReport(result)
 }
 
@@ -31,15 +40,20 @@ export async function verifyRepositoryFragment(
   repositoryPath: string,
   hash: string,
   context = '',
-  heal = false
+  heal = false,
+  operationContext?: OperationContext
 ): Promise<LoreDiagnosticReport> {
   return parseDiagnosticReport(
-    await runOperation('lore_repository_verify_fragment', {
-      repositoryPath,
-      hash,
-      context: context.trim() || null,
-      heal
-    })
+    await runOperation(
+      'lore_repository_verify_fragment',
+      {
+        repositoryPath,
+        hash,
+        context: context.trim() || null,
+        heal
+      },
+      operationContext
+    )
   )
 }
 
@@ -48,21 +62,29 @@ export async function dumpRepositoryState(
   repositoryPath: string,
   revision: string,
   path: string,
-  maxDepth: number
+  maxDepth: number,
+  operationContext?: OperationContext
 ): Promise<LoreDiagnosticReport> {
   return parseDiagnosticReport(
-    await runOperation('lore_repository_dump', {
-      repositoryPath,
-      revision: revision.trim() || null,
-      path: path.trim() || null,
-      maxDepth
-    })
+    await runOperation(
+      'lore_repository_dump',
+      {
+        repositoryPath,
+        revision: revision.trim() || null,
+        path: path.trim() || null,
+        maxDepth
+      },
+      operationContext
+    )
   )
 }
 
 /** 读取全部本地 Instance，并保留 Core 判定的 stale 标记。 */
-export async function listRepositoryInstances(repositoryPath: string): Promise<LoreRepositoryInstance[]> {
-  const result = await runOperation('lore_repository_instance_list', { repositoryPath })
+export async function listRepositoryInstances(
+  repositoryPath: string,
+  operationContext?: OperationContext
+): Promise<LoreRepositoryInstance[]> {
+  const result = await runOperation('lore_repository_instance_list', { repositoryPath }, operationContext)
   return result.events
     .filter((event) => event.tagName === 'repositoryInstance')
     .map((event) => ({
@@ -92,12 +114,18 @@ function readInstanceStaleness(value: unknown): LoreRepositoryInstanceStaleness 
   return 'unknown'
 }
 
-export async function pruneRepositoryInstances(repositoryPath: string): Promise<LoreOperationResult> {
-  return runOperation('lore_repository_instance_prune', { repositoryPath })
+export async function pruneRepositoryInstances(
+  repositoryPath: string,
+  operationContext?: OperationContext
+): Promise<LoreOperationResult> {
+  return runOperation('lore_repository_instance_prune', { repositoryPath }, operationContext)
 }
 
-export async function updateRepositoryInstancePath(repositoryPath: string): Promise<LoreOperationResult> {
-  return runOperation('lore_repository_instance_update_path', { repositoryPath })
+export async function updateRepositoryInstancePath(
+  repositoryPath: string,
+  operationContext?: OperationContext
+): Promise<LoreOperationResult> {
+  return runOperation('lore_repository_instance_update_path', { repositoryPath }, operationContext)
 }
 
 /** 把 Lore 诊断事件收敛成只含类型、摘要与详情的稳定展示结构。 */
@@ -123,6 +151,9 @@ export function parseDiagnosticReport(result: LoreOperationResult): LoreDiagnost
   return { operation: result.operation, durationMs: result.durationMs, findings }
 }
 
-export async function collectRepositoryGarbage(repositoryPath: string): Promise<LoreOperationResult> {
-  return runOperation('lore_repository_gc', { repositoryPath })
+export async function collectRepositoryGarbage(
+  repositoryPath: string,
+  operationContext?: OperationContext
+): Promise<LoreOperationResult> {
+  return runOperation('lore_repository_gc', { repositoryPath }, operationContext)
 }

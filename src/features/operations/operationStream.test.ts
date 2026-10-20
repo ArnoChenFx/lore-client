@@ -3,6 +3,24 @@ import { describe, expect, it } from 'bun:test'
 import { mergeLoreOperationStream } from './operationStream'
 
 describe('Lore operation stream reducer', () => {
+  it('never revives a terminal stream when progress arrives late', () => {
+    const progress = {
+      requestId: 'completed-request',
+      workspaceKey: null,
+      operationId: 'completed-request-stage',
+      operation: 'revision.sync',
+      phase: 'streaming' as const,
+      event: { tagName: 'revisionSyncProgress', data: { current: 4, total: 10 } },
+      cancellable: false
+    }
+    for (const phase of ['succeeded', 'failed', 'cancelled'] as const) {
+      const running = mergeLoreOperationStream([], progress, 1)
+      const completed = mergeLoreOperationStream(running, { ...progress, phase, event: undefined }, 2)
+
+      expect(mergeLoreOperationStream(completed, progress, 3)).toEqual(completed)
+    }
+  })
+
   it('merges lifecycle events and keeps only lightweight progress metrics', () => {
     let records = mergeLoreOperationStream(
       [],
@@ -64,77 +82,22 @@ describe('Lore operation stream reducer', () => {
     expect(records[0]).not.toHaveProperty('event')
   })
 
-  it('keeps accumulated progress on an old active stream while other streams complete', () => {
-    const event = {
-      requestId: 'long-clone',
-      workspaceKey: null,
-      operationId: 'long-clone',
-      operation: 'repository.clone',
+  it('rejects identity changes and does not regress queued/running after progress', () => {
+    const incoming = {
+      requestId: 'root',
+      workspaceKey: '/repo',
+      operationId: 'child',
+      operation: 'file.stage',
       phase: 'streaming' as const,
-      event: { tagName: 'cloneProgress', data: { current: 4, total: 10 } },
       cancellable: false
     }
-    let records = mergeLoreOperationStream([], event, 1)
-    for (let index = 0; index < 220; index += 1) {
-      records = mergeLoreOperationStream(
-        records,
-        {
-          requestId: `completed-${index}`,
-          workspaceKey: '/workspace/project',
-          operationId: `completed-${index}`,
-          operation: 'repository.sync',
-          phase: 'succeeded',
-          cancellable: false
-        },
-        index + 2
-      )
-    }
-    records = mergeLoreOperationStream(records, event, 500)
-    expect(records).toHaveLength(201)
-    expect(records[0]).toMatchObject({ operationId: 'long-clone', startedAt: 1, eventCount: 2, current: 4 })
-  })
-
-  it('trims a long stream on completion without evicting a newer completed record', () => {
-    let records = mergeLoreOperationStream(
-      [],
-      {
-        requestId: 'long-task',
-        workspaceKey: null,
-        operationId: 'long-task',
-        operation: 'repository.clone',
-        phase: 'running',
-        cancellable: false
-      },
-      1
-    )
-    for (let index = 0; index < 200; index += 1) {
-      records = mergeLoreOperationStream(
-        records,
-        {
-          requestId: `done-${index}`,
-          workspaceKey: '/workspace/project',
-          operationId: `done-${index}`,
-          operation: 'repository.sync',
-          phase: 'succeeded',
-          cancellable: false
-        },
-        index + 2
-      )
-    }
-    records = mergeLoreOperationStream(
-      records,
-      {
-        requestId: 'long-task',
-        workspaceKey: null,
-        operationId: 'long-task',
-        operation: 'repository.clone',
-        phase: 'succeeded',
-        cancellable: false
-      },
-      500
-    )
-    expect(records).toHaveLength(200)
-    expect(records.some((record) => record.operationId === 'long-task')).toBe(false)
-    expect(records.some((record) => record.operationId === 'done-0')).toBe(true)
+    const records = mergeLoreOperationStream([], incoming, 1)
+    for (const changed of [
+      { ...incoming, requestId: 'other' },
+      { ...incoming, workspaceKey: '/other' },
+      { ...incoming, operation: 'repository.sync' },
+      { ...incoming, phase: 'queued' as const }
+    ])
+      expect(mergeLoreOperationStream(records, changed, 2)).toBe(records)
   })
 })

@@ -1,5 +1,5 @@
 import type { LoreOperationStreamEvent, LoreOperationStreamRecord } from '../../types'
-import { selectRecentOperationHistory } from './operationHistory'
+import { isActiveStreamPhase } from './operationHistory'
 import { nextProgressRate, parseOperationProgress } from './operationProgress'
 
 /**
@@ -14,6 +14,17 @@ export function mergeLoreOperationStream(
   now: number
 ): LoreOperationStreamRecord[] {
   const existing = records.find((record) => record.operationId === incoming.operationId)
+  if (
+    existing &&
+    (existing.requestId !== incoming.requestId ||
+      existing.workspaceKey !== incoming.workspaceKey ||
+      existing.operation !== incoming.operation ||
+      !isActiveStreamPhase(existing.phase))
+  )
+    return records
+  // Delivery may be delayed; lifecycle stages never move backwards.
+  const rank = { queued: 0, running: 1, streaming: 2, succeeded: 3, failed: 3, cancelled: 3 }
+  if (existing && rank[incoming.phase] < rank[existing.phase]) return records
   const data = incoming.event?.data
   const metric = (key: string) => {
     const value = data?.[key]
@@ -40,8 +51,5 @@ export function mergeLoreOperationStream(
       : existing?.progressRate,
     cancellable: incoming.cancellable
   }
-  return selectRecentOperationHistory(
-    [],
-    [next, ...records.filter((record) => record.operationId !== incoming.operationId)]
-  ).streams
+  return [next, ...records.filter((record) => record.operationId !== incoming.operationId)]
 }

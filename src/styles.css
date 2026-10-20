@@ -12678,7 +12678,8 @@ body.is-resizing-panes {
   background: var(--bg-hover);
 }
 
-.operation-state.is-queued {
+.operation-state.is-queued,
+.operation-state.is-ended {
   color: var(--muted);
 }
 

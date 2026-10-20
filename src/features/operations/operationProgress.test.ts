@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
 
-import type { LoreOperationStreamRecord, OperationProgress } from '../../types'
+import type { LoreOperationStreamRecord, OperationProgress, OperationRecord } from '../../types'
 import {
   PROGRESS_STALL_MS,
   deriveProgressView,
   formatElapsed,
   nextProgressRate,
   parseOperationProgress,
-  selectActiveProgressRecord
+  selectActiveProgressRecord,
+  selectActiveOperationRecord
 } from './operationProgress'
 import { mergeLoreOperationStream } from './operationStream'
 
@@ -143,8 +144,46 @@ describe('selectActiveProgressRecord', () => {
     const newer = record({ operationId: 'b', startedAt: 2, progress: progress() })
     const finished = record({ operationId: 'c', startedAt: 3, phase: 'succeeded', progress: progress() })
     const silent = record({ operationId: 'd', startedAt: 4 })
-    expect(selectActiveProgressRecord([older, newer, finished, silent])?.operationId).toBe('b')
-    expect(selectActiveProgressRecord([finished, silent])).toBeNull()
+    expect(
+      selectActiveProgressRecord(
+        [older, newer, finished, silent],
+        [older, newer, finished, silent],
+        '/workspace/project'
+      )?.operationId
+    ).toBe('b')
+    expect(selectActiveProgressRecord([finished, silent], [finished, silent], '/workspace/project')).toBeNull()
+  })
+})
+
+describe('workspace progress and workflow labels', () => {
+  it('selects current workspace progress while other repositories and global work remain active', () => {
+    const a = record({ requestId: 'a', workspaceKey: '/repo/A', startedAt: 1, progress: progress() })
+    const b = record({ requestId: 'b', workspaceKey: '/repo/B', startedAt: 2, progress: progress() })
+    const global = record({ requestId: 'g', workspaceKey: null, startedAt: 3, progress: progress() })
+    const records = [a, b, global]
+    expect(selectActiveProgressRecord(records, records, '/repo/A')).toBe(a)
+    expect(selectActiveProgressRecord(records, records, '/repo/B')).toBe(b)
+    expect(selectActiveProgressRecord(records, records, null)).toBe(global)
+    expect(selectActiveProgressRecord(records, [b, global], '/repo/A')).toBeNull()
+    expect(selectActiveProgressRecord(records, records, '/repo/a')).toBeNull()
+  })
+
+  it('never labels background progress with another active command, even in the same workspace', () => {
+    const child = record({ requestId: 'background', progress: progress() })
+    const root: OperationRecord = {
+      requestId: 'foreground',
+      workspaceKey: child.workspaceKey,
+      labelKey: 'sync',
+      detail: { kind: 'text', text: '' },
+      status: 'running',
+      startedAt: 10
+    }
+    const active = [child, root]
+    expect(selectActiveOperationRecord([root], active, child.workspaceKey, child.requestId)).toBeNull()
+    expect(selectActiveOperationRecord([root], active, child.workspaceKey)).toBe(root)
+    const matching = { ...root, requestId: child.requestId, labelKey: 'push', startedAt: 1 }
+    expect(selectActiveOperationRecord([root, matching], active, child.workspaceKey, child.requestId)).toBe(matching)
+    expect(selectActiveOperationRecord([root], active, '/other')).toBeNull()
   })
 })
 

@@ -19,6 +19,7 @@ describe('operation center stream localization', () => {
   it('localizes Lore operation and event identifiers instead of exposing protocol names', () => {
     const html = renderToStaticMarkup(
       <OperationCenter
+        activeRequests={[]}
         operations={[]}
         streams={[
           {
@@ -46,6 +47,110 @@ describe('operation center stream localization', () => {
     expect(html).not.toMatch(/· end(?:<|$)/)
     expect(html).not.toContain('实时 Lore 事件流')
     expect(html).not.toContain('固定 Lore 没有通用长操作取消接口')
+  })
+
+  it('shows global background requests even before they emit progress or user command history', () => {
+    const html = renderToStaticMarkup(
+      <OperationCenter
+        activeRequests={[{ requestId: 'background', workspaceKey: null }]}
+        operations={[]}
+        streams={[]}
+        onClear={() => undefined}
+        onClose={() => undefined}
+      />
+    )
+    expect(html).toContain('操作进行中')
+    expect(html).toContain('全局')
+    expect(html).not.toContain('dialog-empty')
+    expect(html).not.toContain('background')
+  })
+
+  it('shows an ended request with missing final progress neutrally without claiming success', () => {
+    const html = renderToStaticMarkup(
+      <OperationCenter
+        activeRequests={[]}
+        operations={[]}
+        streams={[
+          {
+            requestId: 'finished-root',
+            workspaceKey: '/workspace/project',
+            operationId: 'child',
+            operation: 'file.stage',
+            phase: 'streaming',
+            startedAt: 0,
+            eventCount: 1,
+            cancellable: false
+          }
+        ]}
+        onClear={() => undefined}
+        onClose={() => undefined}
+      />
+    )
+    expect(html).toContain('/workspace/project')
+    expect(html).toContain('已结束')
+    expect(html).toContain('暂无最终进度结果')
+    expect(html).toContain('is-ended')
+    expect(html).not.toContain('is-spinning')
+    expect(html).not.toContain('is-succeeded')
+  })
+
+  it('shows an abandoned user command as ended after its last request lease closes', () => {
+    const html = renderToStaticMarkup(
+      <OperationCenter
+        activeRequests={[]}
+        streams={[]}
+        operations={[
+          {
+            requestId: 'abandoned',
+            workspaceKey: '/repo',
+            labelKey: 'sync',
+            status: 'running',
+            startedAt: 0,
+            detail: { kind: 'text', text: 'last known detail' }
+          }
+        ]}
+        onClear={() => undefined}
+        onClose={() => undefined}
+      />
+    )
+    expect(html).toContain('已结束')
+    expect(html).toContain('is-ended')
+    expect(html).not.toContain('is-spinning')
+    expect(html).not.toContain('is-succeeded')
+  })
+
+  it('keeps true child failure visible when the root completed successfully', () => {
+    const owner = { requestId: 'root', workspaceKey: '/repo' }
+    const html = renderToStaticMarkup(
+      <OperationCenter
+        activeRequests={[]}
+        operations={[
+          {
+            ...owner,
+            labelKey: 'sync',
+            detail: { kind: 'text', text: 'done after retry' },
+            status: 'succeeded',
+            startedAt: 0
+          }
+        ]}
+        streams={[
+          {
+            ...owner,
+            operationId: 'failed-attempt',
+            operation: 'file.stage',
+            phase: 'failed',
+            startedAt: 0,
+            eventCount: 1,
+            cancellable: false
+          }
+        ]}
+        onClear={() => undefined}
+        onClose={() => undefined}
+      />
+    )
+    expect(html).toContain('is-failed')
+    expect(html).toContain('is-succeeded')
+    expect(html).not.toContain('is-ended')
   })
 
   it('retranslates stream labels when the application language changes', async () => {

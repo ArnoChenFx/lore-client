@@ -9,11 +9,21 @@ import {
   setSharedStoreUseAutomatically
 } from '../../services/lore'
 import { readErrorMessage } from '../../shared/lib'
-import type { ApplicationMode, LoreSharedStoreInfo, LoreSharedStoreRegistry, OperationDetail } from '../../types'
+import type {
+  ApplicationMode,
+  LoreSharedStoreInfo,
+  LoreSharedStoreRegistry,
+  OperationContext,
+  OperationDetail
+} from '../../types'
 import { operationMessage, type ActiveOperation } from '../operations'
 import type { AppNotify } from './controllerTypes'
 
-type BeginOperation = (labelKey: string, detail: string | OperationDetail) => ActiveOperation
+type BeginOperation = (
+  labelKey: string,
+  detail: string | OperationDetail,
+  workspaceKey?: string | null
+) => ActiveOperation
 type FinishOperation = (operation: ActiveOperation, succeeded: boolean, detail: string | OperationDetail) => void
 
 interface UseSharedStoreControllerOptions {
@@ -58,35 +68,41 @@ export function useSharedStoreController({
     }
   }, [])
 
-  const readInfo = useCallback(async () => {
-    const generation = ++infoGeneration.current
-    const isCurrent = () => mounted.current && generation === infoGeneration.current
-    // 先领取提交权再跨微任务；较早调用不能在写操作开始后重新取得有效代际。
-    await Promise.resolve()
-    if (!isCurrent()) return
-    if (applicationMode !== 'tauri') {
-      setInfo(null)
-      setError(t('startDesktopAppManageSharedStores'))
-      setLoading(false)
-      return
-    }
-    setLoading(true)
-    setError(null)
-    try {
-      const next = await loadSharedStoreInfo()
-      if (isCurrent()) setInfo(next)
-    } catch (refreshError) {
-      if (isCurrent()) setError(readErrorMessage(refreshError))
-    } finally {
-      if (isCurrent()) setLoading(false)
-    }
-  }, [applicationMode])
+  const readInfo = useCallback(
+    async (operationContext?: OperationContext) => {
+      const generation = ++infoGeneration.current
+      const isCurrent = () => mounted.current && generation === infoGeneration.current
+      // 先领取提交权再跨微任务；较早调用不能在写操作开始后重新取得有效代际。
+      await Promise.resolve()
+      if (!isCurrent()) return
+      if (applicationMode !== 'tauri') {
+        setInfo(null)
+        setError(t('startDesktopAppManageSharedStores'))
+        setLoading(false)
+        return
+      }
+      setLoading(true)
+      setError(null)
+      try {
+        const next = await loadSharedStoreInfo(operationContext)
+        if (isCurrent()) setInfo(next)
+      } catch (refreshError) {
+        if (isCurrent()) setError(readErrorMessage(refreshError))
+      } finally {
+        if (isCurrent()) setLoading(false)
+      }
+    },
+    [applicationMode]
+  )
 
   /** Settings 的存储分类和 Clone 显式刷新同一设备快照，弹窗关闭不使它失效。 */
-  const refresh = useCallback(async () => {
-    if (!mounted.current || mutationInFlight.current) return
-    await readInfo()
-  }, [readInfo])
+  const refresh = useCallback(
+    async (operationContext?: OperationContext) => {
+      if (!mounted.current || mutationInFlight.current) return
+      await readInfo(operationContext)
+    },
+    [readInfo]
+  )
 
   const invalidateRegistry = useCallback(() => {
     registryGeneration.current += 1
@@ -160,9 +176,9 @@ export function useSharedStoreController({
       if (!beginMutation()) return
       const operation = beginOperation('createSharedStore', remoteUrl)
       try {
-        await createSharedStore(remoteUrl, parentPath, true)
+        await createSharedStore(remoteUrl, parentPath, true, operation.context)
         if (!mounted.current) return
-        await readInfo()
+        await readInfo(operation.context)
         if (!mounted.current) return
         finishOperation(operation, true, remoteUrl)
         notify(t('sharedStoreCreated'), remoteUrl, 'success')
@@ -173,6 +189,7 @@ export function useSharedStoreController({
         finishOperation(operation, false, message)
         notify(t('sharedStoreCreateFailed'), message, 'warning')
       } finally {
+        operation.release()
         mutationInFlight.current = false
         if (mounted.current) setBusy(false)
       }
@@ -191,9 +208,9 @@ export function useSharedStoreController({
       if (!beginMutation()) return
       const operation = beginOperation('configureSharedStore', t('sharedStore'))
       try {
-        await setSharedStoreUseAutomatically(enabled)
+        await setSharedStoreUseAutomatically(enabled, operation.context)
         if (!mounted.current) return
-        await readInfo()
+        await readInfo(operation.context)
         if (!mounted.current) return
         finishOperation(operation, true, operationMessage('status.sharedStoreAutomaticChanged', { enabled }))
       } catch (updateError) {
@@ -203,6 +220,7 @@ export function useSharedStoreController({
         finishOperation(operation, false, message)
         notify(t('sharedStoreUpdateFailed'), message, 'warning')
       } finally {
+        operation.release()
         mutationInFlight.current = false
         if (mounted.current) setBusy(false)
       }

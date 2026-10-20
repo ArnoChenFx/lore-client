@@ -1,38 +1,52 @@
-import type { LoreOperationStreamRecord, OperationRecord } from '../../types'
+import type { LoreOperationStreamRecord, OperationContext, OperationRecord } from '../../types'
 
-/** 操作中心最多保留的已完成记录数量；活跃任务不受历史上限影响。 */
+/** Completed requests share one history budget; every stage of a live request stays available. */
 export const MAX_OPERATION_HISTORY = 200
 
-/** 排队和流式进度也属于尚未完成的任务。 */
-export function isActiveOperationStream(record: LoreOperationStreamRecord): boolean {
-  return record.phase === 'queued' || record.phase === 'running' || record.phase === 'streaming'
+export function isOperationRequestActive(
+  context: OperationContext,
+  activeRequests: readonly OperationContext[]
+): boolean {
+  return activeRequests.some(
+    (active) => active.requestId === context.requestId && active.workspaceKey === context.workspaceKey
+  )
 }
 
-/**
- * 从普通操作与 Lore 实时流中选择全局最新的记录。
- *
- * 仅裁剪已完成记录；活跃任务必须保留身份和已累积的进度，直到收到完成事件。
- * 两类已完成记录按统一开始时间选择最新 200 条，返回值仍保留各自原有顺序。
- */
-export function selectRecentOperationHistory(operations: OperationRecord[], streams: LoreOperationStreamRecord[]) {
+export function isActiveStreamPhase(phase: LoreOperationStreamRecord['phase']): boolean {
+  return phase === 'queued' || phase === 'running' || phase === 'streaming'
+}
+
+export function isActiveOperationStream(
+  record: LoreOperationStreamRecord,
+  activeRequests: readonly OperationContext[]
+): boolean {
+  return isActiveStreamPhase(record.phase) && isOperationRequestActive(record, activeRequests)
+}
+
+/** Keep live request stages together, including terminal children while their root continues. */
+export function selectRecentOperationHistory(
+  operations: OperationRecord[],
+  streams: LoreOperationStreamRecord[],
+  activeRequests: readonly OperationContext[]
+) {
   const selected = [
     ...operations
-      .filter((record) => record.status !== 'running')
-      .map((record) => ({ kind: 'operation' as const, key: record.id, startedAt: record.startedAt })),
+      .filter((record) => !isOperationRequestActive(record, activeRequests))
+      .map((record) => ({ kind: 'operation' as const, key: record.requestId, startedAt: record.startedAt })),
     ...streams
-      .filter((record) => !isActiveOperationStream(record))
+      .filter((record) => !isOperationRequestActive(record, activeRequests))
       .map((record) => ({ kind: 'stream' as const, key: record.operationId, startedAt: record.startedAt }))
   ]
     .sort((left, right) => right.startedAt - left.startedAt)
     .slice(0, MAX_OPERATION_HISTORY)
-
-  const operationIds = new Set(
-    selected.filter((record) => record.kind === 'operation').map((record) => record.key as number)
-  )
-  const streamIds = new Set(selected.filter((record) => record.kind === 'stream').map((record) => record.key as string))
-
+  const operationIds = new Set(selected.filter((record) => record.kind === 'operation').map((record) => record.key))
+  const streamIds = new Set(selected.filter((record) => record.kind === 'stream').map((record) => record.key))
   return {
-    operations: operations.filter((record) => record.status === 'running' || operationIds.has(record.id)),
-    streams: streams.filter((record) => isActiveOperationStream(record) || streamIds.has(record.operationId))
+    operations: operations.filter(
+      (record) => isOperationRequestActive(record, activeRequests) || operationIds.has(record.requestId)
+    ),
+    streams: streams.filter(
+      (record) => isOperationRequestActive(record, activeRequests) || streamIds.has(record.operationId)
+    )
   }
 }

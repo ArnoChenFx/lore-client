@@ -5,7 +5,8 @@ import { MAX_OPERATION_HISTORY, selectRecentOperationHistory } from './operation
 
 function operation(id: number, startedAt = id): OperationRecord {
   return {
-    id,
+    requestId: `command-${id}`,
+    workspaceKey: '/workspace/project',
     labelKey: 'sync',
     detail: { kind: 'i18n', key: 'status.completed', values: {} },
     status: 'succeeded',
@@ -32,21 +33,21 @@ describe('operation history limit', () => {
       operation(MAX_OPERATION_HISTORY + 5 - index)
     )
 
-    const limited = selectRecentOperationHistory(records, []).operations
+    const limited = selectRecentOperationHistory(records, [], []).operations
 
     expect(limited).toHaveLength(MAX_OPERATION_HISTORY)
-    expect(limited[0]?.id).toBe(MAX_OPERATION_HISTORY + 5)
-    expect(limited.at(-1)?.id).toBe(6)
+    expect(limited[0]?.requestId).toBe(`command-${MAX_OPERATION_HISTORY + 5}`)
+    expect(limited.at(-1)?.requestId).toBe('command-6')
   })
 
   it('keeps only the latest 200 entries across operations and live streams', () => {
     const operations = Array.from({ length: 150 }, (_, index) => operation(index + 1, index + 1))
     const streams = Array.from({ length: 100 }, (_, index) => stream(index + 151, index + 151))
 
-    const selected = selectRecentOperationHistory(operations, streams)
+    const selected = selectRecentOperationHistory(operations, streams, [])
 
     expect(selected.operations).toHaveLength(100)
-    expect(selected.operations[0]?.id).toBe(51)
+    expect(selected.operations[0]?.requestId).toBe('command-51')
     expect(selected.streams).toHaveLength(100)
     expect(selected.operations.length + selected.streams.length).toBe(MAX_OPERATION_HISTORY)
   })
@@ -55,11 +56,11 @@ describe('operation history limit', () => {
     const active = { ...operation(0), status: 'running' as const }
     const queued = { ...stream(0), phase: 'queued' as const }
     const completed = Array.from({ length: MAX_OPERATION_HISTORY + 5 }, (_, index) => operation(index + 1))
-    const selected = selectRecentOperationHistory([active, ...completed], [queued])
+    const selected = selectRecentOperationHistory([active, ...completed], [queued], [active, queued])
 
     expect(selected.operations).toContain(active)
     expect(selected.streams).toEqual([queued])
     expect(selected.operations.filter((record) => record.status !== 'running')).toHaveLength(MAX_OPERATION_HISTORY)
-    expect(selected.operations.map((record) => record.id)).not.toContain(5)
+    expect(selected.operations.map((record) => record.requestId)).not.toContain('command-5')
   })
 })

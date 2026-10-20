@@ -2,7 +2,7 @@
 import { Channel, isTauri } from '@tauri-apps/api/core'
 
 import { t } from '../../i18n'
-import type { BinaryFilePreview } from '../../types'
+import type { OperationContext, BinaryFilePreview } from '../../types'
 import { invokeCommand } from './core'
 import { DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES, normalizeWorkspaceTextLimit } from './utils'
 
@@ -18,19 +18,24 @@ export async function loadBinaryFilePreview(
   path: string,
   revision?: string,
   metadataOnly = false,
-  previewLimitMiB = 20
+  previewLimitMiB = 20,
+  operationContext?: OperationContext
 ): Promise<BinaryFilePreview> {
   const assembler = createBinaryPreviewStreamAssembler()
   const onChunk = new Channel<BinaryPreviewStreamMessage>((message) => assembler.accept(message))
   try {
-    await invokeCommand<void>('lore_file_preview_stream', {
-      repositoryPath,
-      path,
-      revision,
-      metadataOnly,
-      previewLimitMib: previewLimitMiB,
-      onChunk
-    })
+    await invokeCommand<void>(
+      'lore_file_preview_stream',
+      {
+        repositoryPath,
+        path,
+        revision,
+        metadataOnly,
+        previewLimitMib: previewLimitMiB,
+        onChunk
+      },
+      operationContext
+    )
     assembler.complete()
   } catch (error) {
     // 统一让下方等待中的 Promise 传播失败，避免 invoke 失败时产生一个无人消费的
@@ -218,16 +223,21 @@ export function decodeBinaryFilePreviewEnvelope(envelope: ArrayBuffer): BinaryFi
 export async function loadWorkspaceText(
   repositoryPath: string,
   path: string,
-  maxBytes = DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES
+  maxBytes = DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES,
+  operationContext?: OperationContext
 ): Promise<string> {
   if (!isTauri()) {
     throw new Error(t('browserDemoMode'))
   }
-  return invokeCommand<string>('lore_read_workspace_text', {
-    repositoryPath,
-    relativePath: path,
-    maxBytes: normalizeWorkspaceTextLimit(maxBytes)
-  })
+  return invokeCommand<string>(
+    'lore_read_workspace_text',
+    {
+      repositoryPath,
+      relativePath: path,
+      maxBytes: normalizeWorkspaceTextLimit(maxBytes)
+    },
+    operationContext
+  )
 }
 
 /**
@@ -240,15 +250,20 @@ export async function loadRevisionText(
   repositoryPath: string,
   revision: string,
   path: string,
-  maxBytes = DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES
+  maxBytes = DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES,
+  operationContext?: OperationContext
 ): Promise<string> {
   if (!isTauri()) {
     throw new Error(t('browserDemoMode'))
   }
-  return invokeCommand<string>('lore_read_revision_text', {
-    repositoryPath,
-    revision,
-    relativePath: path,
-    maxBytes: normalizeWorkspaceTextLimit(maxBytes)
-  })
+  return invokeCommand<string>(
+    'lore_read_revision_text',
+    {
+      repositoryPath,
+      revision,
+      relativePath: path,
+      maxBytes: normalizeWorkspaceTextLimit(maxBytes)
+    },
+    operationContext
+  )
 }

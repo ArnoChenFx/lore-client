@@ -1,5 +1,6 @@
 /** 文件依赖关系的增删查，以及依赖图的收集与加载。 */
 import type {
+  OperationContext,
   LoreDependencyGraphEdge,
   LoreDependencyGraphNode,
   LoreDependencyGraphQuery,
@@ -8,6 +9,7 @@ import type {
   LoreEvent,
   LoreOperationResult
 } from '../../types'
+import { createOperationContext, withOperationRequest } from '../operationRequests'
 import { runOperation } from './core'
 import { readNumber, readString } from './utils'
 
@@ -17,15 +19,20 @@ export async function addFileDependency(
   sourcePath: string,
   dependencyPath: string,
   tags: string[],
-  force = false
+  force = false,
+  operationContext?: OperationContext
 ): Promise<LoreOperationResult> {
-  return runOperation('lore_file_dependency_add', {
-    repositoryPath,
-    sourcePath,
-    dependencyPath,
-    tags,
-    force
-  })
+  return runOperation(
+    'lore_file_dependency_add',
+    {
+      repositoryPath,
+      sourcePath,
+      dependencyPath,
+      tags,
+      force
+    },
+    operationContext
+  )
 }
 
 /** 移除一条精确依赖边；传入的标签决定移除范围。 */
@@ -33,14 +40,19 @@ export async function removeFileDependency(
   repositoryPath: string,
   sourcePath: string,
   dependencyPath: string,
-  tags: string[]
+  tags: string[],
+  operationContext?: OperationContext
 ): Promise<LoreOperationResult> {
-  return runOperation('lore_file_dependency_remove', {
-    repositoryPath,
-    sourcePath,
-    dependencyPath,
-    tags
-  })
+  return runOperation(
+    'lore_file_dependency_remove',
+    {
+      repositoryPath,
+      sourcePath,
+      dependencyPath,
+      tags
+    },
+    operationContext
+  )
 }
 
 /** 查询当前或指定不可变 Revision 的依赖关系。 */
@@ -49,17 +61,22 @@ export async function listFileDependencies(
   paths: string[],
   options: LoreDependencySelection,
   reverse = false,
-  revision?: string
+  revision?: string,
+  operationContext?: OperationContext
 ): Promise<LoreDependencyQuery> {
-  const result = await runOperation('lore_file_dependency_list', {
-    repositoryPath,
-    paths,
-    revision: revision?.trim() || null,
-    recursive: options.recursive,
-    reverse,
-    tags: options.tags,
-    depthLimit: options.depthLimit
-  })
+  const result = await runOperation(
+    'lore_file_dependency_list',
+    {
+      repositoryPath,
+      paths,
+      revision: revision?.trim() || null,
+      recursive: options.recursive,
+      reverse,
+      tags: options.tags,
+      depthLimit: options.depthLimit
+    },
+    operationContext
+  )
   return parseFileDependencies(result.events, reverse, options.recursive, options.depthLimit)
 }
 
@@ -203,21 +220,25 @@ export async function loadFileDependencyGraph(
   rootPaths: string[],
   options: LoreDependencySelection,
   reverse = false,
-  revision = ''
+  revision = '',
+  operationContext?: OperationContext
 ): Promise<LoreDependencyGraphQuery> {
-  return collectFileDependencyGraph(rootPaths, options, reverse, revision, (paths) =>
-    listFileDependencies(
-      repositoryPath,
-      paths,
-      {
-        rootFiles: paths,
-        tags: options.tags,
-        recursive: false,
-        // 非递归查询不会消费深度，但显式传 1 可以准确表达“只读直连边”的意图。
-        depthLimit: 1
-      },
-      reverse,
-      revision
+  return withOperationRequest(operationContext ?? createOperationContext(repositoryPath), async (requestContext) => {
+    return collectFileDependencyGraph(rootPaths, options, reverse, revision, (paths) =>
+      listFileDependencies(
+        repositoryPath,
+        paths,
+        {
+          rootFiles: paths,
+          tags: options.tags,
+          recursive: false,
+          // 非递归查询不会消费深度，但显式传 1 可以准确表达“只读直连边”的意图。
+          depthLimit: 1
+        },
+        reverse,
+        revision,
+        requestContext
+      )
     )
-  )
+  })
 }

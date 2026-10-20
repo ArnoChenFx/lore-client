@@ -117,21 +117,21 @@ export function useAppToolbarActions({
       if (action === 'verify') {
         return runRepositoryMutation(
           'verifyRepository',
-          (repository) => verifyRepository(repository.path),
+          (repository, operationContext) => verifyRepository(repository.path, operationContext),
           operationMessage('loreCoreFinishedReadConsistency_86d2')
         )
       }
       if ((action === 'sync' || action === 'hydrate') && applicationMode === 'tauri') {
         return runRepositoryMutation(
           action === 'hydrate' ? 'fetchContent' : 'sync',
-          (repository) => syncRepository(repository.path),
+          (repository, operationContext) => syncRepository(repository.path, undefined, operationContext),
           t('workingDirectoryBranchRequiredContent_6d44')
         )
       }
       if (action === 'push' && applicationMode === 'tauri') {
         return runRepositoryMutation(
           'push',
-          (repository) => pushBranch(repository.path, repository.branch),
+          (repository, operationContext) => pushBranch(repository.path, repository.branch, operationContext),
           operationMessage('remoteBranchAdvanced')
         )
       }

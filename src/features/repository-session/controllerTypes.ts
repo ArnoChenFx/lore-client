@@ -1,4 +1,4 @@
-import type { NavigationView, OperationDetail, Repository, ToastMessage } from '../../types'
+import type { NavigationView, OperationContext, OperationDetail, Repository, ToastMessage } from '../../types'
 
 /** 跨领域控制器使用的通知边界，不暴露 App 的 Toast 状态实现。 */
 export type AppNotify = (title: string, detail: string, tone?: ToastMessage['tone']) => void
@@ -11,7 +11,7 @@ export type AppNotify = (title: string, detail: string, tone?: ToastMessage['ton
  */
 export type RunRepositoryMutation = (
   labelKey: string,
-  task: (repository: Repository) => Promise<unknown>,
+  task: (repository: Repository, context: OperationContext) => Promise<unknown>,
   successDetail: string | OperationDetail,
   nextView?: NavigationView
 ) => Promise<boolean>

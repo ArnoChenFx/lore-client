@@ -1,4 +1,11 @@
-import type { LoreOperationStreamRecord, OperationProgress, OperationProgressUnit } from '../../types'
+import type {
+  LoreOperationStreamRecord,
+  OperationContext,
+  OperationProgress,
+  OperationProgressUnit,
+  OperationRecord
+} from '../../types'
+import { isActiveOperationStream, isOperationRequestActive } from './operationHistory'
 
 /** 超过该时长没有新快照就提示“可能卡住”：Rust 端只在数据变化时发快照，静默即无进展。 */
 export const PROGRESS_STALL_MS = 15_000
@@ -13,9 +20,6 @@ export const STAGE_PROGRESS_TAG = 'fileStageProgress'
 const RATE_SMOOTHING = 0.3
 
 const PROGRESS_UNITS: readonly OperationProgressUnit[] = ['files', 'bytes', 'fragments']
-
-/** 仍占用全局操作计数、可以显示进度的流阶段。 */
-const ACTIVE_PHASES = new Set<LoreOperationStreamRecord['phase']>(['queued', 'running', 'streaming'])
 
 function nonNegative(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
@@ -66,11 +70,34 @@ export function nextProgressRate(
 
 /** 当前应显示在状态栏上的流：仍在进行、已有归一化进度，多个时取最近开始的一个。 */
 export function selectActiveProgressRecord(
-  records: readonly LoreOperationStreamRecord[]
+  records: readonly LoreOperationStreamRecord[],
+  activeRequests: readonly OperationContext[],
+  workspaceKey: string | null
 ): LoreOperationStreamRecord | null {
   let selected: LoreOperationStreamRecord | null = null
   for (const record of records) {
-    if (!record.progress || !ACTIVE_PHASES.has(record.phase)) continue
+    if (record.workspaceKey !== workspaceKey || !record.progress || !isActiveOperationStream(record, activeRequests))
+      continue
+    if (!selected || record.startedAt > selected.startedAt) selected = record
+  }
+  return selected
+}
+
+/** Progress labels belong to the selected request; another workspace or workflow cannot lend its label. */
+export function selectActiveOperationRecord(
+  operations: readonly OperationRecord[],
+  activeRequests: readonly OperationContext[],
+  workspaceKey: string | null,
+  requestId?: string
+): OperationRecord | null {
+  let selected: OperationRecord | null = null
+  for (const record of operations) {
+    if (
+      record.workspaceKey !== workspaceKey ||
+      (requestId !== undefined && record.requestId !== requestId) ||
+      !isOperationRequestActive(record, activeRequests)
+    )
+      continue
     if (!selected || record.startedAt > selected.startedAt) selected = record
   }
   return selected

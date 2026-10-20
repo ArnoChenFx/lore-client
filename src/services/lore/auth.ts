@@ -3,8 +3,9 @@ import { isTauri } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 
-import type { LoreAuthIdentity, LoreEvent, LoreOperationResult } from '../../types'
+import type { OperationContext, LoreAuthIdentity, LoreEvent, LoreOperationResult } from '../../types'
 import { invokeLogged } from '../logging'
+import { createOperationContext, withOperationRequest } from '../operationRequests'
 import { runOperation } from './core'
 import { readNumber, readString } from './utils'
 
@@ -38,50 +39,59 @@ export async function subscribeRemoteAuthenticationRequired(
  * userId 去重。显示名解析只是增强信息：某个端点的 Token 已过期、损坏或暂时不可读
  * 时仍返回基础账户，界面继续明确回退到不可变 userId。
  */
-export async function listAuthIdentities(): Promise<LoreAuthIdentity[]> {
-  const result = await runOperation('lore_auth_list', {})
-  const identities = parseAuthIdentities(result.events)
-  const identitiesByAuthUrl = new Map<string, Set<string>>()
-  for (const identity of identities) {
-    const userIds = identitiesByAuthUrl.get(identity.authUrl) ?? new Set<string>()
-    userIds.add(identity.userId)
-    identitiesByAuthUrl.set(identity.authUrl, userIds)
-  }
+export async function listAuthIdentities(operationContext?: OperationContext): Promise<LoreAuthIdentity[]> {
+  return withOperationRequest(operationContext ?? createOperationContext(null), async (requestContext) => {
+    const result = await runOperation('lore_auth_list', {}, requestContext)
+    const identities = parseAuthIdentities(result.events)
+    const identitiesByAuthUrl = new Map<string, Set<string>>()
+    for (const identity of identities) {
+      const userIds = identitiesByAuthUrl.get(identity.authUrl) ?? new Set<string>()
+      userIds.add(identity.userId)
+      identitiesByAuthUrl.set(identity.authUrl, userIds)
+    }
 
-  const resolvedNames = new Map<string, string>()
-  await Promise.all(
-    [...identitiesByAuthUrl].map(async ([authUrl, userIds]) => {
-      try {
-        const userInfo = await runOperation('lore_auth_local_user_info', {
-          authUrl,
-          userIds: [...userIds]
-        })
-        for (const event of userInfo.events) {
-          if (event.tagName !== 'authUserInfo') continue
-          const userId = readString(event.data.id)
-          const displayName = readString(event.data.name)
-          if (userId && displayName && displayName !== userId) {
-            resolvedNames.set(authIdentityKey(authUrl, userId), displayName)
+    const resolvedNames = new Map<string, string>()
+    await Promise.all(
+      [...identitiesByAuthUrl].map(async ([authUrl, userIds]) => {
+        try {
+          const userInfo = await runOperation(
+            'lore_auth_local_user_info',
+            {
+              authUrl,
+              userIds: [...userIds]
+            },
+            requestContext
+          )
+          for (const event of userInfo.events) {
+            if (event.tagName !== 'authUserInfo') continue
+            const userId = readString(event.data.id)
+            const displayName = readString(event.data.name)
+            if (userId && displayName && displayName !== userId) {
+              resolvedNames.set(authIdentityKey(authUrl, userId), displayName)
+            }
           }
+        } catch {
+          /*
+           * 名称解析不能改变账户可用性。失败详情已经由底层操作流记录；这里保留账户 ID，
+           * 让退出登录、仓库绑定和重新认证仍然可用。
+           */
         }
-      } catch {
-        /*
-         * 名称解析不能改变账户可用性。失败详情已经由底层操作流记录；这里保留账户 ID，
-         * 让退出登录、仓库绑定和重新认证仍然可用。
-         */
-      }
-    })
-  )
+      })
+    )
 
-  return identities.map((identity) => ({
-    ...identity,
-    displayName: resolvedNames.get(authIdentityKey(identity.authUrl, identity.userId))
-  }))
+    return identities.map((identity) => ({
+      ...identity,
+      displayName: resolvedNames.get(authIdentityKey(identity.authUrl, identity.userId))
+    }))
+  })
 }
 
 /** 由 Lore/Rust 打开系统浏览器并完成交互认证。 */
-export async function loginAuthInteractive(remoteUrl: string): Promise<LoreOperationResult> {
-  return runOperation('lore_auth_login_interactive', { remoteUrl })
+export async function loginAuthInteractive(
+  remoteUrl: string,
+  operationContext?: OperationContext
+): Promise<LoreOperationResult> {
+  return runOperation('lore_auth_login_interactive', { remoteUrl }, operationContext)
 }
 
 /**
@@ -93,22 +103,31 @@ export async function loginAuthWithToken(
   remoteUrl: string,
   token: string,
   tokenType: string,
-  authUrl?: string
+  authUrl?: string,
+  operationContext?: OperationContext
 ): Promise<LoreOperationResult> {
-  return runOperation('lore_auth_login_with_token', {
-    remoteUrl,
-    token,
-    tokenType,
-    authUrl: authUrl?.trim() || null
-  })
+  return runOperation(
+    'lore_auth_login_with_token',
+    {
+      remoteUrl,
+      token,
+      tokenType,
+      authUrl: authUrl?.trim() || null
+    },
+    operationContext
+  )
 }
 
-export async function logoutAuthIdentity(authUrl: string, userId: string): Promise<LoreOperationResult> {
-  return runOperation('lore_auth_logout', { authUrl, userId })
+export async function logoutAuthIdentity(
+  authUrl: string,
+  userId: string,
+  operationContext?: OperationContext
+): Promise<LoreOperationResult> {
+  return runOperation('lore_auth_logout', { authUrl, userId }, operationContext)
 }
 
-export async function clearAuthIdentities(): Promise<LoreOperationResult> {
-  return runOperation('lore_auth_clear', {})
+export async function clearAuthIdentities(operationContext?: OperationContext): Promise<LoreOperationResult> {
+  return runOperation('lore_auth_clear', {}, operationContext)
 }
 
 /**
@@ -117,25 +136,37 @@ export async function clearAuthIdentities(): Promise<LoreOperationResult> {
  * 这里只传递仓库路径，不传递 Token 或账户资料；Rust 会重新校验路径，并让下一次
  * Status 读取按最新 Token Store 与仓库账户绑定重新建立远端连接。
  */
-export async function refreshRepositoryAuthenticationContexts(repositoryPaths: string[]): Promise<void> {
+export async function refreshRepositoryAuthenticationContexts(
+  repositoryPaths: string[],
+  operationContext?: OperationContext
+): Promise<void> {
   const normalizedPaths = [...new Set(repositoryPaths.filter((path) => path.trim().length > 0))]
   if (normalizedPaths.length === 0) return
-  await invokeLogged('lore_auth_repository_contexts_refresh', {
-    repositoryPaths: normalizedPaths
-  })
+  await invokeLogged(
+    'lore_auth_repository_contexts_refresh',
+    {
+      repositoryPaths: normalizedPaths
+    },
+    operationContext
+  )
 }
 
 /** 立即切换仓库认证身份；偏好持久化由调用方在命令成功后单独完成。 */
 export async function setRepositoryAuthAccountBinding(
   repositoryPath: string,
   userId?: string,
-  authUrl?: string
+  authUrl?: string,
+  operationContext?: OperationContext
 ): Promise<void> {
-  await invokeLogged('lore_auth_repository_binding_set', {
-    repositoryPath,
-    userId: userId?.trim() || null,
-    authUrl: authUrl?.trim() || null
-  })
+  await invokeLogged(
+    'lore_auth_repository_binding_set',
+    {
+      repositoryPath,
+      userId: userId?.trim() || null,
+      authUrl: authUrl?.trim() || null
+    },
+    operationContext
+  )
 }
 
 /** Auth 服务之间的 userId 不保证全局唯一，显示名缓存必须同时包含认证端点。 */

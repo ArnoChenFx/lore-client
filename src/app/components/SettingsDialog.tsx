@@ -738,7 +738,7 @@ export function SettingsDialog({
                       <small>{t('sharedStoreAutomaticDescription')}</small>
                     </span>
                   </label>
-                  <TextButton disabled={sharedStoreLoading || sharedStoreBusy} onClick={onRefreshSharedStores}>
+                  <TextButton disabled={sharedStoreLoading || sharedStoreBusy} onClick={() => onRefreshSharedStores()}>
                     <RefreshCw className={sharedStoreLoading ? 'is-spinning' : ''} size={14} />
                     {t('refresh')}
                   </TextButton>

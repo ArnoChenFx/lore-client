@@ -50,7 +50,7 @@ describe('AppShell toast diagnostics', () => {
         ]}
         activeRepositoryId={repository.path.toLocaleLowerCase('en-US')}
         runtimeInfo={null}
-        busyLabel={null}
+        operationLabel={null}
         demoMode={false}
         toast={{ id: 1, title: '发布仓库失败', detail, tone: 'warning' }}
         onToolbarAction={() => undefined}

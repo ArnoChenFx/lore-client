@@ -70,7 +70,8 @@ export function useRevisionFileActions({
 
       await runRepositoryMutation(
         'restoreRevisionFiles',
-        (repository) => resetFilesToRevision(repository.path, relativePaths, targetRevision),
+        (repository, operationContext) =>
+          resetFilesToRevision(repository.path, relativePaths, targetRevision, operationContext),
         operationMessage('status.restoredTo', { subject, target: targetLabel })
       )
     },

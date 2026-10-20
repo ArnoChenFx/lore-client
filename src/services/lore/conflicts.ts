@@ -1,10 +1,19 @@
 /** 冲突会话与冲突操作的读取与解决结果写回。 */
-import type { ConflictAction, ConflictOperationKind, ConflictSession, LoreOperationResult } from '../../types'
+import type {
+  OperationContext,
+  ConflictAction,
+  ConflictOperationKind,
+  ConflictSession,
+  LoreOperationResult
+} from '../../types'
 import { invokeCommand, runOperation } from './core'
 
 /** 读取真实 staged Revision 对应的冲突会话；没有进行中操作时返回 null。 */
-export async function loadConflictSession(repositoryPath: string): Promise<ConflictSession | null> {
-  return invokeCommand<ConflictSession | null>('lore_conflict_session', { repositoryPath })
+export async function loadConflictSession(
+  repositoryPath: string,
+  operationContext?: OperationContext
+): Promise<ConflictSession | null> {
+  return invokeCommand<ConflictSession | null>('lore_conflict_session', { repositoryPath }, operationContext)
 }
 
 /**
@@ -17,14 +26,19 @@ export async function runConflictAction(
   repositoryPath: string,
   operation: Exclude<ConflictOperationKind, 'unknown'>,
   action: ConflictAction,
-  paths: string[] = []
+  paths: string[] = [],
+  operationContext?: OperationContext
 ): Promise<LoreOperationResult> {
-  return runOperation('lore_conflict_action', {
-    repositoryPath,
-    operation,
-    action,
-    paths
-  })
+  return runOperation(
+    'lore_conflict_action',
+    {
+      repositoryPath,
+      operation,
+      action,
+      paths
+    },
+    operationContext
+  )
 }
 
 /** 行内冲突解决写回结果：内容是否已完全解决，以及本次 Lore 操作的事件流。 */
@@ -44,13 +58,18 @@ export async function writeConflictResolution(
   expectedSession: ConflictSession,
   path: string,
   expectedContent: string,
-  content: string
+  content: string,
+  operationContext?: OperationContext
 ): Promise<ConflictResolutionWriteResult> {
-  return invokeCommand<ConflictResolutionWriteResult>('lore_write_conflict_resolution', {
-    repositoryPath,
-    expectedSession,
-    path,
-    expectedContent,
-    content
-  })
+  return invokeCommand<ConflictResolutionWriteResult>(
+    'lore_write_conflict_resolution',
+    {
+      repositoryPath,
+      expectedSession,
+      path,
+      expectedContent,
+      content
+    },
+    operationContext
+  )
 }

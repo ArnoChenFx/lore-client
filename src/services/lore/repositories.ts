@@ -4,6 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 
 import { t } from '../../i18n'
 import type {
+  OperationContext,
   LoreEvent,
   LoreOperationResult,
   LoreRepositoryInitializeOptions,
@@ -15,6 +16,7 @@ import type {
   RepositoryDirectoryProbe,
   RepositorySnapshot
 } from '../../types'
+import { createOperationContext, withOperationRequest } from '../operationRequests'
 import { parseBranches } from './branches'
 import { RepositoryConfigValues, loadRepositoryConfig } from './config'
 import { loadConflictSession } from './conflicts'
@@ -62,10 +64,17 @@ export async function selectRepositoryDirectory(): Promise<string | null> {
 }
 
 /** 判断所选目录是普通目录、仓库根目录还是仓库内部子目录。 */
-export async function probeRepositoryDirectory(directoryPath: string): Promise<RepositoryDirectoryProbe> {
-  return invokeCommand<RepositoryDirectoryProbe>('lore_repository_probe', {
-    directoryPath
-  })
+export async function probeRepositoryDirectory(
+  directoryPath: string,
+  operationContext?: OperationContext
+): Promise<RepositoryDirectoryProbe> {
+  return invokeCommand<RepositoryDirectoryProbe>(
+    'lore_repository_probe',
+    {
+      directoryPath
+    },
+    operationContext
+  )
 }
 
 /**
@@ -80,18 +89,23 @@ export async function initializeRepository(
   description: string,
   repositoryIdentity: string,
   defaultIdentity?: string,
-  options: LoreRepositoryInitializeOptions = { useSharedStore: false }
+  options: LoreRepositoryInitializeOptions = { useSharedStore: false },
+  operationContext?: OperationContext
 ): Promise<LoreRepositoryInitializeResult> {
-  const initialized = await invokeCommand<LoreRepositoryInitializeResult>('lore_repository_initialize', {
-    directoryPath,
-    repositoryName,
-    description,
-    repositoryIdentity,
-    defaultIdentity: defaultIdentity?.trim() || null,
-    useSharedStore: options.useSharedStore,
-    // 未启用时不能把残留草稿带过 IPC，避免后端误解为有效的 Store 选择。
-    sharedStorePath: options.useSharedStore ? options.sharedStorePath?.trim() || null : null
-  })
+  const initialized = await invokeCommand<LoreRepositoryInitializeResult>(
+    'lore_repository_initialize',
+    {
+      directoryPath,
+      repositoryName,
+      description,
+      repositoryIdentity,
+      defaultIdentity: defaultIdentity?.trim() || null,
+      useSharedStore: options.useSharedStore,
+      // 未启用时不能把残留草稿带过 IPC，避免后端误解为有效的 Store 选择。
+      sharedStorePath: options.useSharedStore ? options.sharedStorePath?.trim() || null : null
+    },
+    operationContext
+  )
   if (initialized.result.status !== 0) {
     throw new LoreOperationError(initialized.result)
   }
@@ -115,22 +129,27 @@ export async function publishRepository(
   defaultIdentity: string,
   serverUrl: string,
   branch: string,
-  userId?: string
+  userId?: string,
+  operationContext?: OperationContext
 ): Promise<LoreRepositoryPublishResult> {
-  const result = await invokeCommand<LoreRepositoryPublishResult>('lore_repository_publish', {
-    repositoryPath,
-    repositoryName,
-    description,
-    identity,
-    defaultIdentity: defaultIdentity.trim() || null,
-    serverUrl,
-    branch,
-    /*
-     * Lore 0.x 通过全局 identity 在 Token Store 中定位 JWT。提交身份与认证账户
-     * 属于两套客户端语义。此处始终传递本次明确选择的账户，null 表示匿名发布。
-     */
-    userId: userId?.trim() || null
-  })
+  const result = await invokeCommand<LoreRepositoryPublishResult>(
+    'lore_repository_publish',
+    {
+      repositoryPath,
+      repositoryName,
+      description,
+      identity,
+      defaultIdentity: defaultIdentity.trim() || null,
+      serverUrl,
+      branch,
+      /*
+       * Lore 0.x 通过全局 identity 在 Token Store 中定位 JWT。提交身份与认证账户
+       * 属于两套客户端语义。此处始终传递本次明确选择的账户，null 表示匿名发布。
+       */
+      userId: userId?.trim() || null
+    },
+    operationContext
+  )
   if (result.failureStage || !result.pushed) {
     throw new LoreRepositoryPublishError(result)
   }
@@ -192,8 +211,8 @@ export async function selectSharedStoreParentDirectory(): Promise<string | null>
 }
 
 /** 读取设备级 Shared Store 配置和 Rust 端只读占用统计。 */
-export async function loadSharedStoreInfo(): Promise<LoreSharedStoreInfo> {
-  return invokeCommand<LoreSharedStoreInfo>('lore_shared_store_info', {})
+export async function loadSharedStoreInfo(operationContext?: OperationContext): Promise<LoreSharedStoreInfo> {
+  return invokeCommand<LoreSharedStoreInfo>('lore_shared_store_info', {}, operationContext)
 }
 
 /**
@@ -206,26 +225,37 @@ export async function loadSharedStoreInfo(): Promise<LoreSharedStoreInfo> {
  * 是否搜索了实例——Lore 无论是否搜索都会发送实例数组，空数组无法区分
  * “确无实例”与“未查询”。
  */
-export async function loadSharedStoreRegistry(includeInstances = false): Promise<LoreSharedStoreRegistry> {
-  return invokeCommand<LoreSharedStoreRegistry>('lore_shared_store_list', { includeInstances })
+export async function loadSharedStoreRegistry(
+  includeInstances = false,
+  operationContext?: OperationContext
+): Promise<LoreSharedStoreRegistry> {
+  return invokeCommand<LoreSharedStoreRegistry>('lore_shared_store_list', { includeInstances }, operationContext)
 }
 
 /** 创建远端对应的 Shared Store；不传 force，已有 Store 永远不会被覆盖。 */
 export async function createSharedStore(
   remoteUrl: string,
   parentPath: string,
-  makeDefault: boolean
+  makeDefault: boolean,
+  operationContext?: OperationContext
 ): Promise<LoreOperationResult> {
-  return runOperation('lore_shared_store_create', {
-    remoteUrl,
-    parentPath: parentPath.trim() || null,
-    makeDefault
-  })
+  return runOperation(
+    'lore_shared_store_create',
+    {
+      remoteUrl,
+      parentPath: parentPath.trim() || null,
+      makeDefault
+    },
+    operationContext
+  )
 }
 
 /** 切换固定 Lore 全局配置中的自动使用开关。 */
-export async function setSharedStoreUseAutomatically(enabled: boolean): Promise<LoreOperationResult> {
-  return runOperation('lore_shared_store_set_use_automatically', { enabled })
+export async function setSharedStoreUseAutomatically(
+  enabled: boolean,
+  operationContext?: OperationContext
+): Promise<LoreOperationResult> {
+  return runOperation('lore_shared_store_set_use_automatically', { enabled }, operationContext)
 }
 
 /**
@@ -234,53 +264,74 @@ export async function setSharedStoreUseAutomatically(enabled: boolean): Promise<
  * 顺序调用可以避免首次打开大型仓库时并发争用 Store；后续刷新仍会复用
  * Rust 适配层设置的短期 Store keep-alive。
  */
-export async function loadRepositorySnapshot(repositoryPath: string): Promise<RepositorySnapshot> {
-  const status = await runOperation('lore_repository_status', {
-    repositoryPath
-  })
-  const changes = parseChanges(status.events)
-  /*
-   * 冲突类型不能从 React 发起操作时的临时状态推断。Rust 会读取真实 staged
-   * Revision，即使应用重启或冲突由外部 Lore 命令产生，也能恢复当前会话。
-   * 普通 Stage 也有 staged Revision；只有 Status 明确报告冲突文件时才追加查询。
-   */
-  const conflictSession = changes.some((file) => file.conflict) ? await loadConflictSession(repositoryPath) : null
-  /*
-   * Branch 列表同时提供移动指针 latest。必须先于历史读取它，才能在工作区停在旧
-   * Revision 时仍从当前 Branch tip 向父节点遍历，而不是把旧 HEAD 当成历史上界。
-   */
-  const statusRepository = parseRepository(repositoryPath, status.events)
-  const branchList = await runOperation('lore_branch_list', {
-    repositoryPath,
-    // Lore 仅在显式开启后附加已归档本地分支；侧栏会把它们投影到独立只读分组。
-    includeArchived: true
-  })
-  const statusBranches = parseBranches(branchList.events, statusRepository)
-  const historyAnchor =
-    statusBranches.find(
-      (branch) =>
-        !branch.remote && Boolean(branch.latest) && (Boolean(branch.current) || branch.name === statusRepository.branch)
-    )?.latest || statusRepository.revision
-  const history = await loadRevisionHistoryEntries(repositoryPath, {
-    limit: 100,
-    onlyBranch: false,
-    revision: historyAnchor || undefined
-  })
-  const tags = await listTags(repositoryPath)
-  const config = await loadRepositoryConfig(repositoryPath)
+export async function loadRepositorySnapshot(
+  repositoryPath: string,
+  operationContext?: OperationContext
+): Promise<RepositorySnapshot> {
+  return withOperationRequest(operationContext ?? createOperationContext(repositoryPath), async (requestContext) => {
+    const status = await runOperation(
+      'lore_repository_status',
+      {
+        repositoryPath
+      },
+      requestContext
+    )
+    const changes = parseChanges(status.events)
+    /*
+     * 冲突类型不能从 React 发起操作时的临时状态推断。Rust 会读取真实 staged
+     * Revision，即使应用重启或冲突由外部 Lore 命令产生，也能恢复当前会话。
+     * 普通 Stage 也有 staged Revision；只有 Status 明确报告冲突文件时才追加查询。
+     */
+    const conflictSession = changes.some((file) => file.conflict)
+      ? await loadConflictSession(repositoryPath, requestContext)
+      : null
+    /*
+     * Branch 列表同时提供移动指针 latest。必须先于历史读取它，才能在工作区停在旧
+     * Revision 时仍从当前 Branch tip 向父节点遍历，而不是把旧 HEAD 当成历史上界。
+     */
+    const statusRepository = parseRepository(repositoryPath, status.events)
+    const branchList = await runOperation(
+      'lore_branch_list',
+      {
+        repositoryPath,
+        // Lore 仅在显式开启后附加已归档本地分支；侧栏会把它们投影到独立只读分组。
+        includeArchived: true
+      },
+      requestContext
+    )
+    const statusBranches = parseBranches(branchList.events, statusRepository)
+    const historyAnchor =
+      statusBranches.find(
+        (branch) =>
+          !branch.remote &&
+          Boolean(branch.latest) &&
+          (Boolean(branch.current) || branch.name === statusRepository.branch)
+      )?.latest || statusRepository.revision
+    const history = await loadRevisionHistoryEntries(
+      repositoryPath,
+      {
+        limit: 100,
+        onlyBranch: false,
+        revision: historyAnchor || undefined
+      },
+      requestContext
+    )
+    const tags = await listTags(repositoryPath, requestContext)
+    const config = await loadRepositoryConfig(repositoryPath, requestContext)
 
-  const repository = parseRepository(repositoryPath, status.events, config)
-  const branches = parseBranches(branchList.events, repository)
+    const repository = parseRepository(repositoryPath, status.events, config)
+    const branches = parseBranches(branchList.events, repository)
 
-  return {
-    repository,
-    branches,
-    revisions: projectRevisionHistory(history, repository, branches),
-    changes,
-    tags,
-    conflictSession,
-    loadedAt: new Date().toISOString()
-  }
+    return {
+      repository,
+      branches,
+      revisions: projectRevisionHistory(history, repository, branches),
+      changes,
+      tags,
+      conflictSession,
+      loadedAt: new Date().toISOString()
+    }
+  })
 }
 
 export function parseRepository(

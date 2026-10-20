@@ -2,8 +2,9 @@ import { CheckCircle2, Clock3, LoaderCircle, X, XCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { getAppLanguage, t } from '../../../i18n'
-import type { LoreOperationStreamRecord, OperationRecord } from '../../../types'
+import type { LoreOperationStreamRecord, OperationContext, OperationRecord } from '../../../types'
 import { resolveOperationDetail } from '../operationDetail'
+import { isActiveStreamPhase, isOperationRequestActive } from '../operationHistory'
 import { deriveProgressView } from '../operationProgress'
 import { describeOperationProgress } from '../operationProgressText'
 import { resolveLoreEventLabel, resolveLoreOperationLabel } from '../operationStreamLabels'
@@ -12,11 +13,13 @@ import { resolveLoreEventLabel, resolveLoreOperationLabel } from '../operationSt
 export function OperationCenter({
   operations,
   streams,
+  activeRequests,
   onClear,
   onClose
 }: {
   operations: OperationRecord[]
   streams: LoreOperationStreamRecord[]
+  activeRequests: OperationContext[]
   onClear: () => void
   onClose: () => void
 }) {
@@ -24,6 +27,11 @@ export function OperationCenter({
   // 订阅语言变化：记录里存的是语义键，必须在当前语言下再解析。
   const language = i18n.resolvedLanguage ?? i18n.language
   const timeLocale = getAppLanguage() === 'en-US' ? 'en-US' : 'zh-CN'
+  const unrepresentedRequests = activeRequests.filter(
+    (context) =>
+      !operations.some((record) => record.requestId === context.requestId) &&
+      !streams.some((record) => record.requestId === context.requestId && isActiveStreamPhase(record.phase))
+  )
 
   return (
     <div
@@ -58,74 +66,81 @@ export function OperationCenter({
              * 不再额外插入解释栏，避免高频查看时浪费首屏纵向空间。
              */
             <div className="operation-streams">
-              {streams.map((stream) => (
-                <article key={stream.operationId}>
-                  <span className={`operation-state is-${stream.phase}`}>
-                    {stream.phase === 'queued' ? (
-                      <Clock3 size={15} />
-                    ) : stream.phase === 'running' || stream.phase === 'streaming' ? (
-                      <LoaderCircle className="is-spinning" size={15} />
-                    ) : stream.phase === 'succeeded' ? (
-                      <CheckCircle2 size={15} />
-                    ) : (
-                      <XCircle size={15} />
-                    )}
-                  </span>
-                  <div>
-                    <strong>{resolveLoreOperationLabel(stream.operation)}</strong>
-                    <small>
-                      {t('status.operationStreamSummary', {
-                        phase: t(`operationPhase.${stream.phase}` as never),
-                        events: stream.eventCount,
-                        stage: resolveLoreEventLabel(stream.lastEventTag)
-                      })}
-                    </small>
-                    {stream.progress && <small>{describeStreamProgress(stream)}</small>}
-                    {!stream.progress && (stream.total !== undefined || stream.bytes !== undefined) && (
+              {streams.map((stream) => {
+                const phase =
+                  isActiveStreamPhase(stream.phase) && !isOperationRequestActive(stream, activeRequests)
+                    ? 'ended'
+                    : stream.phase
+                return (
+                  <article key={stream.operationId}>
+                    <OperationState phase={phase} />
+                    <div>
+                      <strong>{resolveLoreOperationLabel(stream.operation)}</strong>
+                      <small>{stream.workspaceKey ?? t('operationScopeGlobal')}</small>
                       <small>
-                        {stream.current !== undefined && stream.total !== undefined
-                          ? `${stream.current} / ${stream.total}`
-                          : ''}
-                        {stream.bytes !== undefined ? ` · ${formatOperationBytes(stream.bytes)}` : ''}
+                        {t('status.operationStreamSummary', {
+                          phase: t(`operationPhase.${phase}` as never),
+                          events: stream.eventCount,
+                          stage: resolveLoreEventLabel(stream.lastEventTag)
+                        })}
                       </small>
-                    )}
-                  </div>
-                  <time dateTime={new Date(stream.startedAt).toISOString()}>
-                    {stream.durationMs === undefined ? '…' : `${stream.durationMs} ms`}
-                  </time>
-                </article>
-              ))}
+                      {phase === 'ended' && <small>{t('operationFinalProgressUnavailable')}</small>}
+                      {stream.progress && <small>{describeStreamProgress(stream)}</small>}
+                      {!stream.progress && (stream.total !== undefined || stream.bytes !== undefined) && (
+                        <small>
+                          {stream.current !== undefined && stream.total !== undefined
+                            ? `${stream.current} / ${stream.total}`
+                            : ''}
+                          {stream.bytes !== undefined ? ` · ${formatOperationBytes(stream.bytes)}` : ''}
+                        </small>
+                      )}
+                    </div>
+                    <time dateTime={new Date(stream.startedAt).toISOString()}>
+                      {stream.durationMs === undefined ? (phase === 'ended' ? '—' : '…') : `${stream.durationMs} ms`}
+                    </time>
+                  </article>
+                )
+              })}
             </div>
           )}
-          {operations.length === 0 && streams.length === 0 ? (
+          {unrepresentedRequests.map((context) => (
+            <article key={context.requestId}>
+              <OperationState phase="running" />
+              <div>
+                <strong>{t('operationInProgress')}</strong>
+                <small>{context.workspaceKey ?? t('operationScopeGlobal')}</small>
+              </div>
+            </article>
+          ))}
+          {operations.length === 0 && streams.length === 0 && activeRequests.length === 0 ? (
             <div className="dialog-empty">
               <Clock3 size={20} />
               <strong>{t('noOperationsInThisSession')}</strong>
               <small>{t('syncPushCloneMaintenanceOperations_9f11')}</small>
             </div>
           ) : (
-            operations.map((operation) => (
-              <article key={`${operation.id}-${language}`}>
-                <span className={`operation-state is-${operation.status}`}>
-                  {operation.status === 'running' ? (
-                    <LoaderCircle className="is-spinning" size={15} />
-                  ) : operation.status === 'succeeded' ? (
-                    <CheckCircle2 size={15} />
-                  ) : (
-                    <XCircle size={15} />
-                  )}
-                </span>
-                <div>
-                  <strong>{t(operation.labelKey as never)}</strong>
-                  <small>{resolveOperationDetail(operation.detail)}</small>
-                </div>
-                <time dateTime={new Date(operation.startedAt).toISOString()}>
-                  {operation.durationMs === undefined
-                    ? new Date(operation.startedAt).toLocaleTimeString(timeLocale, { hour12: false })
-                    : `${operation.durationMs} ms`}
-                </time>
-              </article>
-            ))
+            operations.map((operation) => {
+              const phase =
+                operation.status === 'running' && !isOperationRequestActive(operation, activeRequests)
+                  ? 'ended'
+                  : operation.status
+              return (
+                <article key={`${operation.requestId}-${language}`}>
+                  <OperationState phase={phase} />
+                  <div>
+                    <strong>{t(operation.labelKey as never)}</strong>
+                    <small>{operation.workspaceKey ?? t('operationScopeGlobal')}</small>
+                    {phase === 'ended' && <small>{t('operationPhase.ended')}</small>}
+                    <small>{resolveOperationDetail(operation.detail)}</small>
+                  </div>
+                  <time dateTime={new Date(operation.startedAt).toISOString()}>
+                    {operation.durationMs === undefined
+                      ? new Date(operation.startedAt).toLocaleTimeString(timeLocale, { hour12: false })
+                      : `${operation.durationMs} ms`}
+                  </time>
+                </article>
+              )
+            })
           )}
         </div>
         {(operations.length > 0 || streams.length > 0) && (
@@ -137,6 +152,22 @@ export function OperationCenter({
         )}
       </section>
     </div>
+  )
+}
+
+function OperationState({ phase }: { phase: LoreOperationStreamRecord['phase'] | 'ended' }) {
+  return (
+    <span className={`operation-state is-${phase}`}>
+      {phase === 'queued' || phase === 'ended' ? (
+        <Clock3 size={15} />
+      ) : phase === 'running' || phase === 'streaming' ? (
+        <LoaderCircle className="is-spinning" size={15} />
+      ) : phase === 'succeeded' ? (
+        <CheckCircle2 size={15} />
+      ) : (
+        <XCircle size={15} />
+      )}
+    </span>
   )
 }
 
