@@ -164,6 +164,7 @@ export function ChangeContextMenu({
   }, [])
 
   useEffect(() => {
+    const list = request.anchor.closest<HTMLElement>('[role="listbox"]')
     const handlePointer = (event: PointerEvent) => {
       if (!menuRef.current?.contains(event.target as Node)) onClose()
     }
@@ -177,6 +178,8 @@ export function ChangeContextMenu({
       window.removeEventListener('scroll', handleViewport, true)
       if (request.anchor.isConnected) {
         request.anchor.focus({ preventScroll: true })
+      } else if (list?.isConnected) {
+        list.focus({ preventScroll: true })
       }
     }
   }, [onClose, request.anchor])

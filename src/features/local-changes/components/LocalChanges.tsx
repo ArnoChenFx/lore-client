@@ -61,6 +61,7 @@ import type {
   ToastMessage
 } from '../../../types'
 import { ChangeContextMenu, type ChangeMenuRequest, type FileLockLoadState } from './ChangeContextMenu'
+import { ChangeListViewport } from './ChangeListViewport'
 import { ConflictResolutionPanel } from './ConflictResolutionPanel'
 
 interface LocalChangesProps {
@@ -172,7 +173,22 @@ function ChangeGroup({
   onContextMenu,
   onToggleStage
 }: ChangeGroupProps) {
-  const renderFile = (file: ChangeFile, depth = 0) => {
+  const displayRows = useMemo<ChangeTreeRow[]>(
+    () =>
+      viewMode === 'flat'
+        ? files.map((file) => ({
+            id: changeFileObjectId(file.id),
+            kind: 'file',
+            name: file.name,
+            path: file.path,
+            depth: 0,
+            descendantIds: [file.id],
+            file
+          }))
+        : rows,
+    [files, rows, viewMode]
+  )
+  const renderFile = (file: ChangeFile, depth: number, index: number) => {
     const status = statusInfo[file.status]
     const StatusIcon = status.icon
     const objectId = changeFileObjectId(file.id)
@@ -196,6 +212,8 @@ function ChangeGroup({
         key={objectId}
         role="option"
         aria-selected={selected}
+        aria-posinset={index + 1}
+        aria-setsize={displayRows.length}
         tabIndex={selected ? 0 : -1}
         className={`change-file-row ${selected ? 'is-selected' : ''} ${viewMode === 'tree' ? 'is-tree-row' : ''}`}
         style={{ '--tree-depth': depth } as CSSProperties}
@@ -207,6 +225,7 @@ function ChangeGroup({
         }}
         onContextMenu={(event) => onContextMenu(objectId, [file], file, event)}
         onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return
           if (event.key === 'Enter') {
             // 行尾按钮只由 hover 显示；Enter 为键盘用户保留等价的 Stage 能力。
             event.preventDefault()
@@ -278,6 +297,94 @@ function ChangeGroup({
     )
   }
 
+  const renderRow = (row: ChangeTreeRow, index: number) => {
+    if (row.kind === 'file') return renderFile(row.file, row.depth, index)
+    const directoryFiles = row.descendantFiles
+    const selected = selectedIds.has(row.id)
+    return (
+      <div
+        key={row.id}
+        role="option"
+        aria-selected={selected}
+        aria-posinset={index + 1}
+        aria-setsize={displayRows.length}
+        aria-expanded={row.expanded}
+        tabIndex={selected ? 0 : -1}
+        className={`change-directory-row ${selected ? 'is-selected' : ''}`}
+        style={{ '--tree-depth': row.depth } as CSSProperties}
+        onClick={(event) => onObjectPointer(row.id, event)}
+        onDoubleClick={(event) => {
+          // 目录动作使用已经展开好的明确后代文件集合，不隐式改变目录选区或折叠状态。
+          event.preventDefault()
+          if (!stageDisabled) onToggleStage(directoryFiles)
+        }}
+        onContextMenu={(event) => {
+          event.preventDefault()
+          if (directoryFiles[0]) {
+            onContextMenu(row.id, directoryFiles, directoryFiles[0], event)
+          }
+        }}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            if (!stageDisabled) onToggleStage(directoryFiles)
+            return
+          }
+          if (event.key === ' ') {
+            event.preventDefault()
+            onObjectPointer(row.id, event)
+          }
+        }}
+        aria-keyshortcuts="Enter"
+        title={t('status.doubleClickStageDirectory', {
+          action: actionLabel,
+          count: row.descendantIds.length
+        })}
+      >
+        <button
+          type="button"
+          className="change-directory-row__toggle"
+          aria-label={`${row.expanded ? t('collapse') : t('expand')} ${row.name}`}
+          onClick={(event) => {
+            event.stopPropagation()
+            onToggleDirectory(row.path)
+          }}
+          onDoubleClick={(event) => {
+            // 展开入口拥有独立双击边界，不能把事件交给目录行执行 Stage。
+            event.stopPropagation()
+          }}
+        >
+          {row.expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </button>
+        {row.expanded ? <FolderOpen size={14} /> : <Folder size={14} />}
+        <strong>{row.name}</strong>
+        <small>{row.descendantIds.length}</small>
+        <button
+          type="button"
+          className="change-directory-row__action"
+          aria-label={t('status.actionName', { action: actionLabel, name: row.name })}
+          title={t('status.stageDirectoryFiles', {
+            action: actionLabel,
+            count: row.descendantIds.length
+          })}
+          tabIndex={-1}
+          disabled={stageDisabled}
+          onClick={(event) => {
+            // Stage 按钮是目录行内的独立命令，不能顺带改变对象选区或折叠状态。
+            event.stopPropagation()
+            if (!stageDisabled) onToggleStage(directoryFiles)
+          }}
+          onDoubleClick={(event) => {
+            event.stopPropagation()
+          }}
+        >
+          {directoryFiles.every((file) => file.staged) ? <Minus size={13} /> : <Plus size={13} />}
+        </button>
+      </div>
+    )
+  }
+
   return (
     <section className="change-group">
       <header>
@@ -287,103 +394,17 @@ function ChangeGroup({
           <small>{files.length}</small>
         </span>
       </header>
-      <div className="change-group__body" role="listbox" aria-multiselectable="true">
-        {files.length === 0 ? (
+      <ChangeListViewport
+        rows={displayRows}
+        selectedIds={selectedIds}
+        renderRow={renderRow}
+        empty={
           <div className="change-group__empty">
             <Check size={15} />
             {t('noFilesInThisArea')}
           </div>
-        ) : viewMode === 'flat' ? (
-          files.map((file) => renderFile(file))
-        ) : (
-          rows.map((row) => {
-            if (row.kind === 'file') {
-              return renderFile(row.file, row.depth)
-            }
-            const directoryFiles = row.descendantFiles
-            const selected = selectedIds.has(row.id)
-            return (
-              <div
-                key={row.id}
-                role="option"
-                aria-selected={selected}
-                aria-expanded={row.expanded}
-                tabIndex={selected ? 0 : -1}
-                className={`change-directory-row ${selected ? 'is-selected' : ''}`}
-                style={{ '--tree-depth': row.depth } as CSSProperties}
-                onClick={(event) => onObjectPointer(row.id, event)}
-                onDoubleClick={(event) => {
-                  // 目录动作使用已经展开好的明确后代文件集合，不隐式改变目录选区或折叠状态。
-                  event.preventDefault()
-                  if (!stageDisabled) onToggleStage(directoryFiles)
-                }}
-                onContextMenu={(event) => {
-                  event.preventDefault()
-                  if (directoryFiles[0]) {
-                    onContextMenu(row.id, directoryFiles, directoryFiles[0], event)
-                  }
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    if (!stageDisabled) onToggleStage(directoryFiles)
-                    return
-                  }
-                  if (event.key === ' ') {
-                    event.preventDefault()
-                    onObjectPointer(row.id, event)
-                  }
-                }}
-                aria-keyshortcuts="Enter"
-                title={t('status.doubleClickStageDirectory', {
-                  action: actionLabel,
-                  count: row.descendantIds.length
-                })}
-              >
-                <button
-                  type="button"
-                  className="change-directory-row__toggle"
-                  aria-label={`${row.expanded ? t('collapse') : t('expand')} ${row.name}`}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onToggleDirectory(row.path)
-                  }}
-                  onDoubleClick={(event) => {
-                    // 展开入口拥有独立双击边界，不能把事件交给目录行执行 Stage。
-                    event.stopPropagation()
-                  }}
-                >
-                  {row.expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                </button>
-                {row.expanded ? <FolderOpen size={14} /> : <Folder size={14} />}
-                <strong>{row.name}</strong>
-                <small>{row.descendantIds.length}</small>
-                <button
-                  type="button"
-                  className="change-directory-row__action"
-                  aria-label={t('status.actionName', { action: actionLabel, name: row.name })}
-                  title={t('status.stageDirectoryFiles', {
-                    action: actionLabel,
-                    count: row.descendantIds.length
-                  })}
-                  tabIndex={-1}
-                  disabled={stageDisabled}
-                  onClick={(event) => {
-                    // Stage 按钮是目录行内的独立命令，不能顺带改变对象选区或折叠状态。
-                    event.stopPropagation()
-                    if (!stageDisabled) onToggleStage(directoryFiles)
-                  }}
-                  onDoubleClick={(event) => {
-                    event.stopPropagation()
-                  }}
-                >
-                  {directoryFiles.every((file) => file.staged) ? <Minus size={13} /> : <Plus size={13} />}
-                </button>
-              </div>
-            )
-          })
-        )}
-      </div>
+        }
+      />
     </section>
   )
 }
@@ -602,6 +623,10 @@ export function LocalChanges({
   }
 
   const handleListKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement
+    // Text editing owns these keys; list shortcuts must never discard files
+    // while the user is deleting text in a filter or commit message.
+    if (target.isContentEditable || target.closest('input, textarea, select')) return
     if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 'a') {
       event.preventDefault()
       onSelectionChange(orderedIds, orderedIds[0] ?? null)
