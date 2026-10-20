@@ -39,8 +39,10 @@ const listLinks = vi.fn<() => Promise<LoreLink[]>>(() => Promise.resolve([]))
 const loadRepositoryView = vi.fn<() => Promise<RepositoryView>>()
 const loadFileDependencyGraph = vi.fn<() => Promise<LoreDependencyGraphQuery>>()
 const loginAuthInteractive = vi.fn(async () => {})
+const setRepositoryAuthAccountBinding = vi.fn(async () => {})
 const loadLinkInfo = vi.fn<() => Promise<LoreLinkDetails>>()
 const queryFileLocks = vi.fn<() => Promise<LoreFileLock[]>>()
+const loadFileLockStatus = vi.fn<() => Promise<LoreFileLock[]>>()
 
 vi.mock('../../services/lore', () => ({
   ...loreActual,
@@ -49,8 +51,10 @@ vi.mock('../../services/lore', () => ({
   loadRepositoryView,
   loadFileDependencyGraph,
   loginAuthInteractive,
+  setRepositoryAuthAccountBinding,
   loadLinkInfo,
-  queryFileLocks
+  queryFileLocks,
+  loadFileLockStatus
 }))
 vi.mock('react', () => ({
   ...reactActual,
@@ -240,8 +244,10 @@ beforeEach(() => {
   loadRepositoryView.mockReset()
   loadFileDependencyGraph.mockReset()
   loginAuthInteractive.mockReset().mockResolvedValue(undefined)
+  setRepositoryAuthAccountBinding.mockReset().mockResolvedValue(undefined)
   loadLinkInfo.mockReset()
   queryFileLocks.mockReset()
+  loadFileLockStatus.mockReset().mockResolvedValue([])
 })
 
 describe('repository tools resource ownership', () => {
@@ -398,6 +404,35 @@ describe('repository tools resource ownership', () => {
     expect(render().dialogProps?.loading).toBe(false)
   })
 
+  for (const firstToFinish of ['binding', 'page'] as const) {
+    it(`keeps account binding and page loading independent when ${firstToFinish} finishes first`, async () => {
+      const write = deferred<void>()
+      const layers = deferred<LoreLayer[]>()
+      const { render, options } = fixture()
+      options.onAuthStateChange.mockReturnValue(write.promise)
+      await render().open('accounts')
+      const props = render().dialogProps!
+      const binding = props.onSetAuthAccountBinding!(props.repository)
+      await Promise.resolve()
+      listLayers.mockReturnValueOnce(layers.promise)
+      const opening = render().open('layers')
+      if (firstToFinish === 'binding') {
+        write.resolve()
+        expect(await binding).toBe(true)
+      } else {
+        layers.resolve([])
+        await opening
+      }
+      expect(render().dialogProps?.loading).toBe(true)
+      write.resolve()
+      layers.resolve([])
+      expect(await binding).toBe(true)
+      await opening
+      expect(render().dialogProps?.loading).toBe(false)
+      expect(options.onAuthAccountBindingsChange).toHaveBeenCalledTimes(1)
+    })
+  }
+
   it('discards a layer refresh from a mutation completed in an earlier tool session', async () => {
     const old = deferred<LoreLayer[]>()
     listLayers
@@ -518,4 +553,64 @@ describe('repository tools resource ownership', () => {
     expect(render().fileLocks).toEqual(locks)
     expect(render().dialogProps).toBeNull()
   })
+
+  it('refreshes current workspace locks when its mutation finishes after tools close', async () => {
+    const write = deferred<boolean>()
+    const locks = [{ path: 'file', branch: 'main', owner: 'user', lockedAt: 1 }]
+    queryFileLocks.mockResolvedValue(locks)
+    const { render, options } = fixture()
+    await render().open('maintenance')
+    options.runRepositoryMutation.mockReturnValueOnce(write.promise)
+    const mutation = render().acquireFileLocks(['file'])
+    render().close()
+    write.resolve(true)
+    expect(await mutation).toBe(true)
+    expect(render().fileLocks).toEqual(locks)
+    expect(render().dialogProps).toBeNull()
+  })
+
+  it('does not start a queued lock status read for a workspace already left', async () => {
+    const { render, options } = fixture()
+    options.activeSnapshot.changes = [
+      {
+        id: 'file',
+        path: 'file',
+        name: 'file',
+        contentClassification: { kind: 'unknown', source: 'deferred' },
+        status: 'modified',
+        staged: false,
+        additions: 0,
+        deletions: 0
+      }
+    ]
+    render()
+    options.activeSnapshot = snapshot('/workspace/B')
+    render()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(loadFileLockStatus).not.toHaveBeenCalled()
+    expect(render().fileLocks).toEqual([])
+  })
+
+  for (const nextWorkspace of ['repository', 'branch'] as const) {
+    it(`does not refresh old locks after a mutation finishes in another ${nextWorkspace}`, async () => {
+      const write = deferred<boolean>()
+      const locks = [{ path: 'old-workspace-file', branch: 'main', owner: 'user', lockedAt: 1 }]
+      queryFileLocks.mockResolvedValueOnce(locks).mockResolvedValueOnce([]).mockResolvedValue(locks)
+      const { render, options } = fixture()
+      await render().open('locks')
+      options.runRepositoryMutation.mockReturnValueOnce(write.promise)
+      const mutation = render().acquireFileLocks(['old-workspace-file'])
+      const nextSnapshot = snapshot(nextWorkspace === 'repository' ? '/workspace/B' : '/workspace/A')
+      if (nextWorkspace === 'branch') nextSnapshot.repository.branch = 'other-branch'
+      options.activeSnapshot = nextSnapshot
+      render()
+      await render().open('locks')
+      expect(render().fileLocks).toEqual([])
+      write.resolve(true)
+      expect(await mutation).toBe(true)
+      expect(render().fileLocks).toEqual([])
+      expect(queryFileLocks).toHaveBeenCalledTimes(2)
+    })
+  }
 })

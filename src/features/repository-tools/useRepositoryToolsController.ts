@@ -323,6 +323,7 @@ export function useRepositoryToolsController({
   const lockRequestCounter = useRef(0)
   const fileLockStatusQueue = useRef(new LatestTaskQueue())
   const resourceRepositoryPathRef = useRef(activeSnapshot?.repository.path ?? '')
+  const lockRepositoryRef = useRef(activeSnapshot?.repository)
 
   useEffect(() => {
     const queue = fileLockStatusQueue.current
@@ -335,6 +336,10 @@ export function useRepositoryToolsController({
       lockRequestCounter.current += 1
     }
   }, [])
+
+  useEffect(() => {
+    lockRepositoryRef.current = activeSnapshot?.repository
+  }, [activeSnapshot])
 
   // 页签重开使用新的对象身份；即使路径相同，旧表单回调也不能重新取得提交权。
   const isToolSessionCurrent = useCallback(
@@ -361,9 +366,14 @@ export function useRepositoryToolsController({
     setPublishAuthIdentities([])
   }, [])
 
-  /** 读取协作锁时使用独立序号，工具页全量 Query 与工作区路径 Status 不得互相覆盖。 */
+  /** 锁属于当前工作区路径和分支，独立于工具页开关；旧写操作不能为新工作区发起刷新。 */
   const loadLocks = useCallback(
     async (paths?: string[]): Promise<LoreFileLock[]> => {
+      const isCurrentWorkspace = () =>
+        resourcesActiveRef.current &&
+        lockRepositoryRef.current?.path === activeSnapshot?.repository.path &&
+        lockRepositoryRef.current?.branch === activeSnapshot?.repository.branch
+      if (!isCurrentWorkspace()) return []
       if (!activeSnapshot || applicationMode !== 'tauri') {
         setFileLocks([])
         setFileLockState('unavailable')
@@ -381,16 +391,15 @@ export function useRepositoryToolsController({
               )
             )
           : await queryFileLocks(activeSnapshot.repository.path, activeSnapshot.repository.branch)
-        if (requestId === lockRequestCounter.current) {
+        if (isCurrentWorkspace() && requestId === lockRequestCounter.current) {
           setFileLocks(result)
           setFileLockState('ready')
         }
         return result
       } catch (error) {
-        if (requestId === lockRequestCounter.current) {
-          setFileLocks([])
-          setFileLockState('unavailable')
-        }
+        if (!isCurrentWorkspace() || requestId !== lockRequestCounter.current) return []
+        setFileLocks([])
+        setFileLockState('unavailable')
         throw error
       }
     },
@@ -402,24 +411,19 @@ export function useRepositoryToolsController({
    * 锁是附加协作信息，读取失败不能覆盖真实文件状态。
    */
   useEffect(() => {
-    if (applicationMode !== 'tauri') {
-      lockRequestCounter.current += 1
-      // 状态写入放到微任务；请求序号已在同步体作废，微任务内写入不会与后续请求竞争。
-      queueMicrotask(() => {
+    const requestId = ++lockRequestCounter.current
+    queueMicrotask(() => {
+      if (!resourcesActiveRef.current || requestId !== lockRequestCounter.current) return
+      if (applicationMode !== 'tauri') {
         setFileLocks([])
         setFileLockState('unavailable')
-      })
-      return
-    }
-    if (!activeSnapshot || activeSnapshot.changes.length === 0) {
-      lockRequestCounter.current += 1
-      queueMicrotask(() => {
+        return
+      }
+      if (!activeSnapshot || activeSnapshot.changes.length === 0) {
         setFileLocks([])
         setFileLockState('ready')
-      })
-      return
-    }
-    queueMicrotask(() => {
+        return
+      }
       void loadLocks(activeSnapshot.changes.map(changeFilePath)).catch(() => {
         // 工作区刷新保持静默；菜单会通过 unavailable 状态给出明确不可用原因。
       })
@@ -1171,7 +1175,7 @@ export function useRepositoryToolsController({
       authAccountBindings,
       onSetAuthAccountBinding: async (targetRepository, identity) => {
         try {
-          setLoading(true)
+          setAuthActionsPending((count) => count + 1)
           await setRepositoryAuthAccountBinding(targetRepository.path, identity?.userId, identity?.authUrl)
           const nextBindings = authAccountBindings.filter(
             (binding) => repositoryPathKey(binding.repositoryPath) !== repositoryPathKey(targetRepository.path)
@@ -1190,7 +1194,7 @@ export function useRepositoryToolsController({
           notify(t('unableToUpdateRepositoryAccount'), readErrorMessage(error), 'warning')
           return false
         } finally {
-          setLoading(false)
+          setAuthActionsPending((count) => count - 1)
         }
       },
       onLoginAuthInteractive: (remoteUrl) => runAuthAction(() => loginAuthInteractive(remoteUrl), remoteUrl),
