@@ -5,7 +5,7 @@ interface PaneResizerProps {
   value: number
   direction: 'right' | 'left'
   container: HTMLElement | null
-  onChange: (nextValue: number, containerWidth: number) => void
+  onChange: (nextValue: number, containerWidth: number, commit?: boolean) => void
   onReset: () => void
 }
 
@@ -49,6 +49,7 @@ export function PaneResizer({ label, value, direction, container, onChange, onRe
     const pointerId = event.pointerId
     const target = event.currentTarget
     let finished = false
+    let lastChange: { value: number; containerWidth: number } | undefined
 
     const finishResize = () => {
       if (finished) return
@@ -74,6 +75,12 @@ export function PaneResizer({ label, value, direction, container, onChange, onRe
       if (localCleanupRef.current === finishResize) {
         localCleanupRef.current = null
       }
+      if (lastChange) {
+        // 窗口可能在最后一次移动后缩窄；提交必须使用当前边界，不能覆盖 resize 的夹紧。
+        // 卸载或隐藏使容器宽度失效时，才保留最后一次有效测量。
+        const currentWidth = container?.isConnected ? container.clientWidth : 0
+        onChange(lastChange.value, currentWidth > 0 ? currentWidth : lastChange.containerWidth, true)
+      }
     }
 
     const handlePointerEnd = (endEvent: PointerEvent) => {
@@ -95,7 +102,8 @@ export function PaneResizer({ label, value, direction, container, onChange, onRe
       if (!container) return
       const delta = moveEvent.clientX - startX
       const signedDelta = direction === 'right' ? delta : -delta
-      onChange(startValue + signedDelta, container.clientWidth)
+      lastChange = { value: startValue + signedDelta, containerWidth: container.clientWidth }
+      onChange(lastChange.value, lastChange.containerWidth, false)
     }
 
     activePaneResizeCleanup = finishResize

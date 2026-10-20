@@ -3,12 +3,9 @@ import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import { subscribeLoreOperationStream } from '../../services/lore'
 import type { LoreOperationStreamEvent, LoreOperationStreamRecord, OperationDetail, OperationRecord } from '../../types'
 import { normalizeOperationDetail } from './operationDetail'
-import { selectRecentOperationHistory } from './operationHistory'
+import { isActiveOperationStream, selectRecentOperationHistory } from './operationHistory'
 import { mergeLoreOperationStream } from './operationStream'
 import { createSharedAsyncSubscription } from './sharedAsyncSubscription'
-
-/** 可以继续占用全局操作计数的 Lore 生命周期阶段。 */
-const ACTIVE_STREAM_PHASES = new Set<LoreOperationStreamRecord['phase']>(['queued', 'running', 'streaming'])
 
 /**
  * 全页面只保留一份 Tauri operation-stream listener。
@@ -46,9 +43,8 @@ export const INITIAL_OPERATION_HISTORY: OperationHistoryState = {
 /**
  * 在一次 reducer 转移中同时裁剪普通操作和 Lore 实时流。
  *
- * 两种记录具有同一个全局 200 条上限。如果分别维护 React state，再通过 effect
- * 做二次裁剪，会存在一次短暂渲染暴露 400 条记录，也会制造额外更新。这里将跨来源
- * 不变量收进纯 reducer，既便于测试，也保证任何 action 结束后状态已经有效。
+ * 两种已完成记录共用 200 条上限，活跃任务始终保留。跨来源裁剪在同一次
+ * 状态转移内完成，包括任务结束后重新进入已完成历史的情况。
  */
 function limitCombinedHistory(state: OperationHistoryState): OperationHistoryState {
   const selected = selectRecentOperationHistory(state.operations, state.streams)
@@ -70,7 +66,7 @@ export function countActiveOperations(
   streams: readonly LoreOperationStreamRecord[]
 ): number {
   const commands = operations.filter((record) => record.status === 'running').length
-  const live = streams.filter((record) => ACTIVE_STREAM_PHASES.has(record.phase)).length
+  const live = streams.filter(isActiveOperationStream).length
   return Math.max(commands, live)
 }
 
@@ -86,7 +82,7 @@ export function operationHistoryReducer(
         operations: [action.record, ...state.operations]
       })
     case 'finish':
-      return {
+      return limitCombinedHistory({
         ...state,
         operations: state.operations.map((record) =>
           record.id === action.id
@@ -98,7 +94,7 @@ export function operationHistoryReducer(
               }
             : record
         )
-      }
+      })
     case 'stream':
       return limitCombinedHistory({
         ...state,
@@ -107,7 +103,7 @@ export function operationHistoryReducer(
     case 'clearCompleted':
       return {
         operations: state.operations.filter((record) => record.status === 'running'),
-        streams: state.streams.filter((record) => ACTIVE_STREAM_PHASES.has(record.phase))
+        streams: state.streams.filter(isActiveOperationStream)
       }
   }
 }

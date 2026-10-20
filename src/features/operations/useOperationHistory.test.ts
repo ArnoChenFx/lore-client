@@ -53,7 +53,7 @@ describe('operation history controller', () => {
     ])
   })
 
-  it('keeps a combined limit across commands and Lore streams', () => {
+  it('keeps all active commands and streams even when there are more than 200', () => {
     let state = INITIAL_OPERATION_HISTORY
     for (let index = 0; index < 150; index += 1) {
       state = operationHistoryReducer(state, {
@@ -77,9 +77,52 @@ describe('operation history controller', () => {
       })
     }
 
-    expect(state.operations.length + state.streams.length).toBe(200)
+    expect(state.operations.length + state.streams.length).toBe(250)
     expect(state.operations[0]?.id).toBe(150)
     expect(state.streams).toHaveLength(100)
+  })
+
+  it('retains a long task and its stream progress while newer work completes, then trims its completion', () => {
+    let state = operationHistoryReducer(INITIAL_OPERATION_HISTORY, { type: 'begin', record: runningOperation(1, 1) })
+    const progressEvent: LoreOperationStreamEvent = {
+      operationId: 'long-task',
+      operation: 'repository.clone',
+      phase: 'streaming',
+      event: { tagName: 'cloneProgress', data: { current: 4, total: 10 } },
+      cancellable: false
+    }
+    state = operationHistoryReducer(state, { type: 'stream', event: progressEvent, receivedAt: 1 })
+    for (let id = 2; id <= 210; id += 1) {
+      state = operationHistoryReducer(state, { type: 'begin', record: runningOperation(id, id) })
+      state = operationHistoryReducer(state, {
+        type: 'finish',
+        id,
+        succeeded: true,
+        detail: { kind: 'text', text: 'done' },
+        durationMs: 1
+      })
+    }
+    expect(state.operations.find((record) => record.id === 1)?.status).toBe('running')
+    expect(countActiveOperations(state.operations, state.streams)).toBe(1)
+    expect(state.operations.filter((record) => record.status !== 'running')).toHaveLength(200)
+
+    state = operationHistoryReducer(state, { type: 'stream', event: progressEvent, receivedAt: 500 })
+    expect(state.streams[0]).toMatchObject({ startedAt: 1, eventCount: 2, current: 4 })
+
+    state = operationHistoryReducer(state, {
+      type: 'finish',
+      id: 1,
+      succeeded: true,
+      detail: { kind: 'text', text: 'done' },
+      durationMs: 999
+    })
+    state = operationHistoryReducer(state, {
+      type: 'stream',
+      event: { ...progressEvent, phase: 'succeeded' },
+      receivedAt: 1000
+    })
+    expect(countActiveOperations(state.operations, state.streams)).toBe(0)
+    expect(state.operations.length + state.streams.length).toBe(200)
   })
 
   it('stamps stream records with the arrival time carried by the action, not the clock', () => {

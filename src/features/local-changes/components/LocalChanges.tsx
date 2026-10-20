@@ -297,10 +297,10 @@ function ChangeGroup({
           files.map((file) => renderFile(file))
         ) : (
           rows.map((row) => {
-            if (row.kind === 'file' && row.file) {
+            if (row.kind === 'file') {
               return renderFile(row.file, row.depth)
             }
-            const directoryFiles = files.filter((file) => row.descendantIds.includes(file.id))
+            const directoryFiles = row.descendantFiles
             const selected = selectedIds.has(row.id)
             return (
               <div
