@@ -1,5 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'bun:test'
 
+import { DEFAULT_WORKSPACE_LAYOUT, workspaceLayoutReducer } from '../../hooks/useWorkspaceLayout'
+
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
 // Preserve values rather than Bun's live module namespace, which mock() rewrites.
@@ -22,8 +24,11 @@ function pointerEvent(type: string, clientX = 0, buttons = 1, pointerId = 1) {
   return Object.assign(new Event(type), { pointerId, clientX, buttons })
 }
 
-function mountResizer() {
-  const onChange = vi.fn()
+function mountResizer(
+  onResize?: (value: number, containerWidth: number, commit?: boolean) => void,
+  direction: 'right' | 'left' = 'right'
+) {
+  const onChange = vi.fn(onResize)
   const container = document.createElement('div')
   const target = Object.assign(new EventTarget(), {
     setPointerCapture: vi.fn(),
@@ -32,8 +37,8 @@ function mountResizer() {
   })
   const node = PaneResizer({
     label: 'Resize sidebar',
-    value: 244,
-    direction: 'right',
+    value: direction === 'right' ? 244 : 520,
+    direction,
     container,
     onChange,
     onReset: vi.fn()
@@ -49,7 +54,7 @@ describe('pane resize preference commits', () => {
       configurable: true,
       value: {
         body: { classList: { add: vi.fn(), remove: vi.fn() } },
-        createElement: () => ({ clientWidth: 1600 })
+        createElement: () => ({ clientWidth: 1600, isConnected: true })
       }
     })
   })
@@ -95,16 +100,49 @@ describe('pane resize preference commits', () => {
     })
   }
 
-  it('commits the last measured bounds if the container was removed before cleanup', () => {
-    const { onChange, container } = mountResizer()
-    window.dispatchEvent(pointerEvent('pointermove', 120))
-    Object.defineProperty(container, 'clientWidth', { value: 0 })
-    cleanups.splice(0).forEach((cleanup) => cleanup())
-    expect(onChange.mock.calls).toEqual([
-      [264, 1600, false],
-      [264, 1600, true]
-    ])
-  })
+  for (const reason of ['pointerup', 'blur']) {
+    for (const pane of [
+      { direction: 'right', type: 'sidebar', clientX: 236, requestedWidth: 380 },
+      { direction: 'left', type: 'inspector', clientX: -380, requestedWidth: 1000 }
+    ] as const) {
+      it(`preserves the fitted ${pane.type} bounds when the container shrinks before ${reason}`, () => {
+        let state = { layout: DEFAULT_WORKSPACE_LAYOUT, committedLayout: DEFAULT_WORKSPACE_LAYOUT }
+        const { onChange, container } = mountResizer((width, containerWidth, commit = true) => {
+          state = workspaceLayoutReducer(state, { type: pane.type, width, containerWidth, commit })
+        }, pane.direction)
+        window.dispatchEvent(pointerEvent('pointermove', pane.clientX))
+
+        Object.defineProperty(container, 'clientWidth', { value: 1000 })
+        state = workspaceLayoutReducer(state, { type: 'fit', containerWidth: 1000 })
+        const fitted = state.layout
+        window.dispatchEvent(pointerEvent(reason))
+
+        expect(onChange.mock.calls).toEqual([
+          [pane.requestedWidth, 1600, false],
+          [pane.requestedWidth, 1000, true]
+        ])
+        expect(state.layout).toBe(fitted)
+        expect(state.committedLayout).toBe(fitted)
+        expect(state.layout.sidebarWidth + state.layout.inspectorWidth + 340 + 10).toBeLessThanOrEqual(1000)
+      })
+    }
+  }
+
+  for (const isConnected of [true, false]) {
+    it(`commits the last measured bounds when the ${isConnected ? 'connected' : 'removed'} container measures zero`, () => {
+      const { onChange, container } = mountResizer()
+      window.dispatchEvent(pointerEvent('pointermove', 120))
+      Object.defineProperties(container, {
+        clientWidth: { value: 0 },
+        isConnected: { value: isConnected }
+      })
+      cleanups.splice(0).forEach((cleanup) => cleanup())
+      expect(onChange.mock.calls).toEqual([
+        [264, 1600, false],
+        [264, 1600, true]
+      ])
+    })
+  }
 
   it('ignores other pointers and a click with no movement', () => {
     const { onChange } = mountResizer()
