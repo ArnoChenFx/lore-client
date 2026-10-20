@@ -538,7 +538,6 @@ fn revision_asset_preview_falls_back_to_full_read_when_range_parse_fails() {
 
 #[test]
 fn structural_status_does_not_guess_an_ambiguous_move_source() {
-    let _operation_scope = test_operation_scope();
     let baseline_files = vec![
         RevisionTreeFile {
             path: "first.txt".to_owned(),
@@ -583,7 +582,6 @@ fn structural_status_does_not_guess_an_ambiguous_move_source() {
 
 #[test]
 fn structural_status_preserves_real_staged_changes() {
-    let _operation_scope = test_operation_scope();
     let staged_event = serde_json::json!({
         "tagName": "repositoryStatusFile",
         "data": {
@@ -610,7 +608,6 @@ fn structural_status_preserves_real_staged_changes() {
 
 #[test]
 fn structural_status_does_not_merge_across_stage_partitions() {
-    let _operation_scope = test_operation_scope();
     let baseline_files = vec![RevisionTreeFile {
         path: "source.txt".to_owned(),
         size: 13,
@@ -655,7 +652,6 @@ fn structural_status_does_not_merge_across_stage_partitions() {
 
 #[test]
 fn structural_status_removes_only_missing_unstaged_additions() {
-    let _operation_scope = test_operation_scope();
     let mut events = vec![
         serde_json::json!({
             "tagName": "repositoryStatusFile",
@@ -689,7 +685,6 @@ fn structural_status_removes_only_missing_unstaged_additions() {
 
 #[test]
 fn storage_payload_capture_reassembles_fragments_without_json_values() {
-    let _operation_scope = test_operation_scope();
     let mut capture = StorageGetCapture::default();
     prepare_storage_get_buffer(&mut capture, 7, 6)
         .expect("The declared storage payload should fit in memory");
@@ -708,7 +703,6 @@ fn storage_payload_capture_reassembles_fragments_without_json_values() {
 
 #[test]
 fn storage_payload_capture_rejects_out_of_bounds_fragments() {
-    let _operation_scope = test_operation_scope();
     let mut capture = StorageGetCapture::default();
     prepare_storage_get_buffer(&mut capture, 9, 3)
         .expect("The declared storage payload should fit in memory");
@@ -724,7 +718,6 @@ fn storage_payload_capture_rejects_out_of_bounds_fragments() {
 
 #[test]
 fn auth_mutation_releases_every_open_repository_context() {
-    let _operation_scope = test_operation_scope();
     let first = PathBuf::from("C:/repositories/first");
     let second = PathBuf::from("C:/repositories/second");
     let mut released = Vec::new();
@@ -747,7 +740,6 @@ fn auth_mutation_releases_every_open_repository_context() {
 
 #[test]
 fn auth_mutation_continues_releasing_contexts_after_one_failure() {
-    let _operation_scope = test_operation_scope();
     let first = PathBuf::from("C:/repositories/first");
     let second = PathBuf::from("C:/repositories/second");
     let mut released = Vec::new();
@@ -776,7 +768,6 @@ fn auth_mutation_continues_releasing_contexts_after_one_failure() {
 
 #[test]
 fn successful_auth_mutation_invalidates_cached_transport_connections() {
-    let _operation_scope = test_operation_scope();
     let result = LoreOperationResult {
         request_id: test_operation_context().request_id,
         workspace_key: None,
@@ -797,7 +788,6 @@ fn successful_auth_mutation_invalidates_cached_transport_connections() {
 
 #[test]
 fn conflict_marker_detection_covers_all_standard_marker_lines() {
-    let _operation_scope = test_operation_scope();
     assert!(
         contains_conflict_markers("line\n<<<<<<< HEAD\nside\n=======\nother\n>>>>>>> feature\n"),
         "A standard three-way conflict must be detected"
@@ -814,7 +804,6 @@ fn conflict_marker_detection_covers_all_standard_marker_lines() {
 
 #[test]
 fn conflict_marker_detection_accepts_clean_content() {
-    let _operation_scope = test_operation_scope();
     assert!(
         !contains_conflict_markers("const data = {\n  provider: 'password',\n}\n"),
         "Clean content must not be treated as an unresolved conflict"
@@ -831,7 +820,6 @@ fn conflict_marker_detection_accepts_clean_content() {
 
 #[test]
 fn publish_command_rejects_invalid_authentication_identity_before_repository_access() {
-    let _operation_scope = test_operation_scope();
     for user_id in ["".to_owned(), "user\nid".to_owned(), "x".repeat(513)] {
         let error = tauri::async_runtime::block_on(lore_repository_publish(
             test_operation_context(),
@@ -851,7 +839,6 @@ fn publish_command_rejects_invalid_authentication_identity_before_repository_acc
 
 #[test]
 fn publish_preflight_finds_the_existing_remote_by_repository_id() {
-    let _operation_scope = test_operation_scope();
     let result = LoreOperationResult {
         request_id: test_operation_context().request_id,
         workspace_key: None,
@@ -875,7 +862,6 @@ fn publish_preflight_finds_the_existing_remote_by_repository_id() {
 
 #[test]
 fn failed_publish_preflight_does_not_claim_an_existing_remote() {
-    let _operation_scope = test_operation_scope();
     let result = LoreOperationResult {
         request_id: test_operation_context().request_id,
         workspace_key: None,
@@ -908,7 +894,6 @@ fn branch_list_entry(location: &str, name: &str, id: &str, latest: &str) -> Valu
 
 #[test]
 fn matching_zero_branch_tips_are_recognized_before_publish_push() {
-    let _operation_scope = test_operation_scope();
     let result = LoreOperationResult {
         request_id: test_operation_context().request_id,
         workspace_key: None,
@@ -926,7 +911,6 @@ fn matching_zero_branch_tips_are_recognized_before_publish_push() {
 
 #[test]
 fn nonzero_remote_branch_tip_requires_real_publish_push() {
-    let _operation_scope = test_operation_scope();
     let result = LoreOperationResult {
         request_id: test_operation_context().request_id,
         workspace_key: None,
@@ -944,7 +928,6 @@ fn nonzero_remote_branch_tip_requires_real_publish_push() {
 
 #[test]
 fn failed_branch_list_does_not_skip_publish_push() {
-    let _operation_scope = test_operation_scope();
     let result = LoreOperationResult {
         request_id: test_operation_context().request_id,
         workspace_key: None,
@@ -962,7 +945,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn auth_user_info_request_normalizes_and_deduplicates_user_ids() {
-    let _operation_scope = test_operation_scope();
     let (auth_url, user_ids) = validate_auth_user_info_request(
         " https://auth.example.com ".to_owned(),
         vec![
@@ -979,7 +961,6 @@ fn auth_user_info_request_normalizes_and_deduplicates_user_ids() {
 
 #[test]
 fn auth_user_info_request_rejects_missing_or_unsafe_identity_data() {
-    let _operation_scope = test_operation_scope();
     let missing =
         validate_auth_user_info_request("https://auth.example.com".to_owned(), Vec::new())
             .expect_err("At least one user ID must be required");
@@ -995,7 +976,6 @@ fn auth_user_info_request_rejects_missing_or_unsafe_identity_data() {
 
 #[test]
 fn repository_auth_user_info_request_deduplicates_candidates_and_enforces_history_limit() {
-    let _operation_scope = test_operation_scope();
     assert_eq!(
         normalize_auth_user_ids(vec![
             " user-2 ".to_owned(),
@@ -1052,7 +1032,6 @@ fn revision_history_result(events: Vec<Value>) -> LoreOperationResult {
 
 #[test]
 fn revision_history_uses_the_explicit_branch_tip_as_its_primary_anchor() {
-    let _operation_scope = test_operation_scope();
     let zero = "0000000000000000000000000000000000000000000000000000000000000000";
     let mut queried_revisions = Vec::new();
     let merged =
@@ -1073,7 +1052,6 @@ fn revision_history_uses_the_explicit_branch_tip_as_its_primary_anchor() {
 
 #[test]
 fn shared_store_info_maps_parallel_arrays_and_container_path() {
-    let _operation_scope = test_operation_scope();
     let separator = std::path::MAIN_SEPARATOR;
     let path = format!("{separator}device{separator}remote{separator}shared_store");
     let info = parse_shared_store_info(&[serde_json::json!({
@@ -1097,7 +1075,6 @@ fn shared_store_info_maps_parallel_arrays_and_container_path() {
 
 #[test]
 fn shared_store_registry_passes_the_container_path_through_unchanged() {
-    let _operation_scope = test_operation_scope();
     let separator = std::path::MAIN_SEPARATOR;
     /*
      * 注册表存的就是容器目录（Lore 读取时再自行拼 `shared_store` 子目录），
@@ -1129,7 +1106,6 @@ fn shared_store_registry_passes_the_container_path_through_unchanged() {
 
 #[test]
 fn shared_store_registry_separates_not_queried_from_no_instances() {
-    let _operation_scope = test_operation_scope();
     /*
      * 上游无论是否搜索实例都会发送 `instancePaths` / `instanceIds`（未搜索时为空
      * 数组），因此空数组不能推断出“未查询”；该标志只能来自请求参数。
@@ -1157,7 +1133,6 @@ fn shared_store_registry_separates_not_queried_from_no_instances() {
 
 #[test]
 fn shared_store_registry_requires_the_protocol_event() {
-    let _operation_scope = test_operation_scope();
     // 缺少协议事件属于不兼容，不得伪装成空注册表。
     let error = parse_shared_store_registry(&[], false)
         .expect_err("a missing registry event must fail explicitly");
@@ -1166,7 +1141,6 @@ fn shared_store_registry_requires_the_protocol_event() {
 
 #[test]
 fn shared_store_usage_counts_files_without_following_directories_outside_root() {
-    let _operation_scope = test_operation_scope();
     let root = std::env::temp_dir().join(format!(
         "lore-client-shared-store-{}",
         SystemTime::now()
@@ -1191,7 +1165,6 @@ fn shared_store_usage_counts_files_without_following_directories_outside_root() 
 
 #[test]
 fn shared_store_path_is_ignored_when_the_option_is_disabled() {
-    let _operation_scope = test_operation_scope();
     assert_eq!(
         validate_shared_store_path(false, Some("missing".to_owned()))
             .expect("disabled Shared Store should not validate an unused path"),
@@ -1201,7 +1174,6 @@ fn shared_store_path_is_ignored_when_the_option_is_disabled() {
 
 #[test]
 fn library_version_display_drops_local_build_metadata() {
-    let _operation_scope = test_operation_scope();
     /*
      * 上游把 `{CARGO_PKG_VERSION}+{本地构建标识}` 作为 `LORE_LIBRARY_VERSION`，
      * 该标识在非官方流水线中是不可用的本地探测结果。显示层只保留发布版本，
@@ -1217,7 +1189,6 @@ fn library_version_display_drops_local_build_metadata() {
 
 #[test]
 fn ffi_error_code_table_covers_the_relocated_code_blocks() {
-    let _operation_scope = test_operation_scope();
     /*
      * Lore 0.10.0 按失败类别重新分配了错误码，旧编号不再成立。这里固定几个
      * 跨版本迁移中实际使用的码，避免将来只改常量而漏改展示映射。
@@ -1235,7 +1206,6 @@ fn ffi_error_code_table_covers_the_relocated_code_blocks() {
 
 #[test]
 fn lock_query_filters_reject_control_characters_and_preserve_trimmed_values() {
-    let _operation_scope = test_operation_scope();
     assert_eq!(
         validate_optional_lock_filter(Some("  artist@example.com  ".to_owned()), "Lock owner")
             .expect("a normal owner filter should be accepted"),
@@ -1249,7 +1219,6 @@ fn lock_query_filters_reject_control_characters_and_preserve_trimmed_values() {
 
 #[test]
 fn dependency_tags_are_trimmed_deduplicated_and_bounded() {
-    let _operation_scope = test_operation_scope();
     assert_eq!(
         validate_dependency_tags(vec![
             " runtime ".to_owned(),
@@ -1273,7 +1242,6 @@ fn dependency_tags_are_trimmed_deduplicated_and_bounded() {
 
 #[test]
 fn merge_history_includes_secondary_parent_chain_in_topological_order() {
-    let _operation_scope = test_operation_scope();
     const ZERO: &str = "0000000000000000000000000000000000000000000000000000000000000000";
     let mut requested_revisions = Vec::new();
     let merged = collect_revision_history_with(100, None, |revision, _length| {
@@ -1338,7 +1306,6 @@ fn merge_history_includes_secondary_parent_chain_in_topological_order() {
 
 #[test]
 fn merge_history_expands_secondary_chain_when_primary_page_is_full() {
-    let _operation_scope = test_operation_scope();
     const ZERO: &str = "0000000000000000000000000000000000000000000000000000000000000000";
     let mut requested_revisions = Vec::new();
     let merged = collect_revision_history_with(3, None, |revision, _length| {
@@ -1374,7 +1341,6 @@ fn merge_history_expands_secondary_chain_when_primary_page_is_full() {
 
 #[test]
 fn linear_history_does_not_expand_a_truncated_primary_parent() {
-    let _operation_scope = test_operation_scope();
     const ZERO: &str = "0000000000000000000000000000000000000000000000000000000000000000";
     let mut requested_revisions = Vec::new();
     let merged = collect_revision_history_with(3, None, |revision, _length| {
@@ -1396,7 +1362,6 @@ fn linear_history_does_not_expand_a_truncated_primary_parent() {
 
 #[test]
 fn merge_history_preserves_secondary_parent_authentication_diagnostics() {
-    let _operation_scope = test_operation_scope();
     let diagnostics = vec![serde_json::json!({
         "tagName": "complete",
         "data": {"error": {"message": "The request does not have valid authentication credentials"}}
@@ -1426,7 +1391,6 @@ fn merge_history_preserves_secondary_parent_authentication_diagnostics() {
 
 #[test]
 fn merge_history_reports_secondary_parent_read_failures() {
-    let _operation_scope = test_operation_scope();
     const ZERO: &str = "0000000000000000000000000000000000000000000000000000000000000000";
     let result =
         collect_revision_history_with(100, None, |revision, _length| match revision.as_deref() {
@@ -1514,7 +1478,6 @@ fn workspace_status_classifies_content_without_extension_hints() {
 
 #[test]
 fn revision_content_reading_preserves_storage_item_error_detail() {
-    let _operation_scope = test_operation_scope();
     /*
      * Lore 0.10.1 把 storage 单项失败从 `data.errorCode` 字符串枚举改为
      * `data.error` 完整明细（数字 FFI 码 + 消息）。错误提取必须保留具体
@@ -1561,7 +1524,6 @@ fn revision_content_reading_preserves_storage_item_error_detail() {
 
 #[test]
 fn revision_content_reading_ignores_successful_storage_items() {
-    let _operation_scope = test_operation_scope();
     /*
      * 成功单项的 `error.errorCode` 是 0；错误提取不得把它误报为失败来源。
      */
@@ -1602,7 +1564,6 @@ fn revision_content_reading_ignores_successful_storage_items() {
 
 #[test]
 fn revision_text_command_rejects_invalid_revisions_before_storage() {
-    let _operation_scope = test_operation_scope();
     let empty = tauri::async_runtime::block_on(lore_read_revision_text(
         test_operation_context(),
         "unused-repository".into(),
@@ -1626,7 +1587,6 @@ fn revision_text_command_rejects_invalid_revisions_before_storage() {
 
 #[test]
 fn revision_text_command_rejects_invalid_paths_before_storage() {
-    let _operation_scope = test_operation_scope();
     let error = tauri::async_runtime::block_on(lore_read_revision_text(
         test_operation_context(),
         "unused-repository".into(),
@@ -1973,7 +1933,6 @@ fn workspace_large_blender_preview_bypasses_full_content_limit() {
 
 #[test]
 fn file_preview_envelope_preserves_metadata_and_payload() {
-    let _operation_scope = test_operation_scope();
     let payload = vec![0x89, b'P', b'N', b'G'];
     let envelope = encode_file_preview_envelope(LoreFilePreview {
         path: "Content/Images/Preview.png".to_string(),
@@ -2178,14 +2137,12 @@ fn revision_storage_prefers_bound_auth_identity_over_commit_identity() {
 
 #[test]
 fn empty_repository_path_returns_structured_error() {
-    let _operation_scope = test_operation_scope();
     let error = validate_repository_path("  ").expect_err("An empty path must be rejected");
     assert_eq!(error.code, "empty_repository_path");
 }
 
 #[test]
 fn composition_argument_builders_preserve_safe_link_and_layer_options() {
-    let _operation_scope = test_operation_scope();
     let layer = build_layer_add_args(
         " Content/Shared ".to_owned(),
         "repository-shared".to_owned(),
@@ -2223,7 +2180,6 @@ fn composition_argument_builders_preserve_safe_link_and_layer_options() {
 
 #[test]
 fn composition_argument_builders_reject_missing_or_control_character_fields() {
-    let _operation_scope = test_operation_scope();
     let empty = build_link_update_args("  ".to_owned(), None)
         .expect_err("An empty Link path must be rejected before entering Lore");
     assert_eq!(empty.code, "composition_field_required");
@@ -2240,7 +2196,6 @@ fn composition_argument_builders_reject_missing_or_control_character_fields() {
 
 #[test]
 fn conflict_session_recovers_staged_and_incoming_revisions_from_status() {
-    let _operation_scope = test_operation_scope();
     let events = vec![serde_json::json!({
         "tagName": "repositoryStatusRevision",
         "data": {
@@ -2262,7 +2217,6 @@ fn conflict_session_recovers_staged_and_incoming_revisions_from_status() {
 
 #[test]
 fn conflict_kind_prefers_revision_metadata_and_detects_merge_from_second_parent() {
-    let _operation_scope = test_operation_scope();
     let cherry_pick = vec![serde_json::json!({
         "tagName": "metadata",
         "data": { "key": "cherry-picked-from" }
@@ -2298,7 +2252,6 @@ fn conflict_kind_prefers_revision_metadata_and_detects_merge_from_second_parent(
 
 #[test]
 fn conflict_resolution_preconditions_reject_stale_content_and_session() {
-    let _operation_scope = test_operation_scope();
     let expected_session = LoreConflictSession {
         kind: LoreConflictOperationKind::Merge,
         current_revision: "current".to_owned(),
@@ -2331,7 +2284,6 @@ fn conflict_resolution_preconditions_reject_stale_content_and_session() {
 
 #[test]
 fn conflict_file_action_rejects_empty_paths_and_abort_discards_stale_selection() {
-    let _operation_scope = test_operation_scope();
     assert_eq!(
         validate_conflict_action_paths(LoreConflictAction::Resolve, Vec::new())
             .expect_err("A file-level conflict action must not interpret an empty set as all files")
@@ -2384,7 +2336,6 @@ fn commit_identity_prefers_repository_configuration_and_falls_back_to_client_def
 
 #[test]
 fn git_style_author_and_email_pass_through_as_single_lore_identity() {
-    let _operation_scope = test_operation_scope();
     assert_eq!(
         normalize_identity(" YourName <yourname@example.com> ")
             .unwrap()
@@ -2430,7 +2381,6 @@ fn repository_configuration_edit_preserves_unknown_tables_and_comments() {
 #[cfg(unix)]
 #[test]
 fn repository_configuration_write_refuses_a_link_that_leaves_the_repository() {
-    let _operation_scope = test_operation_scope();
     let repository = tempfile::tempdir().expect("temporary repository should exist");
     let outside = tempfile::tempdir().expect("outside directory should exist");
     let outside_config = outside.path().join("config.toml");
@@ -2452,7 +2402,6 @@ fn repository_configuration_write_refuses_a_link_that_leaves_the_repository() {
 #[cfg(unix)]
 #[test]
 fn repository_configuration_write_refuses_a_metadata_directory_linked_outside_the_repository() {
-    let _operation_scope = test_operation_scope();
     let repository = tempfile::tempdir().expect("temporary repository should exist");
     let outside = tempfile::tempdir().expect("outside directory should exist");
     let outside_config = outside.path().join("config.toml");
@@ -2472,7 +2421,6 @@ fn repository_configuration_write_refuses_a_metadata_directory_linked_outside_th
 #[cfg(unix)]
 #[test]
 fn repository_configuration_write_never_creates_a_dangling_link_target_outside_the_repository() {
-    let _operation_scope = test_operation_scope();
     let repository = tempfile::tempdir().expect("temporary repository should exist");
     let outside = tempfile::tempdir().expect("outside directory should exist");
     let missing = outside.path().join("created-by-write.toml");
@@ -2490,7 +2438,6 @@ fn repository_configuration_write_never_creates_a_dangling_link_target_outside_t
 #[cfg(unix)]
 #[test]
 fn repository_configuration_write_follows_links_that_stay_inside_the_repository() {
-    let _operation_scope = test_operation_scope();
     let repository = tempfile::tempdir().expect("temporary repository should exist");
     let metadata = repository.path().join(".lore");
     fs::create_dir(&metadata).unwrap();
@@ -2514,7 +2461,6 @@ fn repository_configuration_write_follows_links_that_stay_inside_the_repository(
 #[cfg(unix)]
 #[test]
 fn repository_configuration_write_allows_a_metadata_directory_linked_inside_the_repository() {
-    let _operation_scope = test_operation_scope();
     let repository = tempfile::tempdir().expect("temporary repository should exist");
     let store = repository.path().join("store");
     fs::create_dir(&store).unwrap();
@@ -2535,7 +2481,6 @@ fn repository_configuration_write_allows_a_metadata_directory_linked_inside_the_
 
 #[test]
 fn ignore_rules_append_to_a_regular_loreignore_file() {
-    let _operation_scope = test_operation_scope();
     let repository = tempfile::tempdir().expect("temporary repository should exist");
     fs::write(repository.path().join(".loreignore"), "*.log\n").unwrap();
 
@@ -2556,7 +2501,6 @@ fn ignore_rules_append_to_a_regular_loreignore_file() {
 #[cfg(unix)]
 #[test]
 fn ignore_rules_refuse_a_loreignore_link_that_leaves_the_repository() {
-    let _operation_scope = test_operation_scope();
     let repository = tempfile::tempdir().expect("temporary repository should exist");
     let outside = tempfile::tempdir().expect("outside directory should exist");
     let outside_rules = outside.path().join("global.ignore");
@@ -2576,13 +2520,11 @@ fn ignore_rules_refuse_a_loreignore_link_that_leaves_the_repository() {
 
 #[test]
 fn empty_file_list_maps_to_repository_root() {
-    let _operation_scope = test_operation_scope();
     assert_eq!(normalize_paths(Vec::new(), true), vec!["."]);
 }
 
 #[test]
 fn revision_signature_rejects_whitespace() {
-    let _operation_scope = test_operation_scope();
     assert_eq!(
         validate_revision("  ")
             .expect_err("An empty revision must be rejected")
@@ -2600,7 +2542,6 @@ fn revision_signature_rejects_whitespace() {
 
 #[test]
 fn file_history_clears_branch_when_revision_is_provided() {
-    let _operation_scope = test_operation_scope();
     assert_eq!(
         validate_file_history_start(Some("main".to_owned()), Some("abcdef1234567890".to_owned()))
             .unwrap(),
@@ -2620,7 +2561,6 @@ fn file_history_clears_branch_when_revision_is_provided() {
 
 #[test]
 fn tag_name_supports_path_semantics_and_rejects_control_characters() {
-    let _operation_scope = test_operation_scope();
     assert_eq!(
         validate_tag_name(" release/world-1.0 ").unwrap(),
         "release/world-1.0",
@@ -2641,7 +2581,6 @@ fn tag_name_supports_path_semantics_and_rejects_control_characters() {
 
 #[test]
 fn tag_metadata_event_parses_string_values_and_ignores_other_keys() {
-    let _operation_scope = test_operation_scope();
     let tag = LoreTag {
         id: "tag-stable".to_owned(),
         name: "release/1.0".to_owned(),
@@ -2677,7 +2616,6 @@ fn tag_metadata_event_parses_string_values_and_ignores_other_keys() {
 
 #[test]
 fn tag_list_deduplicates_by_stable_id_and_keeps_latest_rename() {
-    let _operation_scope = test_operation_scope();
     let old = LoreTagRecord {
         key: "lore-client.tag.v1/release/old".to_owned(),
         tag: LoreTag {
@@ -2702,7 +2640,6 @@ fn tag_list_deduplicates_by_stable_id_and_keeps_latest_rename() {
 
 #[test]
 fn clearing_empty_tag_keys_does_not_clear_all_repository_metadata() {
-    let _operation_scope = test_operation_scope();
     let result = clear_tag_keys(".", Vec::new());
     assert!(
         result.is_ok(),
@@ -2712,7 +2649,6 @@ fn clearing_empty_tag_keys_does_not_clear_all_repository_metadata() {
 
 #[test]
 fn file_paths_are_normalized_to_forward_slashes() {
-    let _operation_scope = test_operation_scope();
     assert_eq!(
         normalize_paths(vec!["Content\\Maps\\World.umap".to_owned()], false),
         vec!["Content/Maps/World.umap"],
@@ -2721,7 +2657,6 @@ fn file_paths_are_normalized_to_forward_slashes() {
 
 #[test]
 fn file_restore_path_rejects_repository_root_escape() {
-    let _operation_scope = test_operation_scope();
     let error = validate_repository_relative_path("../outside.txt")
         .expect_err("Parent traversal must be rejected");
     assert_eq!(error.code, "invalid_repository_relative_path");
@@ -2729,7 +2664,6 @@ fn file_restore_path_rejects_repository_root_escape() {
 
 #[test]
 fn file_restore_path_accepts_nested_repository_relative_path() {
-    let _operation_scope = test_operation_scope();
     let path = validate_repository_relative_path("Content/Maps/World.umap")
         .expect("A valid repository-relative path should pass validation");
     assert_eq!(path, PathBuf::from("Content/Maps/World.umap"));
@@ -2737,7 +2671,6 @@ fn file_restore_path_accepts_nested_repository_relative_path() {
 
 #[test]
 fn file_restore_path_accepts_and_normalizes_current_directory_prefix() {
-    let _operation_scope = test_operation_scope();
     let path = validate_repository_relative_path("./sda.txt")
         .expect("A current-directory prefix should remain valid inside the repository");
     assert_eq!(path, PathBuf::from("sda.txt"));
@@ -2745,7 +2678,6 @@ fn file_restore_path_accepts_and_normalizes_current_directory_prefix() {
 
 #[test]
 fn user_visible_path_removes_windows_extended_prefix() {
-    let _operation_scope = test_operation_scope();
     assert_eq!(
         display_path_without_windows_verbatim_prefix(Path::new(r"\\?\E:\Game\Lore")),
         r"E:\Game\Lore"
@@ -2758,7 +2690,6 @@ fn user_visible_path_removes_windows_extended_prefix() {
 
 #[test]
 fn empty_file_restore_list_returns_structured_error() {
-    let _operation_scope = test_operation_scope();
     let error =
         validate_repository_relative_paths(Vec::new()).expect_err("An empty list must be rejected");
     assert_eq!(error.code, "empty_reset_paths");
@@ -2766,7 +2697,6 @@ fn empty_file_restore_list_returns_structured_error() {
 
 #[test]
 fn revision_diff_accepts_empty_path_for_complete_revision() {
-    let _operation_scope = test_operation_scope();
     assert!(validate_optional_diff_paths(Vec::new())
         .expect("A complete revision diff should accept an empty path")
         .is_empty());
@@ -2778,7 +2708,6 @@ fn revision_diff_accepts_empty_path_for_complete_revision() {
 
 #[test]
 fn targeted_revision_tree_walk_prunes_unrelated_directories_and_files() {
-    let _operation_scope = test_operation_scope();
     let paths = BTreeSet::from(["Content/Characters/Hero.glb".to_owned()]);
 
     assert!(should_visit_revision_tree_node(0, "Content", Some(&paths)));
@@ -2803,7 +2732,6 @@ fn targeted_revision_tree_walk_prunes_unrelated_directories_and_files() {
 
 #[test]
 fn revision_diff_adds_empty_new_files_without_text_hunks() {
-    let _operation_scope = test_operation_scope();
     let source = vec![RevisionTreeFile {
         path: "existing.txt".to_owned(),
         size: 1,
@@ -2851,7 +2779,6 @@ fn revision_diff_adds_empty_new_files_without_text_hunks() {
 
 #[test]
 fn revision_diff_supplement_reads_move_source_from_patch_header() {
-    let _operation_scope = test_operation_scope();
     let file = |path: &str| RevisionTreeFile {
         path: path.to_owned(),
         size: 1,
@@ -2882,7 +2809,6 @@ fn revision_diff_supplement_reads_move_source_from_patch_header() {
 
 #[test]
 fn revision_diff_supplement_keeps_binary_moves_without_hunks() {
-    let _operation_scope = test_operation_scope();
     let file = |path: &str| RevisionTreeFile {
         path: path.to_owned(),
         size: 1,
@@ -2911,7 +2837,6 @@ fn revision_diff_supplement_keeps_binary_moves_without_hunks() {
 
 #[test]
 fn revision_diff_supplement_reports_move_source_without_a_from_path_field() {
-    let _operation_scope = test_operation_scope();
     let file = |path: &str| RevisionTreeFile {
         path: path.to_owned(),
         size: 1,
@@ -2942,7 +2867,6 @@ fn revision_diff_supplement_reports_move_source_without_a_from_path_field() {
 
 #[test]
 fn revision_diff_supplement_adds_delete_when_no_move_source_is_reported() {
-    let _operation_scope = test_operation_scope();
     let file = |path: &str| RevisionTreeFile {
         path: path.to_owned(),
         size: 1,
@@ -2971,7 +2895,6 @@ fn revision_diff_supplement_adds_delete_when_no_move_source_is_reported() {
 
 #[test]
 fn range_get_buffer_allocates_only_the_requested_range() {
-    let _operation_scope = test_operation_scope();
     let mut capture = RangeGetCapture::default();
     prepare_range_get_buffer(&mut capture, 100, 4096, 24 * 1024 * 1024).expect("range is valid");
     assert_eq!(capture.offset, 100);
@@ -2996,7 +2919,6 @@ fn range_get_buffer_allocates_only_the_requested_range() {
 
 #[test]
 fn range_get_chunk_writes_at_content_offset_within_the_range() {
-    let _operation_scope = test_operation_scope();
     let mut capture = RangeGetCapture::default();
     prepare_range_get_buffer(&mut capture, 100, 10, 200).expect("range is valid");
     copy_range_get_chunk(&mut capture, 102, b"abc").expect("chunk is in range");
@@ -3014,7 +2936,6 @@ fn range_get_chunk_writes_at_content_offset_within_the_range() {
 
 #[test]
 fn batch_range_items_are_buffered_and_checked_independently() {
-    let _operation_scope = test_operation_scope();
     let mut capture = BatchRangeGetCapture::default();
     capture.items.insert(1, BatchRangeItemCapture::default());
     capture.items.insert(2, BatchRangeItemCapture::default());
@@ -3044,7 +2965,6 @@ fn batch_range_items_are_buffered_and_checked_independently() {
 
 #[test]
 fn revision_change_list_compares_only_tree_metadata_and_detects_common_actions() {
-    let _operation_scope = test_operation_scope();
     let file = |path: &str, address: &str, size: u64| RevisionTreeFile {
         path: path.to_owned(),
         size,
@@ -3111,7 +3031,6 @@ fn revision_change_list_compares_only_tree_metadata_and_detects_common_actions()
 
 #[test]
 fn root_revision_change_list_marks_the_entire_target_tree_as_added() {
-    let _operation_scope = test_operation_scope();
     let target = vec![RevisionTreeFile {
         path: "Scenes/Main.tscn".to_owned(),
         size: 42,
@@ -3133,7 +3052,6 @@ fn root_revision_change_list_marks_the_entire_target_tree_as_added() {
 
 #[test]
 fn initial_revision_added_text_patch_contains_complete_content() {
-    let _operation_scope = test_operation_scope();
     let patch = build_added_file_patch("Content/World.txt", b"first\nsecond");
     assert!(patch.contains("--- /dev/null"));
     assert!(patch.contains("+++ Content/World.txt"));
@@ -3143,7 +3061,6 @@ fn initial_revision_added_text_patch_contains_complete_content() {
 
 #[test]
 fn ignore_rules_are_generated_and_deduplicated_by_path_or_extension() {
-    let _operation_scope = test_operation_scope();
     let paths = vec!["Build/Client.log".to_owned(), "Saved/Server.log".to_owned()];
     assert_eq!(
         build_ignore_rules(&paths, false).unwrap(),
@@ -3154,7 +3071,6 @@ fn ignore_rules_are_generated_and_deduplicated_by_path_or_extension() {
 
 #[test]
 fn ignore_extension_rejects_files_without_extensions() {
-    let _operation_scope = test_operation_scope();
     let error = build_ignore_rules(&["LICENSE".to_owned()], true)
         .expect_err("A file without an extension must return an explicit error");
     assert_eq!(error.code, "ignore_extension_missing");
@@ -3162,7 +3078,6 @@ fn ignore_extension_rejects_files_without_extensions() {
 
 #[test]
 fn external_diff_arguments_replace_paths_without_shell_splitting() {
-    let _operation_scope = test_operation_scope();
     let tool = ExternalDiffTool {
         id: "diff-test".to_owned(),
         name: "Custom Tool".to_owned(),
@@ -3196,7 +3111,6 @@ fn external_diff_arguments_replace_paths_without_shell_splitting() {
 
 #[test]
 fn external_diff_arguments_require_both_file_placeholders() {
-    let _operation_scope = test_operation_scope();
     let tool = ExternalDiffTool {
         id: "diff-test".to_owned(),
         name: "Broken Tool".to_owned(),
@@ -3217,7 +3131,6 @@ fn external_diff_arguments_require_both_file_placeholders() {
 
 #[test]
 fn external_tool_command_name_resolves_from_supplied_path() {
-    let _operation_scope = test_operation_scope();
     let directory = tempfile::tempdir().unwrap();
     let executable = directory.path().join("studio-diff.testexe");
     fs::write(&executable, b"test executable marker").unwrap();
@@ -3235,7 +3148,6 @@ fn external_tool_command_name_resolves_from_supplied_path() {
 #[cfg(windows)]
 #[test]
 fn external_tool_resolution_prefers_windows_launcher_over_extensionless_shell_script() {
-    let _operation_scope = test_operation_scope();
     let directory = tempfile::tempdir().unwrap();
     let shell_script = directory.path().join("code");
     let windows_launcher = directory.path().join("code.cmd");
@@ -3258,7 +3170,6 @@ fn external_tool_resolution_prefers_windows_launcher_over_extensionless_shell_sc
 #[cfg(windows)]
 #[test]
 fn absolute_extensionless_external_tool_path_prefers_windows_launcher() {
-    let _operation_scope = test_operation_scope();
     let directory = tempfile::tempdir().unwrap();
     let shell_script = directory.path().join("cursor");
     let windows_launcher = directory.path().join("cursor.cmd");
@@ -3279,7 +3190,6 @@ fn absolute_extensionless_external_tool_path_prefers_windows_launcher() {
 
 #[test]
 fn external_merge_arguments_require_and_replace_all_four_paths() {
-    let _operation_scope = test_operation_scope();
     let tool = ExternalDiffTool {
         id: "merge-test".to_owned(),
         name: "Studio Merge".to_owned(),
@@ -3325,7 +3235,6 @@ fn external_merge_arguments_require_and_replace_all_four_paths() {
 
 #[test]
 fn empty_patch_is_rejected() {
-    let _operation_scope = test_operation_scope();
     assert_eq!(
         validate_patch_content("  ")
             .expect_err("An empty patch must be rejected")
@@ -3350,7 +3259,6 @@ fn save_patch(
 
 #[test]
 fn patch_write_command_preserves_real_unified_diff_content() {
-    let _operation_scope = test_operation_scope();
     let directory = tempfile::tempdir().expect("A temporary patch directory should be created");
     let destination = directory.path().join("workspace.patch");
     let patch = "--- a/Content/World.txt\n+++ b/Content/World.txt\n@@ -1 +1 @@\n-old\n+new\n";
@@ -3370,7 +3278,6 @@ fn patch_write_command_preserves_real_unified_diff_content() {
 
 #[test]
 fn patch_write_command_only_targets_patch_extensions() {
-    let _operation_scope = test_operation_scope();
     let directory = tempfile::tempdir().expect("A temporary patch directory should be created");
     let patch = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n";
 
@@ -3398,7 +3305,6 @@ fn patch_write_command_only_targets_patch_extensions() {
 
 #[test]
 fn patch_write_command_replaces_an_existing_file_only_when_confirmed() {
-    let _operation_scope = test_operation_scope();
     let directory = tempfile::tempdir().expect("A temporary patch directory should be created");
     let destination = directory.path().join("unconfirmed.patch");
     let patch = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n";
@@ -3431,7 +3337,6 @@ fn patch_write_command_replaces_an_existing_file_only_when_confirmed() {
 #[cfg(unix)]
 #[test]
 fn confirmed_patch_replacement_refuses_a_symlink_and_leaves_its_target_alone() {
-    let _operation_scope = test_operation_scope();
     let directory = tempfile::tempdir().expect("A temporary patch directory should be created");
     let victim = directory.path().join("victim.bashrc");
     std::fs::write(&victim, "export KEEP=1\n").expect("The link target should be written");
@@ -3454,7 +3359,6 @@ fn confirmed_patch_replacement_refuses_a_symlink_and_leaves_its_target_alone() {
 #[cfg(unix)]
 #[test]
 fn confirmed_patch_replacement_never_creates_a_dangling_link_target() {
-    let _operation_scope = test_operation_scope();
     let directory = tempfile::tempdir().expect("A temporary patch directory should be created");
     let outside = directory.path().join("created-by-replace.sh");
     let destination = directory.path().join("review.diff");
@@ -3475,7 +3379,6 @@ fn confirmed_patch_replacement_never_creates_a_dangling_link_target() {
 
 #[test]
 fn server_url_validates_scheme_and_removes_trailing_slash() {
-    let _operation_scope = test_operation_scope();
     assert_eq!(
         validate_server_url(" lore://127.0.0.1:41337/ ").unwrap(),
         "lore://127.0.0.1:41337",
@@ -3489,7 +3392,6 @@ fn server_url_validates_scheme_and_removes_trailing_slash() {
 
 #[test]
 fn revision_history_args_preserve_branch_date_and_only_branch_filter() {
-    let _operation_scope = test_operation_scope();
     // `date` 是 Unix 纪元毫秒（与 Revision 时间戳同一单位）；适配置原样透传，
     // 不得做单位换算，否则阈值会偏移 1000 倍。
     let args = build_revision_history_args(
@@ -3509,7 +3411,6 @@ fn revision_history_args_preserve_branch_date_and_only_branch_filter() {
 
 #[test]
 fn diagnostic_paths_reject_absolute_and_parent_traversal_inputs() {
-    let _operation_scope = test_operation_scope();
     assert!(validate_repository_relative_path("../outside").is_err());
     assert!(validate_repository_relative_path("/outside").is_err());
     // 盘符前缀只在 Windows 上是路径前缀；Linux 上 `C:` 只是普通文件名字符。
@@ -3526,7 +3427,6 @@ fn diagnostic_paths_reject_absolute_and_parent_traversal_inputs() {
 
 #[test]
 fn remote_repository_url_rejects_path_injection() {
-    let _operation_scope = test_operation_scope();
     assert_eq!(
         build_repository_url("lore://127.0.0.1:41337/", "world").unwrap(),
         "lore://127.0.0.1:41337/world",
@@ -3659,7 +3559,6 @@ fn native_repository_id_is_converted_to_fixed_length_hex() {
 
 #[test]
 fn clone_target_and_layer_options_enforce_stable_boundaries() {
-    let _operation_scope = test_operation_scope();
     assert_eq!(
         validate_optional_clone_target(Some(" release/1.0 ".to_owned())).unwrap(),
         "release/1.0"
@@ -3694,7 +3593,6 @@ fn clone_target_and_layer_options_enforce_stable_boundaries() {
 
 #[test]
 fn bare_clone_rejects_options_that_lore_would_ignore() {
-    let _operation_scope = test_operation_scope();
     validate_bare_clone_options(true, None, false, "", &[], &[], false, 0)
         .expect("A plain Bare Clone should remain valid");
 
@@ -3734,7 +3632,6 @@ fn bare_clone_rejects_options_that_lore_would_ignore() {
 
 #[test]
 fn repository_list_authentication_error_maps_to_stable_state() {
-    let _operation_scope = test_operation_scope();
     let result = LoreOperationResult {
         request_id: test_operation_context().request_id,
         workspace_key: None,
@@ -3758,7 +3655,6 @@ fn repository_list_authentication_error_maps_to_stable_state() {
 
 #[test]
 fn authentication_failure_with_structured_not_authenticated_code_is_recognized() {
-    let _operation_scope = test_operation_scope();
     // Lore 0.10.0 把错误码重排后，认证失败以结构化 FFI 码 16 终止；事件文本
     // 不再包含旧的 gRPC 认证描述，识别必须只依赖状态码。
     let result = LoreOperationResult {
@@ -3784,7 +3680,6 @@ fn authentication_failure_with_structured_not_authenticated_code_is_recognized()
 
 #[test]
 fn unrelated_structured_error_code_is_not_treated_as_authentication() {
-    let _operation_scope = test_operation_scope();
     // RepositoryNotFound（码 89）等具体错误码不得被误判为需要认证，否则远端
     // Create 会错误地启动交互登录并可能重复创建仓库。
     let result = LoreOperationResult {
@@ -3810,7 +3705,6 @@ fn unrelated_structured_error_code_is_not_treated_as_authentication() {
 
 #[test]
 fn connection_stage_credential_failure_is_recognized_as_authentication() {
-    let _operation_scope = test_operation_scope();
     // Lore 在连接建立阶段缺少可用凭据时以 NotConnected（码 29）终止，
     // 详细消息带 "Not authenticated"；这是用户真实日志中的形态，必须被识别为
     // 需要重新认证，而不是当成普通网络故障。
@@ -3837,7 +3731,6 @@ fn connection_stage_credential_failure_is_recognized_as_authentication() {
 
 #[test]
 fn plain_connection_refusal_is_not_treated_as_authentication() {
-    let _operation_scope = test_operation_scope();
     // 码 29 只有在事件文本给出认证语义时才代表凭据失效；纯网络拒绝必须保持
     // offline 语义，避免服务器宕机被误报成“请重新登录”。
     let result = LoreOperationResult {
@@ -3863,7 +3756,6 @@ fn plain_connection_refusal_is_not_treated_as_authentication() {
 
 #[test]
 fn not_authorized_permission_error_is_not_treated_as_authentication() {
-    let _operation_scope = test_operation_scope();
     // NotAuthorized 是已认证但无权限，属于账户权限问题；重新登录不会改变结果，
     // 不得触发重新认证流程。该码跨版本发生过变化，因此测试覆盖当前取值。
     let result = LoreOperationResult {
@@ -3889,7 +3781,6 @@ fn not_authorized_permission_error_is_not_treated_as_authentication() {
 
 #[test]
 fn operation_success_error_renders_known_ffi_code_name() {
-    let _operation_scope = test_operation_scope();
     let result = LoreOperationResult {
         request_id: test_operation_context().request_id,
         workspace_key: None,
@@ -3921,7 +3812,6 @@ fn operation_success_error_renders_known_ffi_code_name() {
 
 #[test]
 fn operation_success_unknown_status_code_keeps_numeric_detail() {
-    let _operation_scope = test_operation_scope();
     // 内部错误 -1 必须保留数字原样，绝不猜测更具体的错误语义。
     let result = LoreOperationResult {
         request_id: test_operation_context().request_id,
@@ -3950,7 +3840,6 @@ fn operation_success_unknown_status_code_keeps_numeric_detail() {
 
 #[test]
 fn clone_target_rejects_nonempty_directory() {
-    let _operation_scope = test_operation_scope();
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("System time should be later than the Unix epoch")
@@ -3971,7 +3860,6 @@ fn clone_target_rejects_nonempty_directory() {
 
 #[test]
 fn clone_target_rejects_both_platform_path_separators() {
-    let _operation_scope = test_operation_scope();
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("System time should be later than the Unix epoch")
@@ -3990,7 +3878,6 @@ fn clone_target_rejects_both_platform_path_separators() {
 
 #[test]
 fn clone_target_rejects_windows_reserved_names_on_every_platform() {
-    let _operation_scope = test_operation_scope();
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("System time should be later than the Unix epoch")
@@ -4009,7 +3896,6 @@ fn clone_target_rejects_windows_reserved_names_on_every_platform() {
 
 #[test]
 fn clone_target_accepts_a_portable_unicode_directory_name() {
-    let _operation_scope = test_operation_scope();
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("System time should be later than the Unix epoch")
@@ -4531,7 +4417,6 @@ impl Drop for TemporaryRepository {
 
 #[test]
 fn deferred_temporary_repository_cleanup_worker() {
-    let _operation_scope = test_operation_scope();
     let Some(path) = std::env::var_os("LORE_CLIENT_TEST_CLEANUP_PATH").map(PathBuf::from) else {
         return;
     };
@@ -4570,7 +4455,6 @@ fn create_configuration_test_repository(
 
 #[test]
 fn repository_view_rules_follow_lore_ordered_exclusion_and_reinclusion_semantics() {
-    let _operation_scope = test_operation_scope();
     let parsed = parse_repository_view(
         "# Exclude everything, then materialize one asset subtree.\n**\n!Content/Textures/\n",
     );
@@ -4588,7 +4472,6 @@ fn repository_view_rules_follow_lore_ordered_exclusion_and_reinclusion_semantics
 
 #[test]
 fn repository_view_rejects_expensive_double_star_inclusion() {
-    let _operation_scope = test_operation_scope();
     let parsed = parse_repository_view("**\n!**/Textures/**\n");
 
     assert!(!repository_view_is_valid(&parsed));
@@ -4604,7 +4487,6 @@ fn repository_view_rejects_expensive_double_star_inclusion() {
 
 #[test]
 fn repository_view_warns_when_inclusions_have_no_exclusion_to_override() {
-    let _operation_scope = test_operation_scope();
     let parsed = parse_repository_view("!Content/Maps/\n");
 
     assert!(repository_view_is_valid(&parsed));
@@ -4620,7 +4502,6 @@ fn repository_view_warns_when_inclusions_have_no_exclusion_to_override() {
 
 #[test]
 fn repository_view_uses_the_metadata_directory_matching_the_repository_format() {
-    let _operation_scope = test_operation_scope();
     let repository = tempfile::tempdir().expect("temporary repository should be created");
     fs::create_dir(repository.path().join(".lore"))
         .expect("current metadata directory should be created");
@@ -4730,7 +4611,6 @@ fn measure_status_event_volume() {
 #[cfg(unix)]
 #[test]
 fn workspace_identity_validation_preserves_real_trailing_spaces() {
-    let _operation_scope = test_operation_scope();
     let directory = tempfile::tempdir().unwrap();
     let ordinary = directory.path().join("Repo");
     let spaced = directory.path().join("Repo ");

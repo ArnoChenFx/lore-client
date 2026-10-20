@@ -286,7 +286,6 @@ fn external_merge_result_is_discarded_when_the_tool_fails() {
 #[cfg(unix)]
 #[test]
 fn patch_export_without_confirmation_refuses_a_symlink_destination() {
-    let _operation_scope = test_operation_scope();
     let sandbox = tempfile::tempdir().unwrap();
     let victim = sandbox.path().join("victim.txt");
     std::fs::write(&victim, "keep me\n").unwrap();

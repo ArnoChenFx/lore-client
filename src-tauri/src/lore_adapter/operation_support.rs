@@ -191,24 +191,6 @@ pub(super) fn run_operation(
 
     let status = call(callback);
     let duration_ms = started_at.elapsed().as_millis();
-    let terminal_event = progress_stream
-        .lock()
-        .map_err(|_| {
-            LoreCommandError::new(
-                "operation_stream_state_poisoned",
-                "The Lore operation stream state is poisoned",
-            )
-        })?
-        .completion_event(status, duration_ms);
-    if let Some(terminal_event) = terminal_event {
-        emit_operation_stream(terminal_event);
-    }
-    log::debug!(
-        "Lore operation completed requestId={:?} workspaceKey={:?} operationId={:?} operation={operation:?} status={status} durationMs={duration_ms}",
-        context.request_id,
-        context.workspace_key,
-        operation_id
-    );
     /*
      * Lore 的 EventDispatcher 会先调用 End callback，再通知 `complete()` 的等待者，
      * 最后才随转发任务退出而析构 callback。因此同步 Lore 调用返回时，事件流已经
@@ -234,6 +216,24 @@ pub(super) fn run_operation(
     if status != 0 && operation_failure_indicates_unauthenticated(status, &events) {
         emit_remote_authentication_required(operation);
     }
+    let terminal_event = progress_stream
+        .lock()
+        .map_err(|_| {
+            LoreCommandError::new(
+                "operation_stream_state_poisoned",
+                "The Lore operation stream state is poisoned",
+            )
+        })?
+        .completion_event(status, duration_ms);
+    if let Some(terminal_event) = terminal_event {
+        emit_operation_stream(terminal_event);
+    }
+    log::debug!(
+        "Lore operation completed requestId={:?} workspaceKey={:?} operationId={:?} operation={operation:?} status={status} durationMs={duration_ms}",
+        context.request_id,
+        context.workspace_key,
+        operation_id
+    );
     Ok(LoreOperationResult {
         request_id: context.request_id,
         workspace_key: context.workspace_key,

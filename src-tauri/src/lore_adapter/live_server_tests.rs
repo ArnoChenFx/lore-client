@@ -558,7 +558,6 @@ fn live_stage_and_commit_progress_counts_every_file() {
 #[test]
 #[ignore = "live: needs the local Lore server and lore-auth-service; see docs/en/E2E_LOCAL_STACK.md"]
 fn live_wrong_access_token_is_rejected_by_the_auth_service() {
-    let _operation_scope = test_operation_scope();
     let stack = LiveStack::from_env();
     let operation = tauri::async_runtime::block_on(lore_auth_login_with_token(
         test_operation_context(),
@@ -581,7 +580,6 @@ fn live_wrong_access_token_is_rejected_by_the_auth_service() {
 #[test]
 #[ignore = "live: needs the local Lore server and lore-auth-service; see docs/en/E2E_LOCAL_STACK.md"]
 fn live_wrong_password_interactive_login_fails_instead_of_signing_in() {
-    let _operation_scope = test_operation_scope();
     let stack = LiveStack::from_env();
     let _password = EnvGuard::set("LORE_E2E_LOGIN_PASSWORD", "definitely-wrong-password");
     let _user = EnvGuard::set("LORE_E2E_LOGIN_USER", "alice");
@@ -609,7 +607,6 @@ fn live_wrong_password_interactive_login_fails_instead_of_signing_in() {
 #[test]
 #[ignore = "live: needs the local Lore server and lore-auth-service; see docs/en/E2E_LOCAL_STACK.md"]
 fn live_unreachable_server_fails_without_hanging() {
-    let _operation_scope = test_operation_scope();
     let started = Instant::now();
     let result = tauri::async_runtime::block_on(lore_repository_list(
         test_operation_context(),
@@ -640,7 +637,6 @@ const ANONYMOUS_PROBE_VARIABLE: &str = "LORE_E2E_ANONYMOUS_PROBE";
 #[test]
 #[ignore = "live: needs the local Lore server and lore-auth-service; see docs/en/E2E_LOCAL_STACK.md"]
 fn live_repository_list_requires_authentication_without_an_identity() {
-    let _operation_scope = test_operation_scope();
     if std::env::var_os(ANONYMOUS_PROBE_VARIABLE).is_some() {
         probe_anonymous_repository_list();
         return;

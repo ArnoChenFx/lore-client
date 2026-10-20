@@ -354,6 +354,85 @@ pub(super) fn copy_storage_get_chunk(
     Ok(())
 }
 
+/// The three raw-byte reads share one truthful, unwind-safe stream lifetime.
+struct StorageOperationStream {
+    context: OperationContext,
+    operation_id: String,
+    started_at: Instant,
+    status: Option<i32>,
+    completed: bool,
+}
+
+impl StorageOperationStream {
+    fn new(context: OperationContext) -> Self {
+        let stream = Self {
+            context,
+            operation_id: format!(
+                "lore-operation-{}",
+                OPERATION_STREAM_COUNTER.fetch_add(1, Ordering::Relaxed)
+            ),
+            started_at: Instant::now(),
+            status: None,
+            completed: false,
+        };
+        stream.emit("queued", None, None);
+        stream.emit("running", None, None);
+        stream
+    }
+
+    fn emit(&self, phase: &'static str, status: Option<i32>, duration_ms: Option<u128>) {
+        emit_operation_stream(LoreOperationStreamEvent {
+            request_id: self.context.request_id.clone(),
+            workspace_key: self.context.workspace_key.clone(),
+            operation_id: self.operation_id.clone(),
+            operation: "storage.get",
+            phase,
+            event: None,
+            status,
+            duration_ms,
+            cancellable: false,
+        });
+    }
+
+    // Payload validation is part of the operation: a successful Lore status alone
+    // cannot close the stream successfully before capture/header/size checks finish.
+    fn finish<T>(
+        mut self,
+        status: i32,
+        collect: impl FnOnce() -> Result<T, LoreCommandError>,
+    ) -> Result<T, LoreCommandError> {
+        self.status = Some(status);
+        let result = collect();
+        self.emit(
+            if status == 0 && result.is_ok() {
+                "succeeded"
+            } else {
+                "failed"
+            },
+            if status == 0 && result.is_err() {
+                None
+            } else {
+                Some(status)
+            },
+            Some(self.started_at.elapsed().as_millis()),
+        );
+        self.completed = true;
+        result
+    }
+}
+
+impl Drop for StorageOperationStream {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.emit(
+                "failed",
+                self.status.filter(|status| *status != 0),
+                Some(self.started_at.elapsed().as_millis()),
+            );
+        }
+    }
+}
+
 /**
  * 执行低层 Store Get，同时让二进制载荷绕过通用 JSON 事件收集器。
  *
@@ -365,34 +444,8 @@ pub(super) fn run_storage_get_operation(
     items: Vec<LoreStorageGetItem>,
 ) -> Result<(LoreOperationResult, BTreeMap<u64, Vec<u8>>), LoreCommandError> {
     let context = current_operation_context()?;
-    const OPERATION: &str = "storage.get";
-    let operation_id = format!(
-        "lore-operation-{}",
-        OPERATION_STREAM_COUNTER.fetch_add(1, Ordering::Relaxed)
-    );
-    emit_operation_stream(LoreOperationStreamEvent {
-        request_id: context.request_id.clone(),
-        workspace_key: context.workspace_key.clone(),
-        operation_id: operation_id.clone(),
-        operation: OPERATION,
-        phase: "queued",
-        event: None,
-        status: None,
-        duration_ms: None,
-        cancellable: false,
-    });
-    let started_at = Instant::now();
-    emit_operation_stream(LoreOperationStreamEvent {
-        request_id: context.request_id.clone(),
-        workspace_key: context.workspace_key.clone(),
-        operation_id: operation_id.clone(),
-        operation: OPERATION,
-        phase: "running",
-        event: None,
-        status: None,
-        duration_ms: None,
-        cancellable: false,
-    });
+    let stream = StorageOperationStream::new(context.clone());
+    let started_at = stream.started_at;
 
     let events = Arc::new(Mutex::new(Vec::<Value>::new()));
     let capture = Arc::new(Mutex::new(StorageGetCapture::default()));
@@ -441,51 +494,41 @@ pub(super) fn run_storage_get_operation(
         },
         callback,
     ));
-    let events = {
-        let mut target = events.lock().map_err(|_| {
-            LoreCommandError::new(
-                "event_collector_poisoned",
-                "The Lore event collector state is poisoned",
-            )
-        })?;
-        std::mem::take(&mut *target)
-    };
-    let capture = {
-        let mut target = capture.lock().map_err(|_| {
-            LoreCommandError::new(
-                "storage_capture_poisoned",
-                "The Lore storage payload collector state is poisoned",
-            )
-        })?;
-        std::mem::take(&mut *target)
-    };
-    if let Some(error) = capture.error {
-        return Err(LoreCommandError::new("storage_payload_invalid", error));
-    }
+    stream.finish(status, || {
+        let events = {
+            let mut target = events.lock().map_err(|_| {
+                LoreCommandError::new(
+                    "event_collector_poisoned",
+                    "The Lore event collector state is poisoned",
+                )
+            })?;
+            std::mem::take(&mut *target)
+        };
+        let capture = {
+            let mut target = capture.lock().map_err(|_| {
+                LoreCommandError::new(
+                    "storage_capture_poisoned",
+                    "The Lore storage payload collector state is poisoned",
+                )
+            })?;
+            std::mem::take(&mut *target)
+        };
+        if let Some(error) = capture.error {
+            return Err(LoreCommandError::new("storage_payload_invalid", error));
+        }
 
-    let duration_ms = started_at.elapsed().as_millis();
-    emit_operation_stream(LoreOperationStreamEvent {
-        request_id: context.request_id.clone(),
-        workspace_key: context.workspace_key.clone(),
-        operation_id,
-        operation: OPERATION,
-        phase: if status == 0 { "succeeded" } else { "failed" },
-        event: None,
-        status: Some(status),
-        duration_ms: Some(duration_ms),
-        cancellable: false,
-    });
-    Ok((
-        LoreOperationResult {
-            request_id: context.request_id,
-            workspace_key: context.workspace_key,
-            operation: OPERATION,
-            status,
-            duration_ms,
-            events,
-        },
-        capture.contents,
-    ))
+        Ok((
+            LoreOperationResult {
+                request_id: context.request_id,
+                workspace_key: context.workspace_key,
+                operation: "storage.get",
+                status,
+                duration_ms: started_at.elapsed().as_millis(),
+                events,
+            },
+            capture.contents,
+        ))
+    })
 }
 
 /// 单次区间请求的捕获状态。
@@ -513,35 +556,7 @@ pub(super) fn run_storage_range_get_operation(
     handle: LoreStore,
     item: LoreStorageGetItem,
 ) -> Result<Vec<u8>, LoreCommandError> {
-    let context = current_operation_context()?;
-    const OPERATION: &str = "storage.get";
-    let operation_id = format!(
-        "lore-operation-{}",
-        OPERATION_STREAM_COUNTER.fetch_add(1, Ordering::Relaxed)
-    );
-    emit_operation_stream(LoreOperationStreamEvent {
-        request_id: context.request_id.clone(),
-        workspace_key: context.workspace_key.clone(),
-        operation_id: operation_id.clone(),
-        operation: OPERATION,
-        phase: "queued",
-        event: None,
-        status: None,
-        duration_ms: None,
-        cancellable: false,
-    });
-    let started_at = Instant::now();
-    emit_operation_stream(LoreOperationStreamEvent {
-        request_id: context.request_id.clone(),
-        workspace_key: context.workspace_key.clone(),
-        operation_id: operation_id.clone(),
-        operation: OPERATION,
-        phase: "running",
-        event: None,
-        status: None,
-        duration_ms: None,
-        cancellable: false,
-    });
+    let stream = StorageOperationStream::new(current_operation_context()?);
 
     let requested_offset = item.offset;
     let requested_length = item.length;
@@ -583,61 +598,61 @@ pub(super) fn run_storage_range_get_operation(
         },
         callback,
     ));
-    let capture = {
-        let mut target = capture.lock().map_err(|_| {
-            LoreCommandError::new(
-                "storage_capture_poisoned",
-                "The Lore storage payload collector state is poisoned",
-            )
-        })?;
-        std::mem::take(&mut *target)
-    };
-    if let Some(error) = capture.error {
-        return Err(LoreCommandError::new("storage_payload_invalid", error));
-    }
+    finish_storage_range_get(stream, status, &capture, requested_offset, requested_length)
+}
 
-    let duration_ms = started_at.elapsed().as_millis();
-    emit_operation_stream(LoreOperationStreamEvent {
-        request_id: context.request_id.clone(),
-        workspace_key: context.workspace_key.clone(),
-        operation_id,
-        operation: OPERATION,
-        phase: if status == 0 { "succeeded" } else { "failed" },
-        event: None,
-        status: Some(status),
-        duration_ms: Some(duration_ms),
-        cancellable: false,
-    });
-    if status != 0 {
-        return Err(LoreCommandError::new(
-            "storage_get_failed",
-            format!("Lore store range read failed with status {status}"),
-        ));
-    }
+fn finish_storage_range_get(
+    stream: StorageOperationStream,
+    status: i32,
+    capture: &Mutex<RangeGetCapture>,
+    requested_offset: u64,
+    requested_length: u64,
+) -> Result<Vec<u8>, LoreCommandError> {
+    stream.finish(status, || {
+        let capture = {
+            let mut target = capture.lock().map_err(|_| {
+                LoreCommandError::new(
+                    "storage_capture_poisoned",
+                    "The Lore storage payload collector state is poisoned",
+                )
+            })?;
+            std::mem::take(&mut *target)
+        };
+        if let Some(error) = capture.error {
+            return Err(LoreCommandError::new("storage_payload_invalid", error));
+        }
 
-    // 起始偏移越界由 Lore 以 INVALID_ARGUMENTS 拒绝；这里只收敛“读到结尾”的请求。
-    if !capture.header_seen {
-        return Err(LoreCommandError::new(
-            "storage_payload_invalid",
-            "Lore store range read returned data without a header",
-        ));
-    }
-    let available = capture.size_content.saturating_sub(requested_offset);
-    let expected = if requested_length == 0 {
-        available
-    } else {
-        available.min(requested_length)
-    };
-    if capture.bytes.len() != expected as usize {
-        return Err(LoreCommandError::new(
-            "storage_payload_invalid",
-            format!(
-                "Lore store range read returned {} bytes, expected {expected}",
-                capture.bytes.len()
-            ),
-        ));
-    }
-    Ok(capture.bytes)
+        if status != 0 {
+            return Err(LoreCommandError::new(
+                "storage_get_failed",
+                format!("Lore store range read failed with status {status}"),
+            ));
+        }
+
+        // 起始偏移越界由 Lore 以 INVALID_ARGUMENTS 拒绝；这里只收敛“读到结尾”的请求。
+        if !capture.header_seen {
+            return Err(LoreCommandError::new(
+                "storage_payload_invalid",
+                "Lore store range read returned data without a header",
+            ));
+        }
+        let available = capture.size_content.saturating_sub(requested_offset);
+        let expected = if requested_length == 0 {
+            available
+        } else {
+            available.min(requested_length)
+        };
+        if capture.bytes.len() != expected as usize {
+            return Err(LoreCommandError::new(
+                "storage_payload_invalid",
+                format!(
+                    "Lore store range read returned {} bytes, expected {expected}",
+                    capture.bytes.len()
+                ),
+            ));
+        }
+        Ok(capture.bytes)
+    })
 }
 
 /** 按请求区间（而非完整内容）预分配区间读取缓冲。 */
@@ -716,35 +731,7 @@ pub(super) fn run_storage_range_get_batch_operation(
     handle: LoreStore,
     items: Vec<LoreStorageGetItem>,
 ) -> Result<BTreeMap<u64, Vec<u8>>, LoreCommandError> {
-    let context = current_operation_context()?;
-    const OPERATION: &str = "storage.get";
-    let operation_id = format!(
-        "lore-operation-{}",
-        OPERATION_STREAM_COUNTER.fetch_add(1, Ordering::Relaxed)
-    );
-    emit_operation_stream(LoreOperationStreamEvent {
-        request_id: context.request_id.clone(),
-        workspace_key: context.workspace_key.clone(),
-        operation_id: operation_id.clone(),
-        operation: OPERATION,
-        phase: "queued",
-        event: None,
-        status: None,
-        duration_ms: None,
-        cancellable: false,
-    });
-    let started_at = Instant::now();
-    emit_operation_stream(LoreOperationStreamEvent {
-        request_id: context.request_id.clone(),
-        workspace_key: context.workspace_key.clone(),
-        operation_id: operation_id.clone(),
-        operation: OPERATION,
-        phase: "running",
-        event: None,
-        status: None,
-        duration_ms: None,
-        cancellable: false,
-    });
+    let stream = StorageOperationStream::new(current_operation_context()?);
 
     let requested = items
         .iter()
@@ -799,43 +786,33 @@ pub(super) fn run_storage_range_get_batch_operation(
         },
         callback,
     ));
-    let capture = {
-        let mut target = capture.lock().map_err(|_| {
-            LoreCommandError::new(
-                "storage_capture_poisoned",
-                "The Lore storage payload collector state is poisoned",
-            )
-        })?;
-        std::mem::take(&mut *target)
-    };
-    if let Some(error) = capture.error {
-        return Err(LoreCommandError::new("storage_payload_invalid", error));
-    }
+    stream.finish(status, || {
+        let capture = {
+            let mut target = capture.lock().map_err(|_| {
+                LoreCommandError::new(
+                    "storage_capture_poisoned",
+                    "The Lore storage payload collector state is poisoned",
+                )
+            })?;
+            std::mem::take(&mut *target)
+        };
+        if let Some(error) = capture.error {
+            return Err(LoreCommandError::new("storage_payload_invalid", error));
+        }
 
-    let duration_ms = started_at.elapsed().as_millis();
-    emit_operation_stream(LoreOperationStreamEvent {
-        request_id: context.request_id.clone(),
-        workspace_key: context.workspace_key.clone(),
-        operation_id,
-        operation: OPERATION,
-        phase: if status == 0 { "succeeded" } else { "failed" },
-        event: None,
-        status: Some(status),
-        duration_ms: Some(duration_ms),
-        cancellable: false,
-    });
-    if status != 0 {
-        return Err(LoreCommandError::new(
-            "storage_get_failed",
-            format!("Lore store batch range read failed with status {status}"),
-        ));
-    }
+        if status != 0 {
+            return Err(LoreCommandError::new(
+                "storage_get_failed",
+                format!("Lore store batch range read failed with status {status}"),
+            ));
+        }
 
-    Ok(capture
-        .items
-        .into_iter()
-        .map(|(id, item)| (id, item.bytes))
-        .collect())
+        Ok(capture
+            .items
+            .into_iter()
+            .map(|(id, item)| (id, item.bytes))
+            .collect())
+    })
 }
 
 /** 按请求区间（而非完整内容）预分配批量区间读取缓冲。 */
@@ -1800,4 +1777,116 @@ pub(super) fn compare_revision_tree_files(
     );
     changes.sort_by(|left, right| left.path.cmp(&right.path));
     changes
+}
+
+#[cfg(test)]
+mod storage_stream_tests {
+    use super::*;
+
+    fn assert_terminal(context: &OperationContext, phase: &str, status: Option<i32>) {
+        let captured = CAPTURED_OPERATION_STREAM.lock().unwrap();
+        let events = captured
+            .iter()
+            .filter(|event| event["requestId"] == context.request_id)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event["phase"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["queued", "running", phase]
+        );
+        assert!(events
+            .iter()
+            .all(|event| event["operationId"] == events[0]["operationId"]
+                && event["workspaceKey"] == serde_json::to_value(&context.workspace_key).unwrap()));
+        assert_eq!(events[2]["status"], serde_json::to_value(status).unwrap());
+    }
+
+    #[test]
+    fn range_payload_errors_emit_failed_only_after_validation() {
+        for capture in [
+            RangeGetCapture::default(),
+            RangeGetCapture {
+                header_seen: true,
+                size_content: 2,
+                bytes: vec![1],
+                ..Default::default()
+            },
+            RangeGetCapture {
+                error: Some("chunk outside the requested range".into()),
+                ..Default::default()
+            },
+        ] {
+            let context = test_operation_context();
+            let result = finish_storage_range_get(
+                StorageOperationStream::new(context.clone()),
+                0,
+                &Mutex::new(capture),
+                0,
+                2,
+            );
+            assert_eq!(result.unwrap_err().code, "storage_payload_invalid");
+            assert_terminal(&context, "failed", None);
+        }
+    }
+
+    #[test]
+    fn poisoned_storage_collector_closes_with_failure() {
+        let capture = Mutex::new(RangeGetCapture::default());
+        let _ = std::panic::catch_unwind(|| {
+            let _guard = capture.lock().unwrap();
+            panic!("poison the payload collector");
+        });
+        let context = test_operation_context();
+        let result = finish_storage_range_get(
+            StorageOperationStream::new(context.clone()),
+            0,
+            &capture,
+            0,
+            2,
+        );
+        assert_eq!(result.unwrap_err().code, "storage_capture_poisoned");
+        assert_terminal(&context, "failed", None);
+    }
+
+    #[test]
+    fn valid_range_succeeds_and_lore_failure_preserves_its_status() {
+        for status in [0, -7] {
+            let context = test_operation_context();
+            let result = finish_storage_range_get(
+                StorageOperationStream::new(context.clone()),
+                status,
+                &Mutex::new(RangeGetCapture {
+                    header_seen: true,
+                    size_content: 2,
+                    bytes: vec![1, 2],
+                    ..Default::default()
+                }),
+                0,
+                2,
+            );
+            if status == 0 {
+                assert_eq!(result.unwrap(), vec![1, 2]);
+                assert_terminal(&context, "succeeded", Some(0));
+            } else {
+                assert_eq!(result.unwrap_err().code, "storage_get_failed");
+                assert_terminal(&context, "failed", Some(status));
+            }
+        }
+    }
+
+    #[test]
+    fn storage_unwind_emits_one_failed_terminal_without_an_invented_status() {
+        for status in [0, -7] {
+            let context = test_operation_context();
+            let result = std::panic::catch_unwind(|| {
+                StorageOperationStream::new(context.clone()).finish::<()>(status, || {
+                    panic!("payload collection unwound");
+                })
+            });
+            assert!(result.is_err());
+            assert_terminal(&context, "failed", (status != 0).then_some(status));
+        }
+    }
 }
