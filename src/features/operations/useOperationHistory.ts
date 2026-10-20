@@ -7,7 +7,13 @@ import {
   getActiveOperationRequests,
   subscribeOperationRequests
 } from '../../services/operationRequests'
-import type { LoreOperationStreamEvent, LoreOperationStreamRecord, OperationContext, OperationDetail, OperationRecord } from '../../types'
+import type {
+  LoreOperationStreamEvent,
+  LoreOperationStreamRecord,
+  OperationContext,
+  OperationDetail,
+  OperationRecord
+} from '../../types'
 import { normalizeOperationDetail } from './operationDetail'
 import { isActiveStreamPhase, isOperationRequestActive, selectRecentOperationHistory } from './operationHistory'
 import { mergeLoreOperationStream } from './operationStream'
@@ -52,7 +58,10 @@ export function countActiveOperations(activeRequests: readonly OperationContext[
   return new Set(activeRequests.map((context) => context.requestId)).size
 }
 
-export function operationHistoryReducer(state: OperationHistoryState, action: OperationHistoryAction): OperationHistoryState {
+export function operationHistoryReducer(
+  state: OperationHistoryState,
+  action: OperationHistoryAction
+): OperationHistoryState {
   switch (action.type) {
     case 'begin':
       return limitCombinedHistory({ ...state, operations: [action.record, ...state.operations] })
@@ -61,7 +70,12 @@ export function operationHistoryReducer(state: OperationHistoryState, action: Op
         ...state,
         operations: state.operations.map((record) =>
           record.requestId === action.requestId && record.status === 'running'
-            ? { ...record, detail: action.detail, status: action.succeeded ? 'succeeded' : 'failed', durationMs: action.durationMs }
+            ? {
+                ...record,
+                detail: action.detail,
+                status: action.succeeded ? 'succeeded' : 'failed',
+                durationMs: action.durationMs
+              }
             : record
         )
       })
@@ -71,9 +85,15 @@ export function operationHistoryReducer(state: OperationHistoryState, action: Op
       const existing = state.streams.find((record) => record.operationId === action.event.operationId)
       // Late terminal delivery may complete a retained child. It cannot recreate history or
       // admit an unknown request from a previous page, and late progress cannot revive a request.
-      if (!isOperationRequestActive(action.event, state.activeRequests) &&
-        (isActiveStreamPhase(action.event.phase) || !existing)) return state
-      return limitCombinedHistory({ ...state, streams: mergeLoreOperationStream(state.streams, action.event, action.receivedAt) })
+      if (
+        !isOperationRequestActive(action.event, state.activeRequests) &&
+        (isActiveStreamPhase(action.event.phase) || !existing)
+      )
+        return state
+      return limitCombinedHistory({
+        ...state,
+        streams: mergeLoreOperationStream(state.streams, action.event, action.receivedAt)
+      })
     }
     case 'clearCompleted':
       return {
@@ -87,50 +107,67 @@ export function operationHistoryReducer(state: OperationHistoryState, action: Op
 /** Registry leases are the single source of liveness, independent of the selected workspace. */
 export function useOperationHistory(enabled: boolean) {
   const [history, dispatch] = useReducer(operationHistoryReducer, undefined, () => ({
-    ...INITIAL_OPERATION_HISTORY, activeRequests: getActiveOperationRequests()
+    ...INITIAL_OPERATION_HISTORY,
+    activeRequests: getActiveOperationRequests()
   }))
   const ownedOperations = useRef(new Map<string, ActiveOperation>())
   const mounted = useRef(true)
-  const generation = useRef(0)
+  const generation = useRef({ value: 0 })
 
-  const beginOperation = useCallback((labelKey: string, detail: string | OperationDetail, workspaceKey: string | null = null): ActiveOperation => {
-    const context = createOperationContext(workspaceKey)
-    const releaseRequest = acquireOperationRequest(context)
-    const operation: ActiveOperation = {
-      context,
-      startedAt: performance.now(),
-      release: () => {
-        ownedOperations.current.delete(context.requestId)
-        releaseRequest()
+  const beginOperation = useCallback(
+    (labelKey: string, detail: string | OperationDetail, workspaceKey: string | null = null): ActiveOperation => {
+      const context = createOperationContext(workspaceKey)
+      const releaseRequest = acquireOperationRequest(context)
+      const operation: ActiveOperation = {
+        context,
+        startedAt: performance.now(),
+        release: () => {
+          ownedOperations.current.delete(context.requestId)
+          releaseRequest()
+        }
       }
-    }
-    if (!mounted.current) {
-      operation.release()
-      return operation
-    }
-    ownedOperations.current.set(context.requestId, operation)
-    dispatch({
-      type: 'begin',
-      record: { ...context, labelKey, detail: normalizeOperationDetail(detail), status: 'running', startedAt: Date.now() }
-    })
-    return operation
-  }, [])
-
-  const finishOperation = useCallback((operation: ActiveOperation, succeeded: boolean, detail: string | OperationDetail) => {
-    if (mounted.current && ownedOperations.current.get(operation.context.requestId) === operation) {
+      if (!mounted.current) {
+        operation.release()
+        return operation
+      }
+      ownedOperations.current.set(context.requestId, operation)
       dispatch({
-        type: 'finish', requestId: operation.context.requestId, succeeded,
-        detail: normalizeOperationDetail(detail), durationMs: Math.round(performance.now() - operation.startedAt)
+        type: 'begin',
+        record: {
+          ...context,
+          labelKey,
+          detail: normalizeOperationDetail(detail),
+          status: 'running',
+          startedAt: Date.now()
+        }
       })
-    }
-    operation.release()
-  }, [])
+      return operation
+    },
+    []
+  )
+
+  const finishOperation = useCallback(
+    (operation: ActiveOperation, succeeded: boolean, detail: string | OperationDetail) => {
+      if (mounted.current && ownedOperations.current.get(operation.context.requestId) === operation) {
+        dispatch({
+          type: 'finish',
+          requestId: operation.context.requestId,
+          succeeded,
+          detail: normalizeOperationDetail(detail),
+          durationMs: Math.round(performance.now() - operation.startedAt)
+        })
+      }
+      operation.release()
+    },
+    []
+  )
 
   const clearCompleted = useCallback(() => dispatch({ type: 'clearCompleted' }), [])
 
   useEffect(() => {
     mounted.current = true
-    const currentGeneration = ++generation.current
+    const lifecycle = generation.current
+    const currentGeneration = ++lifecycle.value
     const updateRequests = () => dispatch({ type: 'requests', activeRequests: getActiveOperationRequests() })
     const unsubscribe = subscribeOperationRequests(updateRequests)
     // Subscribe first: include requests that started before this effect, without an observation gap.
@@ -142,7 +179,7 @@ export function useOperationHistory(enabled: boolean) {
       // StrictMode replays effects synchronously. Only a real unmount releases root leases;
       // still-pending IPC calls keep their own leases until they settle.
       queueMicrotask(() => {
-        if (generation.current !== currentGeneration) return
+        if (lifecycle.value !== currentGeneration) return
         for (const operation of owned.values()) operation.release()
       })
     }

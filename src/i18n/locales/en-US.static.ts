@@ -1650,7 +1650,11 @@ const enUSStatic = {
     storageItemFinished: 'Storage Item Finished',
     storageOpened: 'Storage Opened'
   },
+  operationScopeGlobal: 'Global',
+  operationInProgress: 'Operation in progress',
+  operationFinalProgressUnavailable: 'No final progress result',
   operationPhase: {
+    ended: 'Ended',
     queued: 'Queued',
     running: 'Running',
     streaming: 'Streaming',

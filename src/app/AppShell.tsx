@@ -24,7 +24,7 @@ interface AppShellProps {
   repositoryTabs: RepositoryTab[]
   activeRepositoryId: string
   runtimeInfo: LoreRuntimeInfo | null
-  busyLabel: string | null
+  operationLabel: string | null
   operationProgress?: LoreOperationStreamRecord | null
   demoMode: boolean
   toast: ToastMessage | null
@@ -59,7 +59,7 @@ export function AppShell({
   repositoryTabs,
   activeRepositoryId,
   runtimeInfo,
-  busyLabel,
+  operationLabel,
   operationProgress = null,
   demoMode,
   toast,
@@ -121,7 +121,7 @@ export function AppShell({
       <StatusBar
         repository={repository}
         runtimeInfo={runtimeInfo}
-        busyLabel={busyLabel}
+        operationLabel={operationLabel}
         progress={operationProgress}
         demoMode={demoMode}
       />

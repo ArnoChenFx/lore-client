@@ -14,10 +14,14 @@ export function mergeLoreOperationStream(
   now: number
 ): LoreOperationStreamRecord[] {
   const existing = records.find((record) => record.operationId === incoming.operationId)
-  if (existing && (
-    existing.requestId !== incoming.requestId || existing.workspaceKey !== incoming.workspaceKey ||
-    existing.operation !== incoming.operation || !isActiveStreamPhase(existing.phase)
-  )) return records
+  if (
+    existing &&
+    (existing.requestId !== incoming.requestId ||
+      existing.workspaceKey !== incoming.workspaceKey ||
+      existing.operation !== incoming.operation ||
+      !isActiveStreamPhase(existing.phase))
+  )
+    return records
   // Delivery may be delayed; lifecycle stages never move backwards.
   const rank = { queued: 0, running: 1, streaming: 2, succeeded: 3, failed: 3, cancelled: 3 }
   if (existing && rank[incoming.phase] < rank[existing.phase]) return records

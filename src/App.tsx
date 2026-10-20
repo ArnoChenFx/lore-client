@@ -38,7 +38,12 @@ import {
   useLocalChangeSelection,
   useLocalChangesAutoRefresh
 } from './features/local-changes'
-import { operationMessage, selectActiveProgressRecord, useOperationHistory } from './features/operations'
+import {
+  operationMessage,
+  selectActiveOperationRecord,
+  selectActiveProgressRecord,
+  useOperationHistory
+} from './features/operations'
 import {
   RepositoryWelcome,
   conflictOperationLabel,
@@ -234,12 +239,12 @@ function App() {
   const {
     operations,
     loreOperationStreams,
+    activeRequests,
     activeCount: activeOperationCount,
     beginOperation,
     finishOperation,
     clearCompleted: clearCompletedOperations
   } = useOperationHistory(applicationMode === 'tauri')
-  const activeProgressRecord = useMemo(() => selectActiveProgressRecord(loreOperationStreams), [loreOperationStreams])
   const { availableExternalToolIds, availableExternalDiffTools, availableExternalMergeTools } =
     useAvailableExternalTools(preferences)
   // 渲染期可读的 workspace 节点镜像。PaneResizer 在事件处理器里读取 container，
@@ -251,6 +256,15 @@ function App() {
   const activeSnapshot =
     snapshots.find((snapshot) => repositorySessionKey(snapshot) === activeRepositoryId) ?? snapshots[0]
   const activeRepositoryPath = activeSnapshot?.repository.path ?? ''
+  const operationWorkspace = activeSnapshot?.repository.path ?? null
+  const activeProgressRecord = useMemo(
+    () => selectActiveProgressRecord(loreOperationStreams, activeRequests, operationWorkspace),
+    [loreOperationStreams, activeRequests, operationWorkspace]
+  )
+  const activeOperationRecord = useMemo(
+    () => selectActiveOperationRecord(operations, activeRequests, operationWorkspace, activeProgressRecord?.requestId),
+    [operations, activeRequests, operationWorkspace, activeProgressRecord]
+  )
   const notifyRepositoryRefreshError = useCallback(
     (error: unknown) => notify(t('unableToRefreshLocalChanges'), readErrorMessage(error), 'warning'),
     [notify]
@@ -779,6 +793,7 @@ function App() {
             ? {
                 operations,
                 streams: loreOperationStreams,
+                activeRequests,
                 onClear: clearCompletedOperations,
                 onClose: () => setOperationsOpen(false)
               }
@@ -932,7 +947,7 @@ function App() {
       repositoryTabs={repositoryTabs}
       activeRepositoryId={activeRepositoryId}
       runtimeInfo={runtimeInfo}
-      busyLabel={busyAction ? t(busyAction as never) : null}
+      operationLabel={activeOperationRecord ? t(activeOperationRecord.labelKey as never) : null}
       operationProgress={activeProgressRecord}
       demoMode={applicationMode === 'browser-demo'}
       toast={toast}
