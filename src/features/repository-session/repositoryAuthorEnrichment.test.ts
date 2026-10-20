@@ -176,6 +176,102 @@ describe('repository author enrichment lifecycle', () => {
     expect(requests.beginAuthorLookup('/workspace/A')).not.toBeNull()
   })
 
+  it.each(['close-and-reopen', 'reopen', 'replace-session'] as const)(
+    'keeps native authentication pauses across %s and rejects the old deferred result',
+    async (action) => {
+      let current = [snapshot()]
+      const requests = new RepositorySessionRequests(['/workspace/A'])
+      let finishOldRemote!: (names: ReadonlyMap<string, string>) => void
+      const oldRemote = new Promise<ReadonlyMap<string, string>>((resolve) => {
+        finishOldRemote = resolve
+      })
+      let markStarted!: () => void
+      const started = new Promise<void>((resolve) => {
+        markStarted = resolve
+      })
+      let markDisplayed!: () => void
+      const displayed = new Promise<void>((resolve) => {
+        markDisplayed = resolve
+      })
+      let resolverCount = 0
+      let remoteCalls = 0
+      const owner = new RepositoryAuthorEnrichment(
+        requests,
+        (request, names) => {
+          if (!requests.isCurrent(request)) return false
+          const next = updateRepositoryAuthorNames(current, request.path, names)
+          const changed = current !== next
+          current = next
+          if (current[0].revisions[0].author === 'New authentication') markDisplayed()
+          return changed
+        },
+        (repository) => {
+          resolverCount += 1
+          return new RepositoryAuthorNameResolver(repository, {
+            loadCached: async () => new Map(),
+            loadRemote: async () => {
+              remoteCalls += 1
+              if (remoteCalls === 1) {
+                markStarted()
+                return oldRemote
+              }
+              return new Map([['user-42', 'New authentication']])
+            },
+            remember: async () => undefined
+          })
+        }
+      )
+      try {
+        owner.reconcile(current, 0, [])
+        await started
+        const first = requests.pauseAuthorLookupsForAuthentication('/workspace/A')
+        if (action === 'close-and-reopen') requests.close('/workspace/A')
+        if (action === 'replace-session') {
+          requests.retain([])
+          requests.retain(['/workspace/A'])
+        } else {
+          requests.beginOpen('/workspace/A')
+        }
+        current = [{ ...snapshot(), revisions: [revision('reopened-history')] }]
+        expect(requests.beginAuthorLookup('/workspace/A')).toBeNull()
+        const second = requests.pauseAuthorLookupsForAuthentication('/workspace/A')
+        owner.reconcile(current, 0, [])
+        finishOldRemote(new Map([['user-42', 'Old authentication']]))
+        first()
+        first()
+        owner.reconcile(current, 0, [])
+        expect(requests.beginAuthorLookup('/workspace/A')).toBeNull()
+        expect(resolverCount).toBe(1)
+        expect(current[0].revisions[0].author).toBe('user-42')
+        second()
+        owner.reconcile(current, 0, [])
+        await displayed
+        expect(resolverCount).toBe(2)
+        expect(remoteCalls).toBe(2)
+        expect(current[0].revisions[0]).toMatchObject({
+          id: 'reopened-history',
+          author: 'New authentication'
+        })
+      } finally {
+        owner.dispose()
+      }
+    }
+  )
+
+  it('retains an authentication pause started from a stale snapshot before the path is reopened', () => {
+    const requests = new RepositorySessionRequests([])
+    const resume = requests.pauseAuthorLookupsForAuthentication('/workspace/A')
+    requests.beginOpen('/workspace/A')
+    expect(requests.beginAuthorLookup('/workspace/A')).toBeNull()
+    resume()
+    const author = requests.beginAuthorLookup('/workspace/A')!
+    expect(requests.isCurrent(author)).toBe(true)
+    const finishNext = requests.pauseAuthorLookupsForAuthentication('/workspace/A')
+    expect(requests.isCurrent(author)).toBe(false)
+    finishNext()
+    expect(requests.isCurrent(author)).toBe(false)
+  })
+
   it('rejects pre-mutation names and preserves the new snapshot when the lookup finishes last', () => {
     const f = fixture()
     f.reconcile()

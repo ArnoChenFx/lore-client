@@ -249,23 +249,6 @@ export class RepositoryAuthorNameResolver {
   }
 }
 
-/** Compatibility for callers that explicitly need a complete optional enrichment result. */
-export async function resolveAuthorNames(
-  repository: Repository,
-  identityCandidates: readonly string[]
-): Promise<Map<string, string>> {
-  const resolver = new RepositoryAuthorNameResolver(repository)
-  let resolved = new Map<string, string>()
-  try {
-    await resolver.hydrate(identityCandidates, (names) => {
-      resolved = new Map(names)
-    })
-    return resolved
-  } finally {
-    resolver.dispose()
-  }
-}
-
 type AuthorCacheEntry = {
   userId: string
   displayName: string

@@ -15,7 +15,6 @@ interface SessionRequests {
   session: number
   generation: number
   authorGeneration: number
-  authenticationRefreshes: number
   snapshotId: number
   historyId: number
   historyVersion: number
@@ -35,6 +34,8 @@ export function repositoryPathKey(path: string): string {
  */
 export class RepositorySessionRequests {
   private readonly sessions = new Map<string, SessionRequests>()
+  // Native contexts belong to a path even while its tab is closed or replaced.
+  private readonly authorAuthenticationRefreshes = new Map<string, number>()
   private nextSession = 0
   private nextRequest = 0
   private interactionVersion = 0
@@ -84,21 +85,23 @@ export class RepositorySessionRequests {
   beginAuthorLookup(path: string): RepositorySessionRequest | null {
     const key = repositoryPathKey(path)
     const session = this.sessions.get(key)
-    if (!session || session.mutating || session.authenticationRefreshes > 0) return null
+    if (!session || session.mutating || this.authorAuthenticationRefreshes.has(key)) return null
     return this.request(key, session, 'authors', session.snapshotId)
   }
 
   /** Auth contexts change before the UI's auth version advances; do not attach fresh observers to old work. */
   pauseAuthorLookupsForAuthentication(path: string): () => void {
-    const session = this.sessions.get(repositoryPathKey(path))
-    if (!session) return () => undefined
-    session.authorGeneration += 1
-    session.authenticationRefreshes += 1
+    const key = repositoryPathKey(path)
+    const session = this.sessions.get(key)
+    if (session) session.authorGeneration += 1
+    this.authorAuthenticationRefreshes.set(key, (this.authorAuthenticationRefreshes.get(key) ?? 0) + 1)
     let released = false
     return () => {
       if (released) return
       released = true
-      session.authenticationRefreshes -= 1
+      const remaining = (this.authorAuthenticationRefreshes.get(key) ?? 1) - 1
+      if (remaining > 0) this.authorAuthenticationRefreshes.set(key, remaining)
+      else this.authorAuthenticationRefreshes.delete(key)
     }
   }
 
@@ -122,7 +125,7 @@ export class RepositorySessionRequests {
     if (!session || session.session !== request.session || session.generation !== request.generation) return false
     if (
       request.kind === 'authors' &&
-      (session.authorGeneration !== request.authorGeneration || session.authenticationRefreshes > 0)
+      (session.authorGeneration !== request.authorGeneration || this.authorAuthenticationRefreshes.has(request.path))
     ) {
       return false
     }
@@ -154,7 +157,6 @@ export class RepositorySessionRequests {
       session: ++this.nextSession,
       generation: 0,
       authorGeneration: 0,
-      authenticationRefreshes: 0,
       snapshotId: 0,
       historyId: 0,
       historyVersion: 0,
