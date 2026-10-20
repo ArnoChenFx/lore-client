@@ -22,6 +22,7 @@ export function RepositoryToolsOverlay({ controller }: RepositoryToolsOverlayPro
   if (!controller.dialogProps) return null
   return (
     <LazyViewBoundary
+      key={controller.dialogProps.repository.path}
       load={loadRepositoryToolsDialog}
       viewProps={controller.dialogProps}
       onDismiss={controller.dialogProps.onClose}

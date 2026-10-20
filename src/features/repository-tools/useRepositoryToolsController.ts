@@ -82,6 +82,11 @@ import type {
   RepositoryToolsDialogProps
 } from './types'
 
+interface RepositoryToolSession {
+  readonly repositoryPath: string
+  readonly tab: RepositoryToolTab
+}
+
 const REPOSITORY_TOOL_BUSY_ACTIONS = new Set([
   'updateRepositoryConfiguration',
   'publishRepository',
@@ -297,7 +302,10 @@ export function useRepositoryToolsController({
   pushCurrentRepository,
   locateRevision
 }: UseRepositoryToolsControllerOptions): RepositoryToolsController {
-  const [tab, setTab] = useState<RepositoryToolTab | null>(null)
+  const [toolSession, setToolSession] = useState<RepositoryToolSession | null>(null)
+  const tab = toolSession?.tab ?? null
+  const toolSessionRef = useRef<RepositoryToolSession | null>(null)
+  const resourcesActiveRef = useRef(true)
   const [layers, setLayers] = useState<LoreLayer[]>([])
   const [links, setLinks] = useState<LoreLink[]>([])
   const [fileLocks, setFileLocks] = useState<LoreFileLock[]>([])
@@ -310,6 +318,7 @@ export function useRepositoryToolsController({
   const [connectedRemoteName, setConnectedRemoteName] = useState('')
   const [publishAuthIdentities, setPublishAuthIdentities] = useState<LoreAuthIdentity[]>([])
   const [loading, setLoading] = useState(false)
+  const [authActionsPending, setAuthActionsPending] = useState(0)
   const resourceRequestCounter = useRef(0)
   const lockRequestCounter = useRef(0)
   const fileLockStatusQueue = useRef(new LatestTaskQueue())
@@ -318,8 +327,24 @@ export function useRepositoryToolsController({
   useEffect(() => {
     const queue = fileLockStatusQueue.current
     queue.activate()
-    return () => queue.dispose()
+    resourcesActiveRef.current = true
+    return () => {
+      queue.dispose()
+      resourcesActiveRef.current = false
+      resourceRequestCounter.current += 1
+      lockRequestCounter.current += 1
+    }
   }, [])
+
+  // 页签重开使用新的对象身份；即使路径相同，旧表单回调也不能重新取得提交权。
+  const isToolSessionCurrent = useCallback(
+    (session: RepositoryToolSession | null): session is RepositoryToolSession =>
+      session !== null &&
+      resourcesActiveRef.current &&
+      toolSessionRef.current === session &&
+      resourceRepositoryPathRef.current === session.repositoryPath,
+    []
+  )
 
   const releaseRepositoryToolResources = useCallback(() => {
     /*
@@ -403,20 +428,28 @@ export function useRepositoryToolsController({
 
   const close = useCallback(() => {
     resourceRequestCounter.current += 1
-    setTab(null)
+    toolSessionRef.current = null
+    setToolSession(null)
     setLoading(false)
     releaseRepositoryToolResources()
   }, [releaseRepositoryToolResources])
 
   const open = useCallback(
     async (nextTab: RepositoryToolTab) => {
+      if (!resourcesActiveRef.current) return
       if (!activeSnapshot && nextTab !== 'accounts') {
         await openRepository()
         return
       }
 
-      setTab(nextTab)
+      const session: RepositoryToolSession = {
+        repositoryPath: activeSnapshot?.repository.path ?? '',
+        tab: nextTab
+      }
+      toolSessionRef.current = session
+      setToolSession(session)
       const requestId = ++resourceRequestCounter.current
+      setLoading(false)
       if (nextTab === 'accounts' || nextTab === 'maintenance' || applicationMode !== 'tauri') {
         return
       }
@@ -436,10 +469,10 @@ export function useRepositoryToolsController({
            * 可以先填写发布目标，再明确选择登录账户或留空进行匿名发布。
            */
           const identities = await listAuthIdentities().catch(() => [])
-          if (requestId === resourceRequestCounter.current) {
+          if (isToolSessionCurrent(session) && requestId === resourceRequestCounter.current) {
             setPublishAuthIdentities(identities)
           }
-          if (!activeSnapshot.repository.serverUrl) {
+          if (!isToolSessionCurrent(session) || !activeSnapshot.repository.serverUrl) {
             return
           }
           /*
@@ -453,16 +486,16 @@ export function useRepositoryToolsController({
             activeSnapshot.repository.id,
             activeSnapshot.repository.name
           )
-          if (requestId === resourceRequestCounter.current) {
+          if (isToolSessionCurrent(session) && requestId === resourceRequestCounter.current) {
             setConnectedRemoteDescription(connectedRepository?.description ?? '')
             setConnectedRemoteName(connectedRepository?.name ?? '')
           }
         } else if (nextTab === 'view') {
           const result = await loadRepositoryView(activeSnapshot.repository.path)
-          if (requestId === resourceRequestCounter.current) setRepositoryView(result)
+          if (isToolSessionCurrent(session) && requestId === resourceRequestCounter.current) setRepositoryView(result)
         } else if (nextTab === 'layers') {
           const result = await listLayers(activeSnapshot.repository.path)
-          if (requestId === resourceRequestCounter.current) setLayers(result)
+          if (isToolSessionCurrent(session) && requestId === resourceRequestCounter.current) setLayers(result)
         } else if (nextTab === 'locks') {
           await loadLocks()
         } else if (nextTab === 'dependencies') {
@@ -470,7 +503,7 @@ export function useRepositoryToolsController({
            * 依赖查询必须由明确根文件驱动。打开页签只清除上一仓库结果，
            * 不对大型仓库执行无界扫描。
            */
-          if (requestId === resourceRequestCounter.current) setDependencyQuery(null)
+          if (isToolSessionCurrent(session) && requestId === resourceRequestCounter.current) setDependencyQuery(null)
         } else if (
           nextTab !== 'collaboration' &&
           nextTab !== 'revision' &&
@@ -478,10 +511,10 @@ export function useRepositoryToolsController({
           nextTab !== 'diagnostics'
         ) {
           const result = await listLinks(activeSnapshot.repository.path)
-          if (requestId === resourceRequestCounter.current) setLinks(result)
+          if (isToolSessionCurrent(session) && requestId === resourceRequestCounter.current) setLinks(result)
         }
       } catch (error) {
-        if (requestId !== resourceRequestCounter.current) return
+        if (!isToolSessionCurrent(session) || requestId !== resourceRequestCounter.current) return
         if (nextTab === 'configuration') {
           /*
            * 远端说明只是发布表单的便利初值。离线、权限不足或服务器版本不兼容时
@@ -512,10 +545,10 @@ export function useRepositoryToolsController({
           'warning'
         )
       } finally {
-        if (requestId === resourceRequestCounter.current) setLoading(false)
+        if (isToolSessionCurrent(session) && requestId === resourceRequestCounter.current) setLoading(false)
       }
     },
-    [activeSnapshot, applicationMode, authAccountBindings, loadLocks, notify, openRepository]
+    [activeSnapshot, applicationMode, authAccountBindings, isToolSessionCurrent, loadLocks, notify, openRepository]
   )
 
   useEffect(() => {
@@ -523,21 +556,18 @@ export function useRepositoryToolsController({
     if (resourceRepositoryPathRef.current === repositoryPath) return
 
     resourceRepositoryPathRef.current = repositoryPath
-    resourceRequestCounter.current += 1
+    toolSessionRef.current = null
+    const requestId = ++resourceRequestCounter.current
 
-    // 状态写入与资源释放放到微任务；路径守卫与请求序号仍在同步体完成，微任务
-    // FIFO 保证按仓库切换顺序收敛。
+    // 只有最新仓库切换仍有权打开页签；关闭或再次切换会同步使本微任务失效。
     queueMicrotask(() => {
+      if (requestId !== resourceRequestCounter.current) return
       setLoading(false)
       releaseRepositoryToolResources()
-
-      /*
-       * Repository Tools 允许在仓库标签间保持打开。释放旧仓库资源后重新执行当前页签
-       * 的惰性读取；路径守卫保证普通快照刷新不会重复加载大型工具数据。
-       */
-      if (tab) void open(tab)
+      if (tab && (activeSnapshot || tab === 'accounts')) void open(tab)
+      else close()
     })
-  }, [activeSnapshot?.repository.path, open, releaseRepositoryToolResources, tab])
+  }, [activeSnapshot, close, open, releaseRepositoryToolResources, tab])
 
   const setActiveBranchProtected = useCallback(
     async (branch: string, protectedValue: boolean) => {
@@ -711,7 +741,9 @@ export function useRepositoryToolsController({
       options: LoreDependencySelection,
       reverse: boolean
     ): Promise<LoreDependencyGraphQuery | null> => {
-      if (!activeSnapshot || applicationMode !== 'tauri') return null
+      if (!activeSnapshot || applicationMode !== 'tauri' || !isToolSessionCurrent(toolSession)) return null
+      const requestId = ++resourceRequestCounter.current
+      const isCurrent = () => isToolSessionCurrent(toolSession) && requestId === resourceRequestCounter.current
       try {
         setLoading(true)
         const result = await loadCurrentDependencyGraph(
@@ -721,27 +753,35 @@ export function useRepositoryToolsController({
           reverse,
           activeSnapshot.repository.revision
         )
+        if (!isCurrent()) return null
         setDependencyQuery(result)
         return result
       } catch (error) {
-        notify(t('dependencyQueryFailed'), readErrorMessage(error), 'warning')
+        if (isCurrent()) notify(t('dependencyQueryFailed'), readErrorMessage(error), 'warning')
         return null
       } finally {
-        setLoading(false)
+        if (isCurrent()) setLoading(false)
       }
     },
-    [activeSnapshot, applicationMode, notify]
+    [activeSnapshot, applicationMode, isToolSessionCurrent, notify, toolSession]
   )
 
   const refreshCompositionResources = useCallback(
-    async (kind: 'layers' | 'links', repositoryPath: string) => {
+    async (kind: 'layers' | 'links', session: RepositoryToolSession | null) => {
+      if (!isToolSessionCurrent(session)) return
+      const requestId = ++resourceRequestCounter.current
+      const isCurrent = () => isToolSessionCurrent(session) && requestId === resourceRequestCounter.current
+      setLoading(true)
       try {
         if (kind === 'layers') {
-          setLayers(await listLayers(repositoryPath))
+          const result = await listLayers(session.repositoryPath)
+          if (isCurrent()) setLayers(result)
         } else {
-          setLinks(await listLinks(repositoryPath))
+          const result = await listLinks(session.repositoryPath)
+          if (isCurrent()) setLinks(result)
         }
       } catch (error) {
+        if (!isCurrent()) return
         notify(
           t('status.failedToLoad', {
             name: kind === 'layers' ? t('layers') : t('links')
@@ -749,84 +789,81 @@ export function useRepositoryToolsController({
           readErrorMessage(error),
           'warning'
         )
+      } finally {
+        if (isCurrent()) setLoading(false)
       }
     },
-    [notify]
+    [isToolSessionCurrent, notify]
   )
 
   const addActiveLayer = useCallback(
     async (request: LoreLayerAddRequest): Promise<boolean> => {
       if (!activeSnapshot) return false
-      const repositoryPath = activeSnapshot.repository.path
       const succeeded = await runRepositoryMutation(
         'addLayer',
         (repository) => addLayer(repository.path, request),
         operationMessage('status.layerAdded', { path: request.targetPath })
       )
-      if (succeeded) await refreshCompositionResources('layers', repositoryPath)
+      if (succeeded) await refreshCompositionResources('layers', toolSession)
       return succeeded
     },
-    [activeSnapshot, refreshCompositionResources, runRepositoryMutation]
+    [activeSnapshot, refreshCompositionResources, runRepositoryMutation, toolSession]
   )
 
   const removeActiveLayer = useCallback(
     async (request: LoreLayerRemoveRequest): Promise<boolean> => {
       if (!activeSnapshot) return false
-      const repositoryPath = activeSnapshot.repository.path
       const succeeded = await runRepositoryMutation(
         'removeLayer',
         (repository) => removeLayer(repository.path, request),
         operationMessage('status.layerRemoved', { path: request.targetPath })
       )
-      if (succeeded) await refreshCompositionResources('layers', repositoryPath)
+      if (succeeded) await refreshCompositionResources('layers', toolSession)
       return succeeded
     },
-    [activeSnapshot, refreshCompositionResources, runRepositoryMutation]
+    [activeSnapshot, refreshCompositionResources, runRepositoryMutation, toolSession]
   )
 
   const addActiveLink = useCallback(
     async (request: LoreLinkAddRequest): Promise<boolean> => {
       if (!activeSnapshot) return false
-      const repositoryPath = activeSnapshot.repository.path
       const succeeded = await runRepositoryMutation(
         'addLink',
         (repository) => addLink(repository.path, request),
         operationMessage('status.linkAdded', { path: request.linkPath })
       )
-      if (succeeded) await refreshCompositionResources('links', repositoryPath)
+      if (succeeded) await refreshCompositionResources('links', toolSession)
       return succeeded
     },
-    [activeSnapshot, refreshCompositionResources, runRepositoryMutation]
+    [activeSnapshot, refreshCompositionResources, runRepositoryMutation, toolSession]
   )
 
   const updateActiveLink = useCallback(
     async (request: LoreLinkUpdateRequest): Promise<boolean> => {
       if (!activeSnapshot) return false
-      const repositoryPath = activeSnapshot.repository.path
       const succeeded = await runRepositoryMutation(
         'updateLinkPin',
         (repository) => updateLink(repository.path, request),
         operationMessage('status.linkPinUpdated', { path: request.linkPath })
       )
-      if (succeeded) await refreshCompositionResources('links', repositoryPath)
+      if (succeeded) await refreshCompositionResources('links', toolSession)
       return succeeded
     },
-    [activeSnapshot, refreshCompositionResources, runRepositoryMutation]
+    [activeSnapshot, refreshCompositionResources, runRepositoryMutation, toolSession]
   )
 
   const removeActiveLink = useCallback(
     async (linkPath: string): Promise<boolean> => {
       if (!activeSnapshot) return false
-      const repositoryPath = activeSnapshot.repository.path
       const succeeded = await runRepositoryMutation(
         'removeLink',
         (repository) => removeLink(repository.path, linkPath),
         operationMessage('status.linkRemoved', { path: linkPath })
       )
-      if (succeeded) await refreshCompositionResources('links', repositoryPath)
+      if (succeeded) await refreshCompositionResources('links', toolSession)
       return succeeded
     },
-    [activeSnapshot, refreshCompositionResources, runRepositoryMutation]
+    [activeSnapshot, refreshCompositionResources, runRepositoryMutation, toolSession]
   )
 
   /**
@@ -837,15 +874,16 @@ export function useRepositoryToolsController({
    */
   const loadActiveLinkInfo = useCallback(
     async (linkPath: string): Promise<LoreLinkDetails | null> => {
-      if (!activeSnapshot || applicationMode !== 'tauri') return null
+      if (!activeSnapshot || applicationMode !== 'tauri' || !isToolSessionCurrent(toolSession)) return null
       try {
-        return await loadLinkInfo(activeSnapshot.repository.path, linkPath)
+        const details = await loadLinkInfo(activeSnapshot.repository.path, linkPath)
+        return isToolSessionCurrent(toolSession) ? details : null
       } catch (error) {
-        notify(t('linkInfoUnavailable'), readErrorMessage(error), 'warning')
+        if (isToolSessionCurrent(toolSession)) notify(t('linkInfoUnavailable'), readErrorMessage(error), 'warning')
         return null
       }
     },
-    [activeSnapshot, applicationMode, notify]
+    [activeSnapshot, applicationMode, isToolSessionCurrent, notify, toolSession]
   )
 
   const previewActiveRepositoryView = useCallback(
@@ -866,16 +904,22 @@ export function useRepositoryToolsController({
         (repository) => applyRepositoryView(repository.path, revision, content),
         operationMessage('repositoryViewAppliedAndSynchronized')
       )
-      if (applied) {
+      if (applied && isToolSessionCurrent(toolSession)) {
+        const requestId = ++resourceRequestCounter.current
+        const isCurrent = () => isToolSessionCurrent(toolSession) && requestId === resourceRequestCounter.current
+        setLoading(true)
         try {
-          setRepositoryView(await loadRepositoryView(activeSnapshot.repository.path))
+          const result = await loadRepositoryView(activeSnapshot.repository.path)
+          if (isCurrent()) setRepositoryView(result)
         } catch (error) {
-          notify(t('repositoryViewApplied'), readErrorMessage(error), 'warning')
+          if (isCurrent()) notify(t('repositoryViewApplied'), readErrorMessage(error), 'warning')
+        } finally {
+          if (isCurrent()) setLoading(false)
         }
       }
       return applied
     },
-    [activeSnapshot, notify, runRepositoryMutation]
+    [activeSnapshot, isToolSessionCurrent, notify, runRepositoryMutation, toolSession]
   )
 
   const saveRepositoryConfiguration = useCallback(
@@ -1008,7 +1052,7 @@ export function useRepositoryToolsController({
     async (action: () => Promise<unknown>, serverUrl?: string): Promise<boolean> => {
       if (applicationMode !== 'tauri') return false
       try {
-        setLoading(true)
+        setAuthActionsPending((count) => count + 1)
         await action()
         await onAuthStateChange(serverUrl)
         return true
@@ -1016,7 +1060,7 @@ export function useRepositoryToolsController({
         notify(t('accountOperationFailed'), readErrorMessage(error), 'warning')
         return false
       } finally {
-        setLoading(false)
+        setAuthActionsPending((count) => count - 1)
       }
     },
     [applicationMode, notify, onAuthStateChange]
@@ -1024,6 +1068,7 @@ export function useRepositoryToolsController({
 
   const dialogProps = useMemo<RepositoryToolsDialogProps | null>(() => {
     if (!tab || (!activeSnapshot && tab !== 'accounts')) return null
+    const ownsResources = toolSession?.repositoryPath === (activeSnapshot?.repository.path ?? '')
     const repository = activeSnapshot?.repository ?? {
       id: 'device-accounts',
       name: t('accounts'),
@@ -1044,19 +1089,19 @@ export function useRepositoryToolsController({
       branches: activeSnapshot?.branches ?? [],
       revisions: activeSnapshot?.revisions ?? [],
       defaultIdentity,
-      layers,
-      links,
+      layers: ownsResources ? layers : [],
+      links: ownsResources ? links : [],
       locks: fileLocks,
-      dependencyQuery,
-      loading: loading || isRepositoryToolsBusy(busyAction),
+      dependencyQuery: ownsResources ? dependencyQuery : null,
+      loading: (ownsResources && loading) || authActionsPending > 0 || isRepositoryToolsBusy(busyAction),
       compositionAvailable: applicationMode === 'tauri',
       lockAvailable: applicationMode === 'tauri',
       dependencyAvailable: applicationMode === 'tauri',
       publishAvailable: applicationMode === 'tauri',
-      connectedRemoteDescription,
-      connectedRemoteName,
-      publishAuthIdentities,
-      repositoryView,
+      connectedRemoteDescription: ownsResources ? connectedRemoteDescription : '',
+      connectedRemoteName: ownsResources ? connectedRemoteName : '',
+      publishAuthIdentities: ownsResources ? publishAuthIdentities : [],
+      repositoryView: ownsResources ? repositoryView : null,
       currentRevisionId: repository.revision || undefined,
       viewBlockedReason: activeSnapshot?.conflictSession
         ? t('finishConflictBeforeApplyingView')
@@ -1224,6 +1269,7 @@ export function useRepositoryToolsController({
     addActiveLink,
     amendActiveRevision,
     applicationMode,
+    authActionsPending,
     applyActiveRepositoryView,
     acquireActiveFileLocks,
     bisectActiveRevision,
@@ -1260,6 +1306,7 @@ export function useRepositoryToolsController({
     saveRepositoryConfiguration,
     setActiveBranchProtected,
     tab,
+    toolSession,
     updateActiveLink
   ])
 
