@@ -349,6 +349,29 @@ pub struct LoreOperationResult {
     pub events: Vec<Value>,
 }
 
+/// 历史查询的应用事实；不携带 Lore 的事件邻接关系或本地化展示文本。
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoreRevisionHistoryEntry {
+    pub revision: String,
+    pub revision_number: u64,
+    pub parent_ids: Vec<String>,
+    pub message: String,
+    pub author_identity: String,
+    pub committed_at: Option<u64>,
+}
+
+/// 历史查询仅通过 entries 返回条目，events 保留原始诊断；失败不返回部分条目。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoreRevisionHistoryResult {
+    pub operation: &'static str,
+    pub status: i32,
+    pub duration_ms: u128,
+    pub events: Vec<Value>,
+    pub entries: Vec<LoreRevisionHistoryEntry>,
+}
+
 /// 冲突操作的稳定分类。
 ///
 /// `Unknown` 只用于 Lore 报告冲突文件、但固定版本的 staged Revision 又没有可识别

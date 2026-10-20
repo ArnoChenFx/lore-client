@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'bun:test'
 
 import i18n from '../i18n'
 import zhCN from '../i18n/locales/zh-CN'
-import type { LoreEvent, LoreLinkDetails } from '../types'
+import type { LoreEvent, LoreLinkDetails, LoreRevisionHistoryEntry } from '../types'
 import {
   DEFAULT_SERVER_URL,
   isAuthenticationRequiredError,
@@ -30,13 +30,20 @@ import {
   parseRevisionBisect,
   parseRevisionFind,
   parseRevisionInfo,
-  parseRevisions
+  projectRevisionHistory
 } from './lore/revisions'
 import { parseWorkingTreeDiffs } from './lore/workspace'
 
 const repositoryPath = 'E:\\Worlds\\RealLore'
 /** Lore 零哈希的十六进制形态；用于模拟“远端未查询”。 */
 const ZERO_HASH = '0'.repeat(64)
+
+function historyEntry(
+  revision: string,
+  fields: Partial<Omit<LoreRevisionHistoryEntry, 'revision'>> = {}
+): LoreRevisionHistoryEntry {
+  return { revision, revisionNumber: 1, parentIds: [], message: '', authorIdentity: '', committedAt: null, ...fields }
+}
 
 describe('Lore event adapter', () => {
   beforeEach(async () => {
@@ -569,39 +576,23 @@ describe('Lore event adapter', () => {
     ])
   })
 
-  it('associates metadata following a history entry with the matching revision', () => {
+  it('projects native history facts without reinterpreting the protocol', () => {
     const repository = parseRepository(repositoryPath, [
       {
         tagName: 'repositoryStatusRevision',
         data: { repository: 'repository-id', branchName: 'main', revision: 'abcdef1234567890' }
       }
     ])
-    const events: LoreEvent[] = [
-      {
-        tagName: 'revisionHistoryEntry',
-        data: {
-          revision: 'abcdef1234567890',
-          revisionNumber: 12,
-          parent: ['1234567890abcdef', '0000000000000000']
-        }
-      },
-      {
-        tagName: 'metadata',
-        data: {
-          key: 'message',
-          value: { tagName: 'string', data: 'Integrate real Lore history' }
-        }
-      },
-      {
-        tagName: 'metadata',
-        data: {
-          key: 'committed-by',
-          value: { tagName: 'string', data: 'Arno' }
-        }
-      }
+    const entries = [
+      historyEntry('abcdef1234567890', {
+        revisionNumber: 12,
+        parentIds: ['1234567890abcdef'],
+        message: 'Integrate real Lore history',
+        authorIdentity: 'Arno'
+      })
     ]
 
-    expect(parseRevisions(events, repository)).toEqual([
+    expect(projectRevisionHistory(entries, repository)).toEqual([
       expect.objectContaining({
         id: 'abcdef1234567890',
         shortId: 'abcdef12',
@@ -614,28 +605,12 @@ describe('Lore event adapter', () => {
     ])
   })
 
-  it.each([undefined, null, '', '  ', ' revision-id ', 12, ZERO_HASH])(
-    'rejects invalid history identities instead of inventing an actionable revision ID: %p',
-    (revision) => {
-      const repository = parseRepository(repositoryPath, [])
-      expect(() => parseRevisions([{ tagName: 'revisionHistoryEntry', data: { revision } }], repository)).toThrow(
-        expect.objectContaining({
-          code: 'revision_history_invalid_identity',
-          command: 'lore_revision_history'
-        })
-      )
-    }
-  )
-
-  it('keeps raw history facts independent of the language used while loading', async () => {
+  it('keeps projected history facts independent of the language used while loading', async () => {
     const repository = parseRepository(repositoryPath, [])
-    const events: LoreEvent[] = [
-      { tagName: 'revisionHistoryEntry', data: { revision: 'opaque-revision-id', revisionNumber: 12 } },
-      { tagName: 'metadata', data: { key: 'timestamp', value: { tagName: 'numeric', data: 1_753_392_600 } } }
-    ]
-    const english = parseRevisions(events, repository)
+    const entries = [historyEntry('opaque-revision-id', { revisionNumber: 12, committedAt: 1_753_392_600_000 })]
+    const english = projectRevisionHistory(entries, repository)
     await i18n.changeLanguage('zh-CN')
-    const chinese = parseRevisions(events, repository)
+    const chinese = projectRevisionHistory(entries, repository)
 
     expect(chinese).toEqual(english)
     expect(english[0]).toMatchObject({
@@ -677,20 +652,11 @@ describe('Lore event adapter', () => {
       repository
     )
 
-    const revisions = parseRevisions(
+    const revisions = projectRevisionHistory(
       [
-        {
-          tagName: 'revisionHistoryEntry',
-          data: { revision: 'merge-tip', revisionNumber: 3, parent: ['vv-tip', 'base'] }
-        },
-        {
-          tagName: 'revisionHistoryEntry',
-          data: { revision: 'vv-tip', revisionNumber: 2, parent: ['base'] }
-        },
-        {
-          tagName: 'revisionHistoryEntry',
-          data: { revision: 'base', revisionNumber: 1, parent: [] }
-        }
+        historyEntry('merge-tip', { revisionNumber: 3, parentIds: ['vv-tip', 'base'] }),
+        historyEntry('vv-tip', { revisionNumber: 2, parentIds: ['base'] }),
+        historyEntry('base')
       ],
       repository,
       branches
@@ -931,26 +897,9 @@ describe('Lore event adapter', () => {
   })
 
   it('splits a Git-style history identity into display name and avatar email', () => {
-    const repository = parseRepository(repositoryPath, [
-      {
-        tagName: 'repositoryStatusRevision',
-        data: { repository: 'repository-id', branchName: 'main' }
-      }
-    ])
-    const revisions = parseRevisions(
-      [
-        {
-          tagName: 'revisionHistoryEntry',
-          data: { revision: 'abcdef1234567890', revisionNumber: 13, parent: [] }
-        },
-        {
-          tagName: 'metadata',
-          data: {
-            key: 'committed-by',
-            value: { tagName: 'string', data: 'Arno Chen <arno@example.com>' }
-          }
-        }
-      ],
+    const repository = parseRepository(repositoryPath, [])
+    const revisions = projectRevisionHistory(
+      [historyEntry('abcdef1234567890', { authorIdentity: 'Arno Chen <arno@example.com>' })],
       repository
     )
 
@@ -962,26 +911,9 @@ describe('Lore event adapter', () => {
   })
 
   it('preserves an Auth user ID for background name resolution', () => {
-    const repository = parseRepository(repositoryPath, [
-      {
-        tagName: 'repositoryStatusRevision',
-        data: { repository: 'repository-id', branchName: 'main' }
-      }
-    ])
-    const revisions = parseRevisions(
-      [
-        {
-          tagName: 'revisionHistoryEntry',
-          data: { revision: 'abcdef1234567890', revisionNumber: 13, parent: [] }
-        },
-        {
-          tagName: 'metadata',
-          data: {
-            key: 'committed-by',
-            value: { tagName: 'string', data: 'user-42' }
-          }
-        }
-      ],
+    const repository = parseRepository(repositoryPath, [])
+    const revisions = projectRevisionHistory(
+      [historyEntry('abcdef1234567890', { authorIdentity: 'user-42' })],
       repository
     )
 
@@ -993,63 +925,20 @@ describe('Lore event adapter', () => {
     })
   })
 
-  it('does not scale Lore millisecond timestamps as seconds', () => {
-    const repository = parseRepository(repositoryPath, [
-      {
-        tagName: 'repositoryStatusRevision',
-        data: { repository: 'repository-id', branchName: 'main' }
-      }
-    ])
-    const revisions = parseRevisions(
-      [
-        {
-          tagName: 'revisionHistoryEntry',
-          data: {
-            revision: 'abcdef1234567890',
-            revisionNumber: 12,
-            parent: []
-          }
-        },
-        {
-          tagName: 'metadata',
-          data: {
-            key: 'timestamp',
-            value: { tagName: 'numeric', data: 1_753_392_600_000 }
-          }
-        }
-      ],
+  it('preserves native millisecond timestamps and unknown time without formatting them', () => {
+    const repository = parseRepository(repositoryPath, [])
+    const revisions = projectRevisionHistory(
+      [historyEntry('dated-revision', { committedAt: 1_753_392_600_000 }), historyEntry('undated-revision')],
       repository
     )
 
-    expect(revisions[0]?.committedAt).toBe(1_753_392_600_000)
+    expect(revisions.map((revision) => revision.committedAt)).toEqual([1_753_392_600_000, null])
   })
 
   it('preserves a missing historical author instead of using the current identity or a translated label', () => {
-    const repository = {
-      ...parseRepository(repositoryPath, [
-        {
-          tagName: 'repositoryStatusRevision',
-          data: { repository: 'repository-id', branchName: 'main' }
-        }
-      ]),
-      identity: 'Arno'
-    }
+    const repository = { ...parseRepository(repositoryPath, []), identity: 'Arno' }
 
-    expect(
-      parseRevisions(
-        [
-          {
-            tagName: 'revisionHistoryEntry',
-            data: {
-              revision: 'abcdef1234567890',
-              revisionNumber: 12,
-              parent: []
-            }
-          }
-        ],
-        repository
-      )[0]?.author
-    ).toBe('')
+    expect(projectRevisionHistory([historyEntry('abcdef1234567890')], repository)[0]?.author).toBe('')
   })
 
   it('removes the Windows extended path prefix from displayed repository paths', () => {

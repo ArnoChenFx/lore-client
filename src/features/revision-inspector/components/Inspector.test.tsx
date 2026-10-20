@@ -4,15 +4,24 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import i18n from '../../../i18n'
 import { parseRepository } from '../../../services/lore/repositories'
-import { parseRevisions } from '../../../services/lore/revisions'
+import { projectRevisionHistory } from '../../../services/lore/revisions'
 import { InspectorTabs, OverviewTab } from './Inspector'
 
 describe('Revision Inspector history localization', () => {
   it('renders already-loaded revision facts after changing language without a history reload', async () => {
     await i18n.changeLanguage('en-US')
     const repository = parseRepository('/repository', [])
-    const revision = parseRevisions(
-      [{ tagName: 'revisionHistoryEntry', data: { revision: 'abcdef1234567890', revisionNumber: 12 } }],
+    const revision = projectRevisionHistory(
+      [
+        {
+          revision: 'abcdef1234567890',
+          revisionNumber: 12,
+          parentIds: [],
+          message: '',
+          authorIdentity: '',
+          committedAt: null
+        }
+      ],
       repository
     )[0]!
     const render = () =>

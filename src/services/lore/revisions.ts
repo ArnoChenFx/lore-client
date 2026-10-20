@@ -1,5 +1,4 @@
 /** 修订的查询、修改、历史、变更列表与文件历史。 */
-import { t } from '../../i18n'
 import { parseCommitIdentity } from '../../shared/lib'
 import type {
   Branch,
@@ -11,6 +10,8 @@ import type {
   LoreOperationResult,
   LoreRevisionBisectResult,
   LoreRevisionInfo,
+  LoreRevisionHistoryEntry,
+  LoreRevisionHistoryResult,
   Repository,
   Revision,
   RevisionBranchPointer,
@@ -18,7 +19,7 @@ import type {
   RevisionHistoryQuery,
   WorkingTreeDiff
 } from '../../types'
-import { LoreCommandClientError, invokeCommand, runOperation } from './core'
+import { LoreOperationError, invokeCommand, runOperation } from './core'
 import {
   ZERO_HASH_PATTERN,
   eventData,
@@ -299,21 +300,31 @@ export async function checkoutRevision(
   })
 }
 
-/** 按显式条件重读 Revision History，不触碰工作区状态或当前选区。 */
-export async function loadRevisionHistory(
-  repository: Repository,
-  branches: Branch[],
+/** 历史条目由原生解释一次；非零状态仍保留原有 Lore 错误和认证诊断。 */
+export async function loadRevisionHistoryEntries(
+  repositoryPath: string,
   query: RevisionHistoryQuery
-): Promise<Revision[]> {
-  const result = await runOperation('lore_revision_history', {
-    repositoryPath: repository.path,
+): Promise<LoreRevisionHistoryEntry[]> {
+  const result = await invokeCommand<LoreRevisionHistoryResult>('lore_revision_history', {
+    repositoryPath,
     limit: Math.max(1, Math.min(1_000, query.limit)),
     revision: query.revision?.trim() || null,
     branch: query.branch?.trim() || null,
     date: query.beforeDate || null,
     onlyBranch: query.onlyBranch
   })
-  return parseRevisions(result.events, repository, branches)
+  if (result.status !== 0) throw new LoreOperationError(result)
+  return result.entries
+}
+
+/** 按显式条件重读 Revision History，不触碰工作区状态或当前选区。 */
+export async function loadRevisionHistory(
+  repository: Repository,
+  branches: Branch[],
+  query: RevisionHistoryQuery
+): Promise<Revision[]> {
+  const entries = await loadRevisionHistoryEntries(repository.path, query)
+  return projectRevisionHistory(entries, repository, branches)
 }
 
 export function parseRevisionInfo(events: LoreEvent[]): LoreRevisionInfo {
@@ -425,55 +436,19 @@ export function parseFileHistory(events: LoreEvent[]): FileHistoryEntry[] {
     .filter((entry) => entry.path.length > 0 && entry.revision.length > 0)
 }
 
-export function parseRevisions(events: LoreEvent[], repository: Repository, branches: Branch[] = []): Revision[] {
-  type PendingRevision = {
-    entry: Record<string, unknown>
-    metadata: Map<string, unknown>
-  }
-  const pending: PendingRevision[] = []
-  let current: PendingRevision | null = null
-
-  // Metadata 事件紧跟对应的 history entry，直到下一个 entry 开始。
-  for (const event of events) {
-    if (event.tagName === 'revisionHistoryEntry') {
-      current = { entry: event.data, metadata: new Map() }
-      pending.push(current)
-    } else if (event.tagName === 'metadata' && current) {
-      current.metadata.set(readString(event.data.key), readMetadataValue(event.data.value))
-    }
-  }
-
-  return pending.map(({ entry, metadata }): Revision => {
-    // 身份字段不能像展示文案一样降级，否则会把伪造的 ID 交给检出/还原操作。
+/** 应用历史事实到当前界面的作者与指针投影，不再读取 Lore 原始事件。 */
+export function projectRevisionHistory(
+  entries: readonly LoreRevisionHistoryEntry[],
+  repository: Repository,
+  branches: Branch[] = []
+): Revision[] {
+  return entries.map((entry): Revision => {
     const id = entry.revision
-    if (typeof id !== 'string' || !id.trim() || id !== id.trim() || ZERO_HASH_PATTERN.test(id)) {
-      throw new LoreCommandClientError(
-        { code: 'revision_history_invalid_identity', message: t('revisionHistoryInvalidIdentity') },
-        'lore_revision_history'
-      )
-    }
-    const timestampValue = readNumber(metadata.get('timestamp'))
-    // 固定 Lore 提交使用毫秒；阈值兼容非常早期可能写入秒值的仓库。
-    const timestampMilliseconds =
-      timestampValue > 0 && timestampValue < 100_000_000_000 ? timestampValue * 1_000 : timestampValue
-    const committedAt =
-      timestampMilliseconds > 0 && Number.isFinite(new Date(timestampMilliseconds).getTime())
-        ? timestampMilliseconds
-        : null
-    /*
-     * Revision 作者是提交时固化的历史事实，只能来自该 Revision 自己的元数据。
-     * repository.identity 表示“当前仓库下一次提交准备使用的身份”，它可能在历史
-     * 形成后被修改，因此绝不能用来回填旧 Revision 的作者。
-     */
-    const historicalIdentity = readString(metadata.get('committed-by') ?? metadata.get('created-by'))
-    // Auth 名称由会话后台补全；核心历史只解析提交时存下的自由文本、姓名或邮箱。
+    // 作者身份只来自该历史条目，不能使用当前仓库的提交身份回填。
+    const historicalIdentity = entry.authorIdentity
     const { name, email } = parseCommitIdentity(historicalIdentity)
     const author = name || email
-    const message = readString(metadata.get('message'))
-    const parents = Array.isArray(entry.parent) ? entry.parent : []
-    const parentIds = parents.filter(
-      (parent): parent is string => typeof parent === 'string' && !ZERO_HASH_PATTERN.test(parent)
-    )
+    const parentIds = entry.parentIds
     const parentCount = parentIds.length
 
     /*
@@ -513,9 +488,9 @@ export function parseRevisions(events: LoreEvent[], repository: Repository, bran
     return {
       id,
       shortId: id.slice(0, 8),
-      title: message,
-      revisionNumber: readNumber(entry.revisionNumber),
-      committedAt,
+      title: entry.message,
+      revisionNumber: entry.revisionNumber,
+      committedAt: entry.committedAt,
       author,
       authorIdentity: historicalIdentity,
       authorEmail: email || undefined,

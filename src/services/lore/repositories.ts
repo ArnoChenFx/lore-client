@@ -19,7 +19,7 @@ import { parseBranches } from './branches'
 import { RepositoryConfigValues, loadRepositoryConfig } from './config'
 import { loadConflictSession } from './conflicts'
 import { LoreOperationError, invokeCommand, runOperation } from './core'
-import { parseChanges, parseRevisions } from './revisions'
+import { loadRevisionHistoryEntries, parseChanges, projectRevisionHistory } from './revisions'
 import { listTags } from './tags'
 import {
   colorFromText,
@@ -261,10 +261,10 @@ export async function loadRepositorySnapshot(repositoryPath: string): Promise<Re
       (branch) =>
         !branch.remote && Boolean(branch.latest) && (Boolean(branch.current) || branch.name === statusRepository.branch)
     )?.latest || statusRepository.revision
-  const history = await runOperation('lore_revision_history', {
-    repositoryPath,
+  const history = await loadRevisionHistoryEntries(repositoryPath, {
     limit: 100,
-    revision: historyAnchor || null
+    onlyBranch: false,
+    revision: historyAnchor || undefined
   })
   const tags = await listTags(repositoryPath)
   const config = await loadRepositoryConfig(repositoryPath)
@@ -275,7 +275,7 @@ export async function loadRepositorySnapshot(repositoryPath: string): Promise<Re
   return {
     repository,
     branches,
-    revisions: parseRevisions(history.events, repository, branches),
+    revisions: projectRevisionHistory(history, repository, branches),
     changes,
     tags,
     conflictSession,

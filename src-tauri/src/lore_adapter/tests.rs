@@ -1000,10 +1000,7 @@ fn revision_history_uses_the_explicit_branch_tip_as_its_primary_anchor() {
         .expect("An explicit Branch tip should produce readable history");
 
     assert_eq!(queried_revisions, vec![Some("main-tip".to_owned())]);
-    assert_eq!(
-        merged.events[0]["data"]["revision"].as_str(),
-        Some("main-tip")
-    );
+    assert_eq!(merged.entries[0].revision, "main-tip");
 }
 
 #[test]
@@ -1237,10 +1234,9 @@ fn merge_history_includes_secondary_parent_chain_in_topological_order() {
     .expect("Merge history aggregation should succeed");
 
     let revisions = merged
-        .events
+        .entries
         .iter()
-        .filter(|event| event["tagName"] == "revisionHistoryEntry")
-        .filter_map(|event| event["data"]["revision"].as_str())
+        .map(|entry| entry.revision.as_str())
         .collect::<Vec<_>>();
     assert_eq!(
         revisions,
@@ -1252,37 +1248,12 @@ fn merge_history_includes_secondary_parent_chain_in_topological_order() {
         "Only missing parents should trigger an additional Lore query"
     );
 
-    /*
-     * 前端解析器把 Entry 后连续的 Metadata 归属于该 Revision，因此聚合层
-     * 移动节点时必须连同元数据事件组一起移动，不能只重排 Entry。
-     */
-    for window in merged.events.windows(2) {
-        if window[0]["tagName"] == "revisionHistoryEntry" {
-            let revision = window[0]["data"]["revision"]
-                .as_str()
-                .expect("Revision entry should contain an id");
-            assert_eq!(window[1]["tagName"], "metadata");
-            assert_eq!(
-                window[1]["data"]["value"]["data"],
-                format!("message-{revision}")
-            );
-        }
+    for entry in &merged.entries {
+        assert_eq!(entry.message, format!("message-{}", entry.revision));
     }
     assert_eq!(
-        merged
-            .events
-            .iter()
-            .filter(|event| event["tagName"] == "revisionHistory")
-            .count(),
-        1
-    );
-    assert_eq!(
-        merged
-            .events
-            .iter()
-            .filter(|event| event["tagName"] == "complete")
-            .count(),
-        1
+        merged.events,
+        vec![serde_json::json!({"tagName": "complete", "data": {}})]
     );
 }
 
@@ -1313,10 +1284,9 @@ fn merge_history_expands_secondary_chain_when_primary_page_is_full() {
     .expect("A full primary page should still expand visible merge parents");
 
     let revisions = merged
-        .events
+        .entries
         .iter()
-        .filter(|event| event["tagName"] == "revisionHistoryEntry")
-        .filter_map(|event| event["data"]["revision"].as_str())
+        .map(|entry| entry.revision.as_str())
         .collect::<Vec<_>>();
     assert_eq!(revisions, vec!["merge-5", "main-4", "side-4"]);
     assert_eq!(requested_revisions, vec![None, Some("side-4".to_owned())]);
@@ -1340,20 +1310,40 @@ fn linear_history_does_not_expand_a_truncated_primary_parent() {
     .expect("Linear history should preserve the requested page");
 
     assert_eq!(requested_revisions, vec![None]);
-    assert_eq!(
-        merged
-            .events
-            .iter()
-            .filter(|event| event["tagName"] == "revisionHistoryEntry")
-            .count(),
-        3
-    );
+    assert_eq!(merged.entries.len(), 3);
+}
+
+#[test]
+fn merge_history_preserves_secondary_parent_authentication_diagnostics() {
+    let diagnostics = vec![serde_json::json!({
+        "tagName": "complete",
+        "data": {"error": {"message": "The request does not have valid authentication credentials"}}
+    })];
+    let result = collect_revision_history_with(10, None, |revision, _length| {
+        if revision.is_none() {
+            Ok(revision_history_result(vec![
+                revision_history_entry("merge", 2, "first", "second"),
+                revision_history_entry("first", 1, "0", "0"),
+            ]))
+        } else {
+            Ok(LoreOperationResult {
+                operation: "revision.history",
+                status: 401,
+                duration_ms: 7,
+                events: diagnostics.clone(),
+            })
+        }
+    })
+    .expect("A secondary query failure must retain its Lore result for authentication recovery");
+    assert_eq!(result.status, 401);
+    assert_eq!(result.events, diagnostics);
+    assert!(result.entries.is_empty());
 }
 
 #[test]
 fn merge_history_reports_secondary_parent_read_failures() {
     const ZERO: &str = "0000000000000000000000000000000000000000000000000000000000000000";
-    let error =
+    let result =
         collect_revision_history_with(100, None, |revision, _length| match revision.as_deref() {
             None => Ok(revision_history_result(vec![
                 revision_history_entry("merge-2", 2, "main-1", "side-1"),
@@ -1374,10 +1364,14 @@ fn merge_history_reports_secondary_parent_read_failures() {
             }),
             Some(other) => panic!("Unexpected history query for {other}"),
         })
-        .expect_err("A missing secondary parent must not produce a partial successful history");
+        .expect("A secondary failure must preserve the original Lore result");
 
-    assert_eq!(error.code, "revision_tree_read_failed");
-    assert!(error.message.contains("secondary state is unavailable"));
+    assert_eq!(result.status, -1);
+    assert!(result.entries.is_empty());
+    assert_eq!(
+        result.events[0]["data"]["error"]["message"],
+        "secondary state is unavailable"
+    );
 }
 
 #[test]
@@ -3455,10 +3449,8 @@ fn ordinary_nonempty_directory_can_be_initialized_without_persisting_client_iden
     );
     assert_eq!(history.status, 0);
     assert!(
-        history.events.iter().all(|event| {
-            event.get("tagName").and_then(Value::as_str) != Some("revisionHistoryEntry")
-        }),
-        "A newly initialized repository must not invent a Revision entry",
+        history.entries.is_empty(),
+        "A newly initialized repository must not invent a Revision entry"
     );
     release_repository_cache(&repository_path)
         .expect("Lore path cache should be released before test cleanup");
@@ -4071,6 +4063,61 @@ fn real_lore_repository_can_be_created_and_events_read() {
                 && event["data"]["value"]["data"] == "lore-client-test"
         }),
         "A later commit without an explicit identity should use repository configuration metadata",
+    );
+    let raw_entry = history_result
+        .events
+        .iter()
+        .find(|event| {
+            event["tagName"] == "revisionHistoryEntry"
+                && event["data"]["revision"] == source_revision
+        })
+        .expect("Real Lore history should include the committed revision");
+    assert_eq!(
+        raw_entry["data"]["parent"],
+        serde_json::json!(vec!["0".repeat(64); 2]),
+        "Lore encodes the root revision using two zero parent hashes"
+    );
+    let raw_timestamp = history_result
+        .events
+        .iter()
+        .find(|event| event["tagName"] == "metadata" && event["data"]["key"] == "timestamp")
+        .and_then(|event| event["data"]["value"]["data"].as_u64())
+        .expect("Lore timestamp metadata should contain an unsigned numeric value.data");
+    assert!(
+        raw_timestamp >= 100_000_000_000,
+        "New Lore commits should store milliseconds"
+    );
+    let history_dto = tauri::async_runtime::block_on(lore_revision_history(
+        repository_path.to_string_lossy().into_owned(),
+        Some(10),
+        Some(source_revision.clone()),
+        None,
+        None,
+        None,
+    ))
+    .expect("The production history command should project real Lore metadata into its DTO");
+    assert_eq!(history_dto.status, 0);
+    assert_eq!(
+        history_dto.entries,
+        vec![LoreRevisionHistoryEntry {
+            revision: source_revision.clone(),
+            revision_number: raw_entry["data"]["revisionNumber"]
+                .as_u64()
+                .expect("Lore should emit a numeric revision number"),
+            parent_ids: Vec::new(),
+            message: "Create the branch test starting point".to_owned(),
+            author_identity: "lore-client-test".to_owned(),
+            committed_at: Some(raw_timestamp),
+        }]
+    );
+    assert!(!history_dto.events.iter().any(|event| matches!(
+        event["tagName"].as_str(),
+        Some("revisionHistory" | "revisionHistoryEntry" | "metadata")
+    )));
+    assert_eq!(
+        external_merge_ancestor_order(repository_path.to_string_lossy().as_ref(), &source_revision)
+            .expect("External Merge should consume typed history entries"),
+        vec![source_revision.clone()]
     );
 
     /*

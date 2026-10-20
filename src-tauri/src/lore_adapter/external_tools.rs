@@ -489,7 +489,13 @@ pub(super) fn external_merge_ancestor_order(
     start_revision: &str,
 ) -> Result<Vec<String>, LoreCommandError> {
     let repository_path = repository_path.to_owned();
-    let result = collect_revision_history_with(
+    let LoreRevisionHistoryResult {
+        operation,
+        status,
+        duration_ms,
+        events,
+        entries,
+    } = collect_revision_history_with(
         1_000,
         Some(validate_revision(start_revision)?),
         move |revision, length| {
@@ -503,16 +509,16 @@ pub(super) fn external_merge_ancestor_order(
             })
         },
     )?;
-    ensure_operation_success(&result, "Read external Merge revision history")?;
-    Ok(result
-        .events
-        .iter()
-        .filter(|event| {
-            event.get("tagName").and_then(Value::as_str) == Some("revisionHistoryEntry")
-        })
-        .filter_map(|event| event.pointer("/data/revision").and_then(Value::as_str))
-        .map(str::to_owned)
-        .collect())
+    ensure_operation_success(
+        &LoreOperationResult {
+            operation,
+            status,
+            duration_ms,
+            events,
+        },
+        "Read external Merge revision history",
+    )?;
+    Ok(entries.into_iter().map(|entry| entry.revision).collect())
 }
 
 /// 使用两侧真实历史寻找最近共同祖先；找不到时让 BASE 显式退化为空文件。
