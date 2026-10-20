@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useAdjustFromProps } from '../../../hooks/useAdjustFromProps'
-import { readErrorMessage } from '../../../shared/lib'
+import { parseRepositoryFilePathLines, readErrorMessage } from '../../../shared/lib'
 import { CheckboxInput, IconButton, NumberInput, TextButton, TextInput } from '../../../shared/ui'
 import type { LoreCloneOptions, LoreSharedStoreInfo, RemoteRepository } from '../../../types'
 
@@ -38,7 +38,7 @@ export function resolveCloneDependencyAvailability(
   dependencyRecursive: boolean,
   materializationDisabled = false
 ) {
-  const hasDependencyRootFiles = Boolean(dependencyRootFiles.trim())
+  const hasDependencyRootFiles = parseRepositoryFilePathLines(dependencyRootFiles).length > 0
   return {
     hasDependencyRootFiles,
     materializationDisabled,
@@ -74,16 +74,16 @@ export function buildCloneSubmission(input: CloneSubmissionInput) {
   const targetRevision = input.targetRevision.trim()
   const layerRepository = input.layerRepository.trim()
   const layerMetadataKey = input.layerMetadataKey.trim()
-  const rootFiles = parseList(input.dependencyRootFiles)
+  const rootFiles = parseRepositoryFilePathLines(input.dependencyRootFiles)
   const materializeFiles = !input.bare
   const hasDependencyRoots = materializeFiles && rootFiles.length > 0
 
   return {
-    viewPath: materializeFiles ? input.viewPath.trim() : '',
+    viewPath: materializeFiles ? input.viewPath : '',
     options: {
       useSharedStore: input.useSharedStore,
       // Shared Store 未启用时不得发送路径，避免 Rust 端把残留输入误解为有效配置。
-      sharedStorePath: input.useSharedStore ? input.sharedStorePath?.trim() || undefined : undefined,
+      sharedStorePath: input.useSharedStore ? input.sharedStorePath || undefined : undefined,
       revision: targetRevision || undefined,
       bare: input.bare,
       directFileWrite: materializeFiles && input.directFileWrite,
@@ -201,7 +201,7 @@ export function CloneDialog({
         aria-labelledby="clone-dialog-title"
         onSubmit={(event) => {
           event.preventDefault()
-          if (parent.trim() && directoryName.trim()) {
+          if (parent && directoryName) {
             const submission = buildCloneSubmission({
               viewPath,
               targetRevision,
@@ -216,7 +216,7 @@ export function CloneDialog({
               dependencyRecursive,
               dependencyDepthLimit
             })
-            onConfirm(parent.trim(), directoryName.trim(), submission.viewPath, submission.options)
+            onConfirm(parent, directoryName, submission.viewPath, submission.options)
           }
         }}
       >
@@ -536,7 +536,7 @@ export function CloneDialog({
           <TextButton onClick={onClose} disabled={busy}>
             {t('cancel')}
           </TextButton>
-          <TextButton variant="primary" type="submit" disabled={busy || !parent.trim() || !directoryName.trim()}>
+          <TextButton variant="primary" type="submit" disabled={busy || !parent || !directoryName}>
             {busy ? <LoaderCircle className="is-spinning" size={15} /> : <GitFork size={15} />}
             {busy ? t('cloning') : t('startClone')}
           </TextButton>

@@ -102,7 +102,7 @@ export async function initializeRepository(
       defaultIdentity: defaultIdentity?.trim() || null,
       useSharedStore: options.useSharedStore,
       // 未启用时不能把残留草稿带过 IPC，避免后端误解为有效的 Store 选择。
-      sharedStorePath: options.useSharedStore ? options.sharedStorePath?.trim() || null : null
+      sharedStorePath: options.useSharedStore ? options.sharedStorePath || null : null
     },
     operationContext
   )
@@ -243,7 +243,7 @@ export async function createSharedStore(
     'lore_shared_store_create',
     {
       remoteUrl,
-      parentPath: parentPath.trim() || null,
+      parentPath: parentPath || null,
       makeDefault
     },
     operationContext

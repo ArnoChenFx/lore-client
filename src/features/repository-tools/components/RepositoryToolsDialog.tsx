@@ -490,7 +490,7 @@ export function RepositoryToolsDialog({
   }
 
   const submitLockAcquire = async () => {
-    const path = lockPath.trim()
+    const path = lockPath
     if (!path) return
     setResourcePending(true)
     try {
@@ -1435,11 +1435,7 @@ export function RepositoryToolsDialog({
                       onChange={(event) => setLockPath(event.target.value)}
                     />
                   </label>
-                  <button
-                    type="submit"
-                    className="is-primary"
-                    disabled={dialogBusy || !lockAvailable || !lockPath.trim()}
-                  >
+                  <button type="submit" className="is-primary" disabled={dialogBusy || !lockAvailable || !lockPath}>
                     <LockKeyhole size={13} />
                     {t('acquireCollaborativeLock')}
                   </button>

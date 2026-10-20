@@ -135,6 +135,14 @@ describe('local changes tree projection', () => {
     ).toBeNull()
   })
 
+  it('stages both exact identities when a rename only changes filename whitespace', () => {
+    for (const source of ['asset ', ' asset', ' ']) {
+      const file = { ...files[0], path: '.', name: 'asset', status: 'renamed' as const, previousPath: source }
+      expect(changeFilePathTransition(file)).toEqual({ sourcePath: source, targetPath: 'asset', kind: 'renamed' })
+      expect(changeFileOperationPaths([file])).toEqual([source, 'asset'])
+    }
+  })
+
   it('expands both sides of a move for stage operations', () => {
     expect(
       changeFileOperationPaths([

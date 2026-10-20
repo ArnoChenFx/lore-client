@@ -65,7 +65,7 @@ export function repositoryPathDirectory(path: string): string {
  * 时不能根据文件名、大小或内容相似度猜测，否则同内容资产会被错误合并成一次移动。
  */
 export function changeFilePathTransition(file: ChangeFile): ChangePathTransition | null {
-  const sourcePath = file.previousPath?.replaceAll('\\', '/').trim()
+  const sourcePath = file.previousPath?.replaceAll('\\', '/')
   if (file.status !== 'renamed' || !sourcePath) return null
 
   const targetPath = changeFilePath(file)

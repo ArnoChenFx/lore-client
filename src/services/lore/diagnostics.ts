@@ -27,7 +27,7 @@ export async function verifyRepositoryPath(
     'lore_repository_verify',
     {
       repositoryPath,
-      path: path.trim() || null,
+      path: path || null,
       heal
     },
     operationContext
@@ -71,7 +71,7 @@ export async function dumpRepositoryState(
       {
         repositoryPath,
         revision: revision.trim() || null,
-        path: path.trim() || null,
+        path: path || null,
         maxDepth
       },
       operationContext

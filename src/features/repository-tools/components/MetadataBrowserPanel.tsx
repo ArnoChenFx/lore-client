@@ -38,7 +38,7 @@ export function resolveMetadataRequest(
   target: string,
   revision: string
 ): ResolvedMetadataRequest | null {
-  const normalizedTarget = target.trim()
+  const normalizedTarget = scope === 'file' ? target : target.trim()
   const normalizedRevision = revision.trim()
 
   if (scope === 'repository') return { scope }

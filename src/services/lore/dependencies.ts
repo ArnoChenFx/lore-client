@@ -130,7 +130,7 @@ export async function collectFileDependencyGraph(
   loadDirectBatch: DirectDependencyBatchLoader,
   nodeLimit = FILE_DEPENDENCY_GRAPH_NODE_LIMIT
 ): Promise<LoreDependencyGraphQuery> {
-  const normalizedRoots = [...new Set(rootPaths.map((path) => path.trim()).filter(Boolean))]
+  const normalizedRoots = [...new Set(rootPaths.filter((path) => path.length > 0))]
   const safeNodeLimit = Math.max(1, Math.floor(nodeLimit))
   const acceptedRoots = normalizedRoots.slice(0, safeNodeLimit)
   const rootSet = new Set(acceptedRoots)
