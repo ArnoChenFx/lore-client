@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'bun:test'
 
-import { changeFileOperationPaths } from '../shared/lib/changeTreeModel'
+import { changeFileOperationPaths } from '../shared/lib'
 import type { OperationContext } from '../types'
 
 const invokeMock = vi.fn()
