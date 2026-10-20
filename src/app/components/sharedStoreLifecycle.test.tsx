@@ -151,7 +151,14 @@ async function tick() {
 beforeEach(() => {
   readInfo.mockReset().mockResolvedValue(info(false))
   readRegistry.mockReset().mockResolvedValue(registry(false))
-  const result: LoreOperationResult = { operation: 'shared_store.update', status: 0, durationMs: 1, events: [] }
+  const result: LoreOperationResult = {
+    requestId: 'shared-store-update',
+    workspaceKey: null,
+    operation: 'shared_store.update',
+    status: 0,
+    durationMs: 1,
+    events: []
+  }
   createStore.mockReset().mockResolvedValue(result)
   setAutomatic.mockReset().mockResolvedValue(result)
 })
@@ -246,7 +253,14 @@ describe('Shared Store request ownership', () => {
     expect(readRegistry).not.toHaveBeenCalled()
     expect(readInfo).not.toHaveBeenCalled()
     expect(controller.beginOperation).toHaveBeenCalledTimes(1)
-    write.resolve({ operation: 'shared_store.update', status: 0, durationMs: 1, events: [] })
+    write.resolve({
+      requestId: 'shared-store-update',
+      workspaceKey: null,
+      operation: 'shared_store.update',
+      status: 0,
+      durationMs: 1,
+      events: []
+    })
     await Promise.all([first, duplicate])
     expect(controller.render().busy).toBe(false)
   })
@@ -324,7 +338,14 @@ describe('Shared Store request ownership', () => {
     const controller = fixture()
     const task = controller.render().create('lore://example.com', '')
     controller.unmount()
-    write.resolve({ operation: 'shared_store.create', status: 0, durationMs: 1, events: [] })
+    write.resolve({
+      requestId: 'shared-store-create',
+      workspaceKey: null,
+      operation: 'shared_store.create',
+      status: 0,
+      durationMs: 1,
+      events: []
+    })
     await task
     expect(readInfo).not.toHaveBeenCalled()
     expect(controller.finishOperation).not.toHaveBeenCalled()

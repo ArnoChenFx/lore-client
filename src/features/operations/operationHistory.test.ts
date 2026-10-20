@@ -15,6 +15,8 @@ function operation(id: number, startedAt = id): OperationRecord {
 
 function stream(id: number, startedAt = id): LoreOperationStreamRecord {
   return {
+    requestId: `stream-${id}`,
+    workspaceKey: '/workspace/project',
     operationId: `stream-${id}`,
     operation: 'repository.sync',
     phase: 'succeeded',

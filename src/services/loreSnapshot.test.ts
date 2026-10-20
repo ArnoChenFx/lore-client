@@ -77,7 +77,26 @@ function historyResult(
   entries: LoreRevisionHistoryEntry[],
   fields: Partial<Omit<LoreRevisionHistoryResult, 'entries'>> = {}
 ): LoreRevisionHistoryResult {
-  return { operation: 'revision.history', status: 0, durationMs: 1, events: [], entries, ...fields }
+  return {
+    requestId: 'revision-history',
+    workspaceKey: 'E:\\Worlds\\RealLore',
+    operation: 'revision.history',
+    status: 0,
+    durationMs: 1,
+    events: [],
+    entries,
+    ...fields
+  }
+}
+
+function ipcArgs(args: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...args,
+    operationContext: {
+      requestId: expect.any(String),
+      workspaceKey: typeof args.repositoryPath === 'string' ? args.repositoryPath : null
+    }
+  }
 }
 
 async function hydrateAuthors(repository: Repository, identities: readonly string[]): Promise<Map<string, string>> {
@@ -286,10 +305,12 @@ describe('repository snapshot branch loading', () => {
         }
       }
       if (command === 'lore_auth_local_user_info') {
-        expect(args).toEqual({
-          authUrl: 'https://auth.example.com',
-          userIds: ['2']
-        })
+        expect(args).toEqual(
+          ipcArgs({
+            authUrl: 'https://auth.example.com',
+            userIds: ['2']
+          })
+        )
         return {
           operation: 'auth.local-user-info',
           status: 0,
@@ -353,7 +374,7 @@ describe('repository snapshot branch loading', () => {
     const fallbackInvoke = invokeMock.getMockImplementation()
     invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
       if (command === 'lore_auth_user_info') {
-        expect(args).toEqual({ repositoryPath: 'E:\\Worlds\\RealLore', userIds: ['user-42'] })
+        expect(args).toEqual(ipcArgs({ repositoryPath: 'E:\\Worlds\\RealLore', userIds: ['user-42'] }))
         return {
           operation: 'auth.user-info',
           status: 0,
@@ -420,10 +441,12 @@ describe('repository snapshot branch loading', () => {
     const fallbackInvoke = invokeMock.getMockImplementation()
     invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
       if (command === 'lore_revision_author_cache_get') {
-        expect(args).toEqual({
-          repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
-          userIds: ['user-42']
-        })
+        expect(args).toEqual(
+          ipcArgs({
+            repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
+            userIds: ['user-42']
+          })
+        )
         return [{ userId: 'user-42', displayName: 'Cached Arno' }]
       }
       if (command === 'lore_auth_repository_local_user_info') {
@@ -481,26 +504,35 @@ describe('repository snapshot branch loading', () => {
   it('requests complete status and archived local branches without a scan mode', async () => {
     await loadRepositorySnapshot('E:\\Worlds\\RealLore')
 
-    expect(invokeMock).toHaveBeenCalledWith('lore_repository_status', {
-      repositoryPath: 'E:\\Worlds\\RealLore'
-    })
-    expect(invokeMock).toHaveBeenCalledWith('lore_branch_list', {
-      repositoryPath: 'E:\\Worlds\\RealLore',
-      includeArchived: true
-    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_repository_status',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\RealLore'
+      })
+    )
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_branch_list',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\RealLore',
+        includeArchived: true
+      })
+    )
   })
 
   it('anchors history at the current branch tip while keeping HEAD on the older workspace revision', async () => {
     const snapshot = await loadRepositorySnapshot('E:\\Worlds\\RealLore')
 
-    expect(invokeMock).toHaveBeenCalledWith('lore_revision_history', {
-      repositoryPath: 'E:\\Worlds\\RealLore',
-      limit: 100,
-      revision: 'main-tip',
-      branch: null,
-      date: null,
-      onlyBranch: false
-    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_revision_history',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\RealLore',
+        limit: 100,
+        revision: 'main-tip',
+        branch: null,
+        date: null,
+        onlyBranch: false
+      })
+    )
     expect(snapshot.repository.revision).toBe('old-revision')
     expect(snapshot.revisions[0]?.branchPointers).toEqual([{ id: 'local:main-id', name: 'main', kind: 'local' }])
     expect(snapshot.revisions[1]?.branchPointers).toEqual([{ id: 'head', name: 'HEAD', kind: 'head' }])
@@ -511,14 +543,17 @@ describe('repository snapshot branch loading', () => {
 
     await loadRepositorySnapshot('E:\\Worlds\\RealLore')
 
-    expect(invokeMock).toHaveBeenCalledWith('lore_revision_history', {
-      repositoryPath: 'E:\\Worlds\\RealLore',
-      limit: 100,
-      revision: 'main-tip',
-      branch: null,
-      date: null,
-      onlyBranch: false
-    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_revision_history',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\RealLore',
+        limit: 100,
+        revision: 'main-tip',
+        branch: null,
+        date: null,
+        onlyBranch: false
+      })
+    )
   })
 
   it('opens a newly initialized repository without querying the zero Revision', async () => {
@@ -548,24 +583,30 @@ describe('repository snapshot branch loading', () => {
       },
       revisions: []
     })
-    expect(invokeMock).toHaveBeenCalledWith('lore_revision_history', {
-      repositoryPath: 'E:\\Worlds\\NewLore',
-      limit: 100,
-      revision: null,
-      branch: null,
-      date: null,
-      onlyBranch: false
-    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_revision_history',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\NewLore',
+        limit: 100,
+        revision: null,
+        branch: null,
+        date: null,
+        onlyBranch: false
+      })
+    )
   })
 
   it('passes the exact branch tip when checking out the current branch again', async () => {
     await switchBranch('E:\\Worlds\\RealLore', 'main', 'main-tip')
 
-    expect(invokeMock).toHaveBeenCalledWith('lore_branch_switch', {
-      repositoryPath: 'E:\\Worlds\\RealLore',
-      branch: 'main',
-      revision: 'main-tip'
-    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_branch_switch',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\RealLore',
+        branch: 'main',
+        revision: 'main-tip'
+      })
+    )
   })
 
   it('queries file history from an exact revision without also passing a branch', async () => {
@@ -574,13 +615,16 @@ describe('repository snapshot branch loading', () => {
       revision: 'abcdef1234567890'
     })
 
-    expect(invokeMock).toHaveBeenCalledWith('lore_file_history', {
-      repositoryPath: 'E:\\Worlds\\RealLore',
-      path: 'Content/Committed.txt',
-      branch: null,
-      revision: 'abcdef1234567890',
-      length: 100
-    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_file_history',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\RealLore',
+        path: 'Content/Committed.txt',
+        branch: null,
+        revision: 'abcdef1234567890',
+        length: 100
+      })
+    )
   })
 
   it('requests only tree metadata for a revision change list and maps stable file DTOs', async () => {
@@ -590,11 +634,14 @@ describe('repository snapshot branch loading', () => {
       'cff2660aab177e854f14902a03f1f95b7ca21c85d756b430cd38f4ceab6a6b46'
     )
 
-    expect(invokeMock).toHaveBeenCalledWith('lore_revision_changes', {
-      repositoryPath: 'E:\\Worlds\\RealLore',
-      sourceRevision: null,
-      targetRevision: 'cff2660aab177e854f14902a03f1f95b7ca21c85d756b430cd38f4ceab6a6b46'
-    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_revision_changes',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\RealLore',
+        sourceRevision: null,
+        targetRevision: 'cff2660aab177e854f14902a03f1f95b7ca21c85d756b430cd38f4ceab6a6b46'
+      })
+    )
     expect(changes).toEqual([
       expect.objectContaining({
         id: 'Scenes/Main.tscn',
@@ -622,15 +669,18 @@ describe('repository snapshot branch loading', () => {
       ['Scenes/Main.tscn']
     )
 
-    expect(invokeMock).toHaveBeenCalledWith('lore_revision_diff', {
-      repositoryPath: 'E:\\Worlds\\RealLore',
-      sourceRevision: null,
-      targetRevision: 'cff2660aab177e854f14902a03f1f95b7ca21c85d756b430cd38f4ceab6a6b46',
-      paths: ['Scenes/Main.tscn'],
-      contextLines: 3,
-      ignoreWhitespaceEol: false,
-      ignoreWhitespaceInline: false
-    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_revision_diff',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\RealLore',
+        sourceRevision: null,
+        targetRevision: 'cff2660aab177e854f14902a03f1f95b7ca21c85d756b430cd38f4ceab6a6b46',
+        paths: ['Scenes/Main.tscn'],
+        contextLines: 3,
+        ignoreWhitespaceEol: false,
+        ignoreWhitespaceInline: false
+      })
+    )
     expect(diffs).toEqual([
       {
         path: 'Scenes/Main.tscn',
@@ -758,14 +808,17 @@ describe('repository snapshot branch loading', () => {
       limit: 250
     })
 
-    expect(invokeMock).toHaveBeenCalledWith('lore_revision_history', {
-      repositoryPath: 'E:\\Worlds\\RealLore',
-      limit: 250,
-      revision: 'history-start',
-      branch: 'main',
-      date: 1_743_724_799_999,
-      onlyBranch: true
-    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_revision_history',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\RealLore',
+        limit: 250,
+        revision: 'history-start',
+        branch: 'main',
+        date: 1_743_724_799_999,
+        onlyBranch: true
+      })
+    )
   })
 
   it('resolves revision user IDs in one repository-scoped Auth request and preserves unresolved identities', async () => {
@@ -789,10 +842,12 @@ describe('repository snapshot branch loading', () => {
         ])
       }
       if (command === 'lore_auth_user_info') {
-        expect(args).toEqual({
-          repositoryPath: 'E:\\Worlds\\RealLore',
-          userIds: ['user-42', 'Artist Team']
-        })
+        expect(args).toEqual(
+          ipcArgs({
+            repositoryPath: 'E:\\Worlds\\RealLore',
+            userIds: ['user-42', 'Artist Team']
+          })
+        )
         return {
           operation: 'auth.user-info',
           status: 0,
@@ -805,17 +860,21 @@ describe('repository snapshot branch loading', () => {
         }
       }
       if (command === 'lore_revision_author_cache_get') {
-        expect(args).toEqual({
-          repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
-          userIds: ['user-42', 'Artist Team']
-        })
+        expect(args).toEqual(
+          ipcArgs({
+            repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
+            userIds: ['user-42', 'Artist Team']
+          })
+        )
         return []
       }
       if (command === 'lore_revision_author_cache_store') {
-        expect(args).toEqual({
-          repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
-          authors: [{ userId: 'user-42', displayName: 'Arno Chen <arno@example.com>' }]
-        })
+        expect(args).toEqual(
+          ipcArgs({
+            repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
+            authors: [{ userId: 'user-42', displayName: 'Arno Chen <arno@example.com>' }]
+          })
+        )
         return null
       }
       throw new Error(`The test does not handle command: ${command}`)
@@ -879,7 +938,7 @@ describe('repository snapshot branch loading', () => {
       if (command === 'lore_auth_user_info') throw new Error('Offline history must not query the remote Auth service')
       if (command === 'lore_revision_author_cache_get') return []
       if (command === 'lore_auth_repository_local_user_info') {
-        expect(args).toEqual({ repositoryPath: 'E:\\Worlds\\RealLore', userIds: ['user-42'] })
+        expect(args).toEqual(ipcArgs({ repositoryPath: 'E:\\Worlds\\RealLore', userIds: ['user-42'] }))
         return {
           operation: 'auth.repository-local-user-info',
           status: 0,
@@ -887,10 +946,12 @@ describe('repository snapshot branch loading', () => {
         }
       }
       if (command === 'lore_revision_author_cache_store') {
-        expect(args).toEqual({
-          repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
-          authors: [{ userId: 'user-42', displayName: 'Arno Chen' }]
-        })
+        expect(args).toEqual(
+          ipcArgs({
+            repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
+            authors: [{ userId: 'user-42', displayName: 'Arno Chen' }]
+          })
+        )
         return null
       }
       throw new Error(`The test does not handle command: ${command}`)
@@ -914,10 +975,12 @@ describe('repository snapshot branch loading', () => {
         return historyResult([historyEntry('tip', { authorIdentity: 'user-42' })])
       }
       if (command === 'lore_revision_author_cache_get') {
-        expect(args).toEqual({
-          repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
-          userIds: ['user-42']
-        })
+        expect(args).toEqual(
+          ipcArgs({
+            repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
+            userIds: ['user-42']
+          })
+        )
         return [{ userId: 'user-42', displayName: 'Cached Author <cached@example.com>' }]
       }
       if (command === 'lore_auth_user_info') throw new Error('Offline history must not query remote Auth')
@@ -1103,16 +1166,19 @@ describe('repository snapshot branch loading', () => {
       'authenticated-user-id'
     )
 
-    expect(invokeMock).toHaveBeenCalledWith('lore_repository_publish', {
-      repositoryPath: 'E:\\Worlds\\NewLore',
-      repositoryName: 'new-lore',
-      description: 'New Lore repository',
-      identity: 'Artist <artist@example.com>',
-      defaultIdentity: null,
-      serverUrl: 'lore://192.168.11.20:41337',
-      branch: 'main',
-      userId: 'authenticated-user-id'
-    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_repository_publish',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\NewLore',
+        repositoryName: 'new-lore',
+        description: 'New Lore repository',
+        identity: 'Artist <artist@example.com>',
+        defaultIdentity: null,
+        serverUrl: 'lore://192.168.11.20:41337',
+        branch: 'main',
+        userId: 'authenticated-user-id'
+      })
+    )
   })
 
   it('passes a null authentication account for anonymous publishing', async () => {
@@ -1143,16 +1209,19 @@ describe('repository snapshot branch loading', () => {
       'main'
     )
 
-    expect(invokeMock).toHaveBeenCalledWith('lore_repository_publish', {
-      repositoryPath: 'E:\\Worlds\\PublicLore',
-      repositoryName: 'public-repo',
-      description: '',
-      identity: 'Artist <artist@example.com>',
-      defaultIdentity: null,
-      serverUrl: 'lore://192.168.11.20:41337',
-      branch: 'main',
-      userId: null
-    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_repository_publish',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\PublicLore',
+        repositoryName: 'public-repo',
+        description: '',
+        identity: 'Artist <artist@example.com>',
+        defaultIdentity: null,
+        serverUrl: 'lore://192.168.11.20:41337',
+        branch: 'main',
+        userId: null
+      })
+    )
   })
 
   it('passes every supported advanced Clone option through the stable service boundary', async () => {
@@ -1174,25 +1243,28 @@ describe('repository snapshot branch loading', () => {
       }
     })
 
-    expect(invokeMock).toHaveBeenCalledWith('lore_repository_clone', {
-      serverUrl: 'lore://127.0.0.1:41337',
-      repositoryName: 'world',
-      destinationParent: 'E:\\Worlds',
-      directoryName: 'world',
-      viewPath: 'C:\\views\\world.view',
-      targetRevision: 'release/1.0',
-      bare: false,
-      directFileWrite: true,
-      layerRepository: 'world-lighting',
-      layerMetadataKey: 'build-id',
-      useSharedStore: true,
-      sharedStorePath: 'D:\\LoreStore',
-      dependencyRootFiles: ['Content/World.umap'],
-      dependencyTags: ['runtime'],
-      dependencyRecursive: true,
-      dependencyDepthLimit: 4,
-      userId: null
-    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_repository_clone',
+      ipcArgs({
+        serverUrl: 'lore://127.0.0.1:41337',
+        repositoryName: 'world',
+        destinationParent: 'E:\\Worlds',
+        directoryName: 'world',
+        viewPath: 'C:\\views\\world.view',
+        targetRevision: 'release/1.0',
+        bare: false,
+        directFileWrite: true,
+        layerRepository: 'world-lighting',
+        layerMetadataKey: 'build-id',
+        useSharedStore: true,
+        sharedStorePath: 'D:\\LoreStore',
+        dependencyRootFiles: ['Content/World.umap'],
+        dependencyTags: ['runtime'],
+        dependencyRecursive: true,
+        dependencyDepthLimit: 4,
+        userId: null
+      })
+    )
   })
 
   it('passes Shared Store options through the initialization service boundary', async () => {
@@ -1206,15 +1278,18 @@ describe('repository snapshot branch loading', () => {
       sharedStorePath: 'D:\\LoreStore'
     })
 
-    expect(invokeMock).toHaveBeenCalledWith('lore_repository_initialize', {
-      directoryPath: 'E:\\Worlds\\NewProject',
-      repositoryName: 'new-project',
-      description: 'Initialize with Shared Store',
-      repositoryIdentity: '',
-      defaultIdentity: null,
-      useSharedStore: true,
-      sharedStorePath: 'D:\\LoreStore'
-    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_repository_initialize',
+      ipcArgs({
+        directoryPath: 'E:\\Worlds\\NewProject',
+        repositoryName: 'new-project',
+        description: 'Initialize with Shared Store',
+        repositoryIdentity: '',
+        defaultIdentity: null,
+        useSharedStore: true,
+        sharedStorePath: 'D:\\LoreStore'
+      })
+    )
   })
 
   it('localizes structured Clone validation failures before they reach the dialog', async () => {
@@ -1253,7 +1328,7 @@ describe('repository snapshot branch loading', () => {
 
     const registry = await loadSharedStoreRegistry(true)
 
-    expect(invokeMock).toHaveBeenCalledWith('lore_shared_store_list', { includeInstances: true })
+    expect(invokeMock).toHaveBeenCalledWith('lore_shared_store_list', ipcArgs({ includeInstances: true }))
     expect(registry.instancesRequested).toBe(true)
     expect(registry.stores).toEqual([
       {
@@ -1314,12 +1389,15 @@ describe('repository snapshot branch loading', () => {
   it('passes stable conflict kind, action, and repository-relative paths to Rust', async () => {
     await runConflictAction('E:\\Worlds\\RealLore', 'merge', 'mine', ['Content/Conflict.txt'])
 
-    expect(invokeMock).toHaveBeenCalledWith('lore_conflict_action', {
-      repositoryPath: 'E:\\Worlds\\RealLore',
-      operation: 'merge',
-      action: 'mine',
-      paths: ['Content/Conflict.txt']
-    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_conflict_action',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\RealLore',
+        operation: 'merge',
+        action: 'mine',
+        paths: ['Content/Conflict.txt']
+      })
+    )
   })
 
   it('passes the read-time conflict session and source content to the native write boundary', async () => {
@@ -1342,13 +1420,16 @@ describe('repository snapshot branch loading', () => {
       'resolved content'
     )
 
-    expect(invokeMock).toHaveBeenCalledWith('lore_write_conflict_resolution', {
-      repositoryPath: 'E:\\Worlds\\RealLore',
-      expectedSession: session,
-      path: 'Content/Conflict.txt',
-      expectedContent: '<<<<<<< current\nold\n=======\nnew\n>>>>>>> incoming',
-      content: 'resolved content'
-    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_write_conflict_resolution',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\RealLore',
+        expectedSession: session,
+        path: 'Content/Conflict.txt',
+        expectedContent: '<<<<<<< current\nold\n=======\nnew\n>>>>>>> incoming',
+        content: 'resolved content'
+      })
+    )
   })
 
   it('passes an atomic move relation to the native stage command', async () => {
@@ -1361,11 +1442,14 @@ describe('repository snapshot branch loading', () => {
 
     await stageMove('E:\\Worlds\\RealLore', 'old/file.txt', 'next/file.txt')
 
-    expect(invokeMock).toHaveBeenCalledWith('lore_stage_move', {
-      repositoryPath: 'E:\\Worlds\\RealLore',
-      sourcePath: 'old/file.txt',
-      targetPath: 'next/file.txt'
-    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_stage_move',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\RealLore',
+        sourcePath: 'old/file.txt',
+        targetPath: 'next/file.txt'
+      })
+    )
   })
 
   it('restores a persistent conflict session into the snapshot when status contains conflict files', async () => {
@@ -1388,9 +1472,12 @@ describe('repository snapshot branch loading', () => {
 
     const snapshot = await loadRepositorySnapshot('E:\\Worlds\\RealLore')
 
-    expect(invokeMock).toHaveBeenCalledWith('lore_conflict_session', {
-      repositoryPath: 'E:\\Worlds\\RealLore'
-    })
+    expect(invokeMock).toHaveBeenCalledWith(
+      'lore_conflict_session',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\RealLore'
+      })
+    )
     expect<unknown>(snapshot.conflictSession).toEqual(conflictSessionResponse)
     expect(snapshot.changes[0]).toMatchObject({
       id: 'Content/Conflict.txt',
@@ -1481,16 +1568,24 @@ describe('repository snapshot branch loading', () => {
     await loadWorkspaceText('E:\\Worlds\\RealLore', 'Content/Conflict.txt', 64 * 1024 * 1024)
     await loadRevisionText('E:\\Worlds\\RealLore', 'revision', 'Content/World.txt', 64 * 1024 * 1024)
 
-    expect(invokeMock).toHaveBeenNthCalledWith(1, 'lore_read_workspace_text', {
-      repositoryPath: 'E:\\Worlds\\RealLore',
-      relativePath: 'Content/Conflict.txt',
-      maxBytes: 2 * 1024 * 1024
-    })
-    expect(invokeMock).toHaveBeenNthCalledWith(2, 'lore_read_revision_text', {
-      repositoryPath: 'E:\\Worlds\\RealLore',
-      revision: 'revision',
-      relativePath: 'Content/World.txt',
-      maxBytes: 2 * 1024 * 1024
-    })
+    expect(invokeMock).toHaveBeenNthCalledWith(
+      1,
+      'lore_read_workspace_text',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\RealLore',
+        relativePath: 'Content/Conflict.txt',
+        maxBytes: 2 * 1024 * 1024
+      })
+    )
+    expect(invokeMock).toHaveBeenNthCalledWith(
+      2,
+      'lore_read_revision_text',
+      ipcArgs({
+        repositoryPath: 'E:\\Worlds\\RealLore',
+        revision: 'revision',
+        relativePath: 'Content/World.txt',
+        maxBytes: 2 * 1024 * 1024
+      })
+    )
   })
 })
