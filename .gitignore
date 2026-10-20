@@ -6,6 +6,8 @@ src-tauri/gen/
 graphify-out/
 graphify-upstream/
 .browser-profile/
+/artifacts/
+/docs/performance/
 docs/plan/
 docs/note/
 docs/manual/
