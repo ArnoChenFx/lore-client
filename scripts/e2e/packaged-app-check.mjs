@@ -13,6 +13,7 @@
 //   TAURI_DRIVER_URL    WebDriver endpoint (default: http://127.0.0.1:4444)
 //   E2E_EVIDENCE_DIR    where screenshots are written (default: a temp directory)
 
+import { randomUUID } from 'node:crypto'
 import {
   existsSync,
   lstatSync,
@@ -188,19 +189,26 @@ async function main() {
     const shot = await webdriver('GET', `/session/${sessionId}/screenshot`)
     writeFileSync(join(evidenceDir, `${name}.png`), Buffer.from(shot, 'base64'))
   }
+  const withOperationContext = (args) => ({
+    ...args,
+    operationContext: {
+      requestId: randomUUID(),
+      workspaceKey: typeof args?.repositoryPath === 'string' ? args.repositoryPath : null
+    }
+  })
   const invokeFromWebview = (command, args) =>
     execute(
       `return window.__TAURI_INTERNALS__.invoke(arguments[0], arguments[1])
         .then(() => 'resolved')
         .catch((error) => 'rejected: ' + String((error && error.message) || error))`,
-      [command, args]
+      [command, withOperationContext(args)]
     )
   const invokeDetailed = (command, args) =>
     execute(
       `return window.__TAURI_INTERNALS__.invoke(arguments[0], arguments[1])
         .then(() => ({ ok: true }))
         .catch((error) => ({ ok: false, code: error && error.code, message: String((error && error.message) || error) }))`,
-      [command, args]
+      [command, withOperationContext(args)]
     )
   const emitOperationStream = (payload) =>
     execute(
@@ -293,7 +301,9 @@ async function main() {
     await sleep(300)
 
     const operationId = `e2e-stall-${Date.now()}`
+    const operationContext = { requestId: randomUUID(), workspaceKey: null }
     const emitted = await emitOperationStream({
+      ...operationContext,
       operationId,
       operation: 'file.stage',
       phase: 'streaming',
@@ -318,7 +328,7 @@ async function main() {
       { isStalled: Boolean(stalled), warningText }
     )
     await screenshot('04-stall-warning')
-    await emitOperationStream({ operationId, operation: 'file.stage', phase: 'succeeded', status: 0, durationMs: 17_000, cancellable: false })
+    await emitOperationStream({ ...operationContext, operationId, operation: 'file.stage', phase: 'succeeded', status: 0, durationMs: 17_000, cancellable: false })
   } finally {
     await webdriver('DELETE', `/session/${sessionId}`).catch(() => {})
   }

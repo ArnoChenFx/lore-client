@@ -19,7 +19,9 @@ export function createOperationContext(workspaceKey: string | null): OperationCo
 }
 
 function publish(event: OperationRequestEvent): void {
-  for (const listener of [...listeners]) {
+  // Observers added during this notification start with the next event.
+  const currentListeners = [...listeners]
+  for (const listener of currentListeners) {
     try {
       listener(event)
     } catch (error) {

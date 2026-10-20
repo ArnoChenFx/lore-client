@@ -1,12 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'bun:test'
 
 import i18n from '../i18n'
-import type { LoreRevisionHistoryEntry, LoreRevisionHistoryResult, Repository } from '../types'
+import type {
+  LoreOperationResult,
+  LoreRevisionHistoryEntry,
+  LoreRevisionHistoryResult,
+  OperationContext,
+  Repository
+} from '../types'
 
 /*
  * 被测服务通过动态导入加载，保证 vi.mock 注册在前，且工厂函数引用的 invokeMock 等变量
  * 在服务模块求值前已初始化。这种写法不依赖 mock 调用的提升，bun test 中同样成立。
  */
+interface MockIpcArgs extends Record<string, unknown> {
+  operationContext: OperationContext
+}
+
 const invokeMock = vi.fn()
 const tauriCore = await import('@tauri-apps/api/core')
 let repositoryStatusEvents: Array<{ tagName: string; data: Record<string, unknown> }> = []
@@ -74,12 +84,12 @@ function historyEntry(
 }
 
 function historyResult(
+  context: OperationContext,
   entries: LoreRevisionHistoryEntry[],
   fields: Partial<Omit<LoreRevisionHistoryResult, 'entries'>> = {}
 ): LoreRevisionHistoryResult {
   return {
-    requestId: 'revision-history',
-    workspaceKey: 'E:\\Worlds\\RealLore',
+    ...context,
     operation: 'revision.history',
     status: 0,
     durationMs: 1,
@@ -89,7 +99,7 @@ function historyResult(
   }
 }
 
-function ipcArgs(args: Record<string, unknown>): Record<string, unknown> {
+function ipcArgs(args: Record<string, unknown>) {
   return {
     ...args,
     operationContext: {
@@ -140,16 +150,18 @@ describe('repository snapshot branch loading', () => {
       }
     ]
     conflictSessionResponse = null
-    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+    invokeMock.mockImplementation(async (command: string, args: MockIpcArgs) => {
       if (command === 'lore_repository_status') {
         return {
+          ...args.operationContext,
           operation: 'repository.status',
           status: 0,
+          durationMs: 1,
           events: repositoryStatusEvents
         }
       }
       if (command === 'lore_revision_history') {
-        return historyResult([
+        return historyResult(args.operationContext, [
           historyEntry('main-tip', { revisionNumber: 2, parentIds: ['old-revision'] }),
           historyEntry('old-revision')
         ])
@@ -159,6 +171,7 @@ describe('repository snapshot branch loading', () => {
       }
       if (command === 'lore_conflict_action') {
         return {
+          ...args.operationContext,
           operation: 'branch.merge-resolve-mine',
           status: 0,
           durationMs: 1,
@@ -167,15 +180,19 @@ describe('repository snapshot branch loading', () => {
       }
       if (command === 'lore_branch_list') {
         return {
+          ...args.operationContext,
           operation: 'branch.list',
           status: 0,
+          durationMs: 1,
           events: branchListEvents
         }
       }
       if (command === 'lore_branch_switch') {
         return {
+          ...args.operationContext,
           operation: 'branch.switch',
           status: 0,
+          durationMs: 1,
           events: []
         }
       }
@@ -184,8 +201,10 @@ describe('repository snapshot branch loading', () => {
       }
       if (command === 'lore_file_history') {
         return {
+          ...args.operationContext,
           operation: 'file.history',
           status: 0,
+          durationMs: 1,
           events: []
         }
       }
@@ -208,6 +227,7 @@ describe('repository snapshot branch loading', () => {
       }
       if (command === 'lore_revision_diff') {
         return {
+          ...args.operationContext,
           operation: 'file.diff.revision',
           status: 0,
           durationMs: 1,
@@ -225,6 +245,7 @@ describe('repository snapshot branch loading', () => {
       }
       if (command === 'lore_repository_info_remote') {
         return {
+          ...args.operationContext,
           operation: 'repository.info',
           status: 0,
           durationMs: 1,
@@ -251,6 +272,7 @@ describe('repository snapshot branch loading', () => {
         return {
           destinationPath: 'E:\\Worlds\\world',
           result: {
+            ...args.operationContext,
             operation: 'repository.clone',
             status: 0,
             durationMs: 1,
@@ -260,8 +282,10 @@ describe('repository snapshot branch loading', () => {
       }
       if (command === 'lore_repository_config_get') {
         return {
+          ...args.operationContext,
           operation: 'repository.config-get',
           status: 0,
+          durationMs: 1,
           events: [
             {
               tagName: 'repositoryConfigGet',
@@ -275,11 +299,13 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('enriches stored authentication identities with Auth-issued display names', async () => {
-    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+    invokeMock.mockImplementation(async (command: string, args: MockIpcArgs) => {
       if (command === 'lore_auth_list') {
         return {
+          ...args.operationContext,
           operation: 'auth.list',
           status: 0,
+          durationMs: 1,
           events: [
             {
               tagName: 'authIdentity',
@@ -312,8 +338,10 @@ describe('repository snapshot branch loading', () => {
           })
         )
         return {
+          ...args.operationContext,
           operation: 'auth.local-user-info',
           status: 0,
+          durationMs: 1,
           events: [
             {
               tagName: 'authUserInfo',
@@ -372,12 +400,14 @@ describe('repository snapshot branch loading', () => {
       }
     ]
     const fallbackInvoke = invokeMock.getMockImplementation()
-    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+    invokeMock.mockImplementation(async (command: string, args: MockIpcArgs) => {
       if (command === 'lore_auth_user_info') {
         expect(args).toEqual(ipcArgs({ repositoryPath: 'E:\\Worlds\\RealLore', userIds: ['user-42'] }))
         return {
+          ...args.operationContext,
           operation: 'auth.user-info',
           status: 0,
+          durationMs: 1,
           events: [{ tagName: 'authUserInfo', data: { id: 'user-42', name: 'Arno Chen' } }]
         }
       }
@@ -400,10 +430,10 @@ describe('repository snapshot branch loading', () => {
       branchListEvents[0].data.creator = 'user-42'
       const fallbackInvoke = invokeMock.getMockImplementation()
       const blocked = new Promise<never>(() => undefined)
-      invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+      invokeMock.mockImplementation(async (command: string, args: MockIpcArgs) => {
         if (command.includes('author_cache') || command.startsWith('lore_auth_')) return blocked
         if (command === 'lore_revision_history') {
-          return historyResult([historyEntry('tip', { authorIdentity: 'user-42' })])
+          return historyResult(args.operationContext, [historyEntry('tip', { authorIdentity: 'user-42' })])
         }
         if (!fallbackInvoke) throw new Error(`The test does not handle command: ${command}`)
         return fallbackInvoke(command, args)
@@ -439,7 +469,7 @@ describe('repository snapshot branch loading', () => {
       }
     ]
     const fallbackInvoke = invokeMock.getMockImplementation()
-    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+    invokeMock.mockImplementation(async (command: string, args: MockIpcArgs) => {
       if (command === 'lore_revision_author_cache_get') {
         expect(args).toEqual(
           ipcArgs({
@@ -464,11 +494,13 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('keeps account identities when display-name resolution fails', async () => {
-    invokeMock.mockImplementation(async (command: string) => {
+    invokeMock.mockImplementation(async (command: string, args: MockIpcArgs) => {
       if (command === 'lore_auth_list') {
         return {
+          ...args.operationContext,
           operation: 'auth.list',
           status: 0,
+          durationMs: 1,
           events: [
             {
               tagName: 'authIdentity',
@@ -560,21 +592,25 @@ describe('repository snapshot branch loading', () => {
     const zeroRevision = '0'.repeat(64)
     repositoryStatusEvents[0]!.data.revision = zeroRevision
     branchListEvents[0]!.data.latest = zeroRevision
-    invokeMock.mockImplementationOnce(async () => ({
+    invokeMock.mockImplementationOnce(async (_command: string, args: MockIpcArgs) => ({
+      ...args.operationContext,
       operation: 'repository.status',
       status: 0,
+      durationMs: 1,
       events: repositoryStatusEvents
     }))
-    invokeMock.mockImplementationOnce(async () => ({
+    invokeMock.mockImplementationOnce(async (_command: string, args: MockIpcArgs) => ({
+      ...args.operationContext,
       operation: 'branch.list',
       status: 0,
+      durationMs: 1,
       events: branchListEvents
     }))
-    invokeMock.mockImplementationOnce(async (command: string, args: Record<string, unknown>) => {
+    invokeMock.mockImplementationOnce(async (command: string, args: MockIpcArgs) => {
       if (command === 'lore_revision_history' && args.revision === zeroRevision) {
         throw new Error(`revision not found: ${zeroRevision}`)
       }
-      return historyResult([])
+      return historyResult(args.operationContext, [])
     })
 
     await expect(loadRepositorySnapshot('E:\\Worlds\\NewLore')).resolves.toMatchObject({
@@ -721,9 +757,9 @@ describe('repository snapshot branch loading', () => {
           }
         ]
         const fallbackInvoke = invokeMock.getMockImplementation()
-        invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+        invokeMock.mockImplementation(async (command: string, args: MockIpcArgs) => {
           if (command === 'lore_revision_history') {
-            return historyResult([], { status: 17, events })
+            return historyResult(args.operationContext, [], { status: 17, events })
           }
           if (!fallbackInvoke) throw new Error(`The test does not handle command: ${command}`)
           return fallbackInvoke(command, args)
@@ -752,8 +788,11 @@ describe('repository snapshot branch loading', () => {
     const events = [
       { tagName: 'complete', data: { error: { message: 'The secondary revision is unavailable in the Store' } } }
     ]
-    invokeMock.mockResolvedValue(
-      historyResult([historyEntry('partial-history-must-not-be-displayed')], { status: -1, events })
+    invokeMock.mockImplementation(async (_command: string, args: MockIpcArgs) =>
+      historyResult(args.operationContext, [historyEntry('partial-history-must-not-be-displayed')], {
+        status: -1,
+        events
+      })
     )
     const error: unknown = await loadRevisionHistory(repository, [], { onlyBranch: false, limit: 100 }).then(
       () => {
@@ -779,8 +818,8 @@ describe('repository snapshot branch loading', () => {
       const entries = populated
         ? [historyEntry('typed-revision', { message: 'Typed message', authorIdentity: 'Typed Author' })]
         : []
-      invokeMock.mockResolvedValue(
-        historyResult(entries, {
+      invokeMock.mockImplementation(async (_command: string, args: MockIpcArgs) =>
+        historyResult(args.operationContext, entries, {
           events: [
             { tagName: 'revisionHistoryEntry', data: { revision: 'obsolete-raw-revision', revisionNumber: 99 } },
             { tagName: 'metadata', data: { key: 'message', value: { tagName: 'string', data: 'Wrong raw message' } } }
@@ -834,9 +873,9 @@ describe('repository snapshot branch loading', () => {
         }
       }
     ])
-    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+    invokeMock.mockImplementation(async (command: string, args: MockIpcArgs) => {
       if (command === 'lore_revision_history') {
-        return historyResult([
+        return historyResult(args.operationContext, [
           historyEntry('tip', { revisionNumber: 2, parentIds: ['base'], authorIdentity: 'user-42' }),
           historyEntry('base', { authorIdentity: 'Artist Team' })
         ])
@@ -849,8 +888,10 @@ describe('repository snapshot branch loading', () => {
           })
         )
         return {
+          ...args.operationContext,
           operation: 'auth.user-info',
           status: 0,
+          durationMs: 1,
           events: [
             {
               tagName: 'authUserInfo',
@@ -907,9 +948,9 @@ describe('repository snapshot branch loading', () => {
         }
       }
     ])
-    invokeMock.mockImplementation(async (command: string) => {
+    invokeMock.mockImplementation(async (command: string, args: MockIpcArgs) => {
       if (command === 'lore_revision_history') {
-        return historyResult([historyEntry('tip', { authorIdentity: 'user-42' })])
+        return historyResult(args.operationContext, [historyEntry('tip', { authorIdentity: 'user-42' })])
       }
       if (command === 'lore_auth_user_info') {
         throw new Error('Auth service unavailable')
@@ -931,17 +972,19 @@ describe('repository snapshot branch loading', () => {
         data: { repository: 'repository-id', branchName: 'main', revision: 'tip' }
       }
     ])
-    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+    invokeMock.mockImplementation(async (command: string, args: MockIpcArgs) => {
       if (command === 'lore_revision_history') {
-        return historyResult([historyEntry('tip', { authorIdentity: 'user-42' })])
+        return historyResult(args.operationContext, [historyEntry('tip', { authorIdentity: 'user-42' })])
       }
       if (command === 'lore_auth_user_info') throw new Error('Offline history must not query the remote Auth service')
       if (command === 'lore_revision_author_cache_get') return []
       if (command === 'lore_auth_repository_local_user_info') {
         expect(args).toEqual(ipcArgs({ repositoryPath: 'E:\\Worlds\\RealLore', userIds: ['user-42'] }))
         return {
+          ...args.operationContext,
           operation: 'auth.repository-local-user-info',
           status: 0,
+          durationMs: 1,
           events: [{ tagName: 'authUserInfo', data: { id: 'user-42', name: 'Arno Chen' } }]
         }
       }
@@ -970,9 +1013,9 @@ describe('repository snapshot branch loading', () => {
         data: { repository: 'repository-id', branchName: 'main', revision: 'tip' }
       }
     ])
-    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+    invokeMock.mockImplementation(async (command: string, args: MockIpcArgs) => {
       if (command === 'lore_revision_history') {
-        return historyResult([historyEntry('tip', { authorIdentity: 'user-42' })])
+        return historyResult(args.operationContext, [historyEntry('tip', { authorIdentity: 'user-42' })])
       }
       if (command === 'lore_revision_author_cache_get') {
         expect(args).toEqual(
@@ -1010,11 +1053,13 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('returns the server repository directory without waiting for per-repository details', async () => {
-    invokeMock.mockImplementation(async (command: string) => {
+    invokeMock.mockImplementation(async (command: string, args: MockIpcArgs) => {
       if (command === 'lore_repository_list') {
         return {
+          ...args.operationContext,
           operation: 'repository.list',
           status: 0,
+          durationMs: 1,
           events: [
             {
               tagName: 'repositoryListEntry',
@@ -1040,8 +1085,8 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('hydrates server directory details with bounded concurrency and isolated failures', async () => {
-    const pending = new Map<string, (value: unknown) => void>()
-    invokeMock.mockImplementation((command: string, args: Record<string, unknown>) => {
+    const pending = new Map<string, (value: Omit<LoreOperationResult, keyof OperationContext>) => void>()
+    invokeMock.mockImplementation((command: string, args: MockIpcArgs) => {
       if (command !== 'lore_repository_info_remote') {
         throw new Error(`Unexpected command: ${command}`)
       }
@@ -1049,7 +1094,9 @@ describe('repository snapshot branch loading', () => {
       if (repositoryName === 'broken') {
         return Promise.reject(new Error('Repository details are unavailable'))
       }
-      return new Promise((resolve) => pending.set(repositoryName, resolve))
+      return new Promise((resolve) =>
+        pending.set(repositoryName, (result) => resolve({ ...args.operationContext, ...result }))
+      )
     })
     const resolved: string[] = []
     const hydration = hydrateRemoteRepositoryDetails(
@@ -1073,6 +1120,7 @@ describe('repository snapshot branch loading', () => {
       pending.get(name)?.({
         operation: 'repository.info',
         status: 0,
+        durationMs: 1,
         events: [{ tagName: 'repositoryData', data: { id: name, name, description: `${name} description` } }]
       })
     }
@@ -1083,11 +1131,13 @@ describe('repository snapshot branch loading', () => {
     pending.get('four')?.({
       operation: 'repository.info',
       status: 0,
+      durationMs: 1,
       events: [{ tagName: 'repositoryData', data: { id: 'four', name: 'four', description: 'four description' } }]
     })
     pending.get('five')?.({
       operation: 'repository.info',
       status: 0,
+      durationMs: 1,
       events: [{ tagName: 'repositoryData', data: { id: 'five', name: 'five', description: 'five description' } }]
     })
     await hydration
@@ -1103,13 +1153,17 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('stops stale detail batches before dispatching more repository info requests', async () => {
-    const pending: Array<(value: unknown) => void> = []
+    const pending: Array<() => void> = []
     let current = true
-    invokeMock.mockImplementation((command: string) => {
+    invokeMock.mockImplementation((command: string, args: MockIpcArgs) => {
       if (command !== 'lore_repository_info_remote') {
         throw new Error(`Unexpected command: ${command}`)
       }
-      return new Promise((resolve) => pending.push(resolve))
+      return new Promise((resolve) =>
+        pending.push(() =>
+          resolve({ ...args.operationContext, operation: 'repository.info', status: 0, durationMs: 1, events: [] })
+        )
+      )
     })
     const resolved: string[] = []
     const hydration = hydrateRemoteRepositoryDetails(
@@ -1129,7 +1183,7 @@ describe('repository snapshot branch loading', () => {
     expect(pending).toHaveLength(3)
     current = false
     for (const resolve of pending) {
-      resolve({ operation: 'repository.info', status: 0, events: [] })
+      resolve()
     }
     await hydration
 
@@ -1138,22 +1192,26 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('passes the explicitly selected authentication account when publishing a local repository', async () => {
-    invokeMock.mockResolvedValueOnce({
+    invokeMock.mockImplementationOnce(async (_command: string, args: MockIpcArgs) => ({
       repositoryUrl: 'lore://192.168.11.20:41337/test-new-repo',
       remoteCreated: true,
       configurationUpdated: true,
       pushed: true,
       createResult: {
+        ...args.operationContext,
         operation: 'repository.create.remote',
         status: 0,
+        durationMs: 1,
         events: []
       },
       pushResult: {
+        ...args.operationContext,
         operation: 'branch.push',
         status: 0,
+        durationMs: 1,
         events: []
       }
-    })
+    }))
 
     await publishRepository(
       'E:\\Worlds\\NewLore',
@@ -1182,22 +1240,26 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('passes a null authentication account for anonymous publishing', async () => {
-    invokeMock.mockResolvedValueOnce({
+    invokeMock.mockImplementationOnce(async (_command: string, args: MockIpcArgs) => ({
       repositoryUrl: 'lore://192.168.11.20:41337/public-repo',
       remoteCreated: true,
       configurationUpdated: true,
       pushed: true,
       createResult: {
+        ...args.operationContext,
         operation: 'repository.create.remote',
         status: 0,
+        durationMs: 1,
         events: []
       },
       pushResult: {
+        ...args.operationContext,
         operation: 'branch.push',
         status: 0,
+        durationMs: 1,
         events: []
       }
-    })
+    }))
 
     await publishRepository(
       'E:\\Worlds\\PublicLore',
@@ -1268,10 +1330,10 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('passes Shared Store options through the initialization service boundary', async () => {
-    invokeMock.mockResolvedValueOnce({
+    invokeMock.mockImplementationOnce(async (_command: string, args: MockIpcArgs) => ({
       repositoryPath: 'E:\\Worlds\\NewProject',
-      result: { status: 0, durationMs: 0, events: [] }
-    })
+      result: { ...args.operationContext, operation: 'repository.initialize', status: 0, durationMs: 0, events: [] }
+    }))
 
     await initializeRepository('E:\\Worlds\\NewProject', 'new-project', 'Initialize with Shared Store', '', undefined, {
       useSharedStore: true,
@@ -1361,7 +1423,8 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('reports the exact stale reason for a repository instance instead of a boolean', async () => {
-    invokeMock.mockResolvedValueOnce({
+    invokeMock.mockImplementationOnce(async (_command: string, args: MockIpcArgs) => ({
+      ...args.operationContext,
       operation: 'repository.instance-list',
       status: 0,
       durationMs: 1,
@@ -1373,7 +1436,7 @@ describe('repository snapshot branch loading', () => {
         // 未来新增的原因码只能归入 unknown，不得冒充某个已知原因。
         { tagName: 'repositoryInstance', data: { instanceId: 'e', path: 'E:\\e', stale: 9 } }
       ]
-    })
+    }))
 
     const instances = await listRepositoryInstances('E:\\Worlds\\RealLore')
 
@@ -1407,10 +1470,10 @@ describe('repository snapshot branch loading', () => {
       stagedRevision: 'staged-revision',
       incomingRevision: 'incoming-revision'
     }
-    invokeMock.mockResolvedValueOnce({
+    invokeMock.mockImplementationOnce(async (_command: string, args: MockIpcArgs) => ({
       resolved: true,
-      operation: { operation: 'branch.merge-resolve', status: 0, durationMs: 1, events: [] }
-    })
+      operation: { ...args.operationContext, operation: 'branch.merge-resolve', status: 0, durationMs: 1, events: [] }
+    }))
 
     await writeConflictResolution(
       'E:\\Worlds\\RealLore',
@@ -1433,12 +1496,13 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('passes an atomic move relation to the native stage command', async () => {
-    invokeMock.mockResolvedValueOnce({
+    invokeMock.mockImplementationOnce(async (_command: string, args: MockIpcArgs) => ({
+      ...args.operationContext,
       operation: 'file.stage-move',
       status: 0,
       durationMs: 1,
       events: []
-    })
+    }))
 
     await stageMove('E:\\Worlds\\RealLore', 'old/file.txt', 'next/file.txt')
 
