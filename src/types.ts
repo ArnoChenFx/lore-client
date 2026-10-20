@@ -1064,8 +1064,7 @@ export interface LoreLinkDetails {
   disableAutoFollow: boolean
 }
 
-export interface OperationRecord {
-  id: number
+export interface OperationRecord extends OperationContext {
   /** 操作名称语义键；面板渲染时再翻译，避免语言切换后仍显示旧文案。 */
   labelKey: string
   /** 详情可为纯文本（路径/错误）或语义键（可随语言重译）。 */
