@@ -93,8 +93,9 @@ describe('repository session lifecycle', () => {
   it('preserves unavailable paths without duplicating restored repositories', () => {
     const restored = snapshot('repository', 'C:/Repository')
 
-    expect(repositoryPathsForPersistence([restored], ['c:/repository', 'D:/offline'])).toEqual([
+    expect(repositoryPathsForPersistence([restored], ['C:/Repository', 'c:/repository', 'D:/offline'])).toEqual([
       'C:/Repository',
+      'c:/repository',
       'D:/offline'
     ])
   })

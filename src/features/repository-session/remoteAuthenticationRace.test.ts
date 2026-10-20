@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'bun:test'
 
 import type { RepositorySnapshot } from '../../types'
+import { RepositorySessionRequests } from './repositorySessionRequests'
 
 /*
  * 服务替身通过 Hook 的 dependencies 注入，而不是 vi.mock 整个 services 模块：
@@ -88,6 +89,7 @@ describe('remote authentication refresh timing', () => {
 
   it('keeps the recovery dialog suppressed while an account-page refresh is pending', async () => {
     let snapshots = [createSnapshot('unauthorized')]
+    const requests = new RepositorySessionRequests(snapshots.map((snapshot) => snapshot.repository.path))
     let releaseRefresh: (() => void) | undefined
     const refreshGate = new Promise<void>((resolve) => {
       releaseRefresh = resolve
@@ -100,8 +102,11 @@ describe('remote authentication refresh timing', () => {
       return useRemoteAuthenticationRecovery({
         applicationMode: 'tauri',
         snapshots,
-        upsertSnapshot: (snapshot) => {
+        requests,
+        applySnapshot: (request, snapshot) => {
+          if (!requests.isCurrent(request)) return false
           snapshots = [snapshot]
+          return true
         },
         onEnterOfflineMode: vi.fn(),
         dependencies: serviceMocks

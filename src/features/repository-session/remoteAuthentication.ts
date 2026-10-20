@@ -11,6 +11,11 @@ import {
 } from '../../services/lore'
 import { readErrorMessage } from '../../shared/lib'
 import type { ApplicationMode, Repository, RepositorySnapshot } from '../../types'
+import {
+  repositoryPathKey,
+  type RepositorySessionRequest,
+  type RepositorySessionRequests
+} from './repositorySessionRequests'
 
 export interface RemoteAuthenticationTarget {
   serverUrl: string
@@ -30,7 +35,8 @@ interface AuthenticationRefreshDependencies {
 interface UseRemoteAuthenticationRecoveryOptions {
   applicationMode: ApplicationMode
   snapshots: RepositorySnapshot[]
-  upsertSnapshot: (snapshot: RepositorySnapshot) => void
+  requests: RepositorySessionRequests
+  applySnapshot: (request: RepositorySessionRequest, snapshot: RepositorySnapshot) => boolean
   onEnterOfflineMode: () => void
   /**
    * 可注入的跨模块服务依赖；生产使用默认真实实现。
@@ -161,7 +167,7 @@ export function projectPausedRepositoriesOffline(
  */
 export async function refreshRepositoryAuthenticationState(
   snapshots: RepositorySnapshot[],
-  upsertSnapshot: (snapshot: RepositorySnapshot) => void,
+  upsertSnapshot: (snapshot: RepositorySnapshot) => boolean | void,
   dependencies: AuthenticationRefreshDependencies = {
     refreshContexts: refreshRepositoryAuthenticationContexts,
     loadSnapshot: loadRepositorySnapshot
@@ -179,8 +185,7 @@ export async function refreshRepositoryAuthenticationState(
   let failedCount = 0
   for (const result of results) {
     if (result.status === 'fulfilled') {
-      refreshedSnapshots.push(result.value)
-      upsertSnapshot(result.value)
+      if (upsertSnapshot(result.value) !== false) refreshedSnapshots.push(result.value)
     } else {
       failedCount += 1
     }
@@ -198,7 +203,8 @@ export async function refreshRepositoryAuthenticationState(
 export function useRemoteAuthenticationRecovery({
   applicationMode,
   snapshots,
-  upsertSnapshot,
+  requests,
+  applySnapshot,
   onEnterOfflineMode,
   dependencies
 }: UseRemoteAuthenticationRecoveryOptions) {
@@ -234,10 +240,23 @@ export function useRemoteAuthenticationRecovery({
         const key = remoteServerKey(repositoryServerUrl(snapshot.repository))
         return key && (!requestedServerKey || key === requestedServerKey)
       })
-      const refreshed = await refreshRepositoryAuthenticationState(relevantSnapshots, upsertSnapshot, {
-        refreshContexts,
-        loadSnapshot
-      })
+      const pending = new Map(
+        relevantSnapshots.map((snapshot) => [
+          repositoryPathKey(snapshot.repository.path),
+          requests.beginRead(snapshot.repository.path, 'snapshot')
+        ])
+      )
+      const refreshed = await refreshRepositoryAuthenticationState(
+        relevantSnapshots,
+        (snapshot) => {
+          const request = pending.get(repositoryPathKey(snapshot.repository.path))
+          return request ? applySnapshot(request, snapshot) : false
+        },
+        {
+          refreshContexts,
+          loadSnapshot
+        }
+      )
       /*
        * 版本号必须在原生上下文失效与快照重读之后再推进，避免账户页、服务器目录和
        * 仓库工具在同一时刻抢先读取旧上下文。
@@ -258,7 +277,7 @@ export function useRemoteAuthenticationRecovery({
       })
       return refreshed
     },
-    [snapshots, upsertSnapshot, refreshContexts, loadSnapshot]
+    [snapshots, requests, applySnapshot, refreshContexts, loadSnapshot]
   )
 
   /** 服务器目录等无本地仓库入口也可以显式请求同一个全局认证对话框。 */

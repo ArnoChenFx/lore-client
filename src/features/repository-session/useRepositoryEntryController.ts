@@ -31,16 +31,31 @@ import type {
 } from '../../types'
 import { operationMessage, type ActiveOperation } from '../operations'
 import type { AppNotify } from './controllerTypes'
+import type { RepositorySessionRequest, RepositorySessionRequests } from './repositorySessionRequests'
 
 type BeginOperation = (labelKey: string, detail: string | OperationDetail) => ActiveOperation
 type FinishOperation = (operation: ActiveOperation, succeeded: boolean, detail: string | OperationDetail) => void
+
+const entryServices = {
+  cloneRepository,
+  initializeRepository,
+  hydrateRemoteRepositoryDetails,
+  listAuthIdentities,
+  listRemoteRepositories,
+  loadRemoteRepositoryInfo,
+  loadRepositorySnapshot,
+  loginAuthInteractive,
+  probeRepositoryDirectory,
+  selectRepositoryDirectory
+}
 
 interface UseRepositoryEntryControllerOptions {
   applicationMode: ApplicationMode
   defaultIdentity: string
   sharedStoreInfo: LoreSharedStoreInfo | null
   activateRepositorySnapshot: (snapshot: RepositorySnapshot) => void
-  upsertSnapshot: (snapshot: RepositorySnapshot) => void
+  requests: RepositorySessionRequests
+  applySnapshot: (request: RepositorySessionRequest, snapshot: RepositorySnapshot) => boolean
   setActiveView: (view: NavigationView) => void
   setServerDialogOpen: (open: boolean) => void
   tryBeginRepositoryMutation: () => boolean
@@ -53,6 +68,7 @@ interface UseRepositoryEntryControllerOptions {
   authStateVersion: number
   onAuthenticationRequired: (serverUrl: string) => void
   onAuthStateChange: (serverUrl?: string) => Promise<unknown>
+  dependencies?: Partial<typeof entryServices>
 }
 
 /**
@@ -66,7 +82,8 @@ export function useRepositoryEntryController({
   defaultIdentity,
   sharedStoreInfo,
   activateRepositorySnapshot,
-  upsertSnapshot,
+  requests,
+  applySnapshot,
   setActiveView,
   setServerDialogOpen,
   tryBeginRepositoryMutation,
@@ -78,15 +95,32 @@ export function useRepositoryEntryController({
   serverDialogOpen,
   authStateVersion,
   onAuthenticationRequired,
-  onAuthStateChange
+  onAuthStateChange,
+  dependencies
 }: UseRepositoryEntryControllerOptions) {
+  const {
+    cloneRepository,
+    initializeRepository,
+    hydrateRemoteRepositoryDetails,
+    listAuthIdentities,
+    listRemoteRepositories,
+    loadRemoteRepositoryInfo,
+    loadRepositorySnapshot,
+    loginAuthInteractive,
+    probeRepositoryDirectory,
+    selectRepositoryDirectory
+  } = { ...entryServices, ...dependencies }
   const [remoteBrowserUrl, setRemoteBrowserUrl] = useState(DEFAULT_SERVER_URL)
   const [remoteRepositories, setRemoteRepositories] = useState<RemoteRepository[]>([])
   const [serverLoading, setServerLoading] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [serverAuthIdentities, setServerAuthIdentities] = useState<LoreAuthIdentity[]>([])
   const [serverAuthUserId, setServerAuthUserId] = useState('')
-  const [selectedRemote, setSelectedRemote] = useState<RemoteRepository | null>(null)
+  const [selectedRemote, setSelectedRemote] = useState<{
+    repository: RemoteRepository
+    serverUrl: string
+    userId: string | undefined
+  } | null>(null)
   const [cloneBusy, setCloneBusy] = useState(false)
   const [initializationTarget, setInitializationTarget] = useState<string | null>(null)
   const [initializationBusy, setInitializationBusy] = useState(false)
@@ -96,6 +130,23 @@ export function useRepositoryEntryController({
   const observedAuthStateVersion = useRef(authStateVersion)
   // 每次刷新目录都推进代际，防止较慢的旧服务器详情覆盖当前目录的同名仓库。
   const remoteRepositoryDetailsGeneration = useRef(0)
+  const [remoteDirectoryQuery, setRemoteDirectoryQuery] = useState<{
+    serverUrl: string
+    userId: string | undefined
+    generation: number
+  } | null>(null)
+  const openingGeneration = useRef(0)
+  useEffect(
+    () => () => {
+      openingGeneration.current += 1
+      remoteRepositoryDetailsGeneration.current += 1
+    },
+    []
+  )
+  useEffect(() => {
+    if (serverDialogOpen) return
+    remoteRepositoryDetailsGeneration.current += 1
+  }, [serverDialogOpen])
 
   /**
    * 先同步显示 List 结果，再逐条合并后台读取到的 Repository Info。
@@ -106,6 +157,8 @@ export function useRepositoryEntryController({
    */
   const displayRemoteRepositories = useCallback(
     (serverUrl: string, repositories: RemoteRepository[], userId: string | undefined, generation: number) => {
+      if (remoteRepositoryDetailsGeneration.current !== generation) return
+      setRemoteDirectoryQuery({ serverUrl, userId, generation })
       setRemoteRepositories(repositories)
       void hydrateRemoteRepositoryDetails(
         serverUrl,
@@ -122,16 +175,39 @@ export function useRepositoryEntryController({
         () => remoteRepositoryDetailsGeneration.current === generation
       )
     },
-    []
+    [hydrateRemoteRepositoryDetails]
   )
+
+  const changeRemoteBrowserUrl = useCallback((serverUrl: string) => {
+    remoteRepositoryDetailsGeneration.current += 1
+    setRemoteDirectoryQuery(null)
+    setRemoteBrowserUrl(serverUrl)
+    setRemoteRepositories([])
+    setServerError(null)
+    setServerLoading(false)
+  }, [])
+  const changeServerAuthUserId = useCallback((userId: string) => {
+    remoteRepositoryDetailsGeneration.current += 1
+    setRemoteDirectoryQuery(null)
+    setServerAuthUserId(userId)
+    setRemoteRepositories([])
+    setServerError(null)
+    setServerLoading(false)
+  }, [])
+  const closeServerDialog = useCallback(() => {
+    remoteRepositoryDetailsGeneration.current += 1
+    setRemoteDirectoryQuery(null)
+    setServerLoading(false)
+    setServerDialogOpen(false)
+  }, [setServerDialogOpen])
 
   /** 激活仓库时只同步服务器浏览的建议起点，不把临时草稿写回仓库配置。 */
   const activateSnapshot = useCallback(
     (snapshot: RepositorySnapshot) => {
       activateRepositorySnapshot(snapshot)
-      setRemoteBrowserUrl(snapshot.repository.serverUrl ?? DEFAULT_SERVER_URL)
+      changeRemoteBrowserUrl(snapshot.repository.serverUrl ?? DEFAULT_SERVER_URL)
     },
-    [activateRepositorySnapshot]
+    [activateRepositorySnapshot, changeRemoteBrowserUrl]
   )
 
   const openRepository = useCallback(async () => {
@@ -140,12 +216,18 @@ export function useRepositoryEntryController({
       return
     }
 
+    const generation = ++openingGeneration.current
+    let request: RepositorySessionRequest | null = null
+    const isCurrent = () => generation === openingGeneration.current && (!request || requests.isCurrent(request))
     try {
       const repositoryPath = await selectRepositoryDirectory()
-      if (!repositoryPath) return
+      if (!repositoryPath || !isCurrent()) return
+      request = requests.beginOpen(repositoryPath)
+      if (!request) return
 
       setBusyAction('checkingDirectory')
       const probe = await probeRepositoryDirectory(repositoryPath)
+      if (!isCurrent()) return
       if (probe.kind === 'unmanaged') {
         setInitializationError(null)
         setInitializationTarget(probe.selectedPath)
@@ -156,16 +238,29 @@ export function useRepositoryEntryController({
       }
 
       setBusyAction('openingRepository')
+      if (probe.repositoryPath !== repositoryPath) request = requests.beginOpen(probe.repositoryPath)
+      if (!request) return
       const snapshot = await loadRepositorySnapshot(probe.repositoryPath, true)
-      upsertSnapshot(snapshot)
+      if (!isCurrent() || !applySnapshot(request, snapshot)) return
       activateSnapshot(snapshot)
       setActiveView('history')
     } catch (error) {
-      notify(t('unableToOpenProjectDirectory'), readErrorMessage(error), 'warning')
+      if (isCurrent()) notify(t('unableToOpenProjectDirectory'), readErrorMessage(error), 'warning')
     } finally {
-      setBusyAction(null)
+      if (generation === openingGeneration.current) setBusyAction(null)
     }
-  }, [activateSnapshot, applicationMode, notify, setActiveView, setBusyAction, upsertSnapshot])
+  }, [
+    activateSnapshot,
+    applicationMode,
+    applySnapshot,
+    loadRepositorySnapshot,
+    notify,
+    probeRepositoryDirectory,
+    requests,
+    selectRepositoryDirectory,
+    setActiveView,
+    setBusyAction
+  ])
 
   /** 普通目录初始化成功后立即扫描已有文件，并把新仓库加入项目标签会话。 */
   const performRepositoryInitialization = useCallback(
@@ -205,10 +300,12 @@ export function useRepositoryEntryController({
          */
         setInitializationTarget(null)
         try {
+          const request = requests.beginOpen(initialized.repositoryPath)
           const snapshot = await loadRepositorySnapshot(initialized.repositoryPath, true)
-          upsertSnapshot(snapshot)
-          activateSnapshot(snapshot)
-          setActiveView('changes')
+          if (request && applySnapshot(request, snapshot)) {
+            activateSnapshot(snapshot)
+            setActiveView('changes')
+          }
           finishOperation(
             operation,
             true,
@@ -259,7 +356,10 @@ export function useRepositoryEntryController({
       setActiveView,
       setBusyAction,
       tryBeginRepositoryMutation,
-      upsertSnapshot
+      applySnapshot,
+      requests,
+      initializeRepository,
+      loadRepositorySnapshot
     ]
   )
 
@@ -281,6 +381,10 @@ export function useRepositoryEntryController({
         listAuthIdentities(),
         listRemoteRepositories(remoteBrowserUrl, serverAuthUserId)
       ])
+      if (remoteRepositoryDetailsGeneration.current !== detailsGeneration) {
+        finishOperation(operation, true, operationMessage('status.repositoriesLoaded', { count: repositories.length }))
+        return
+      }
       setServerAuthIdentities(identities)
       displayRemoteRepositories(remoteBrowserUrl, repositories, serverAuthUserId, detailsGeneration)
       finishOperation(
@@ -291,6 +395,10 @@ export function useRepositoryEntryController({
         })
       )
     } catch (error) {
+      if (remoteRepositoryDetailsGeneration.current !== detailsGeneration) {
+        finishOperation(operation, false, readErrorMessage(error))
+        return
+      }
       /* MissingToken 交给全局恢复弹层，让用户可以重新认证或明确回到离线模式。 */
       if (isAuthenticationRequiredError(error)) {
         setRemoteRepositories([])
@@ -304,7 +412,7 @@ export function useRepositoryEntryController({
       setServerError(message)
       finishOperation(operation, false, message)
     } finally {
-      setServerLoading(false)
+      if (remoteRepositoryDetailsGeneration.current === detailsGeneration) setServerLoading(false)
     }
   }, [
     applicationMode,
@@ -314,7 +422,9 @@ export function useRepositoryEntryController({
     onAuthenticationRequired,
     remoteBrowserUrl,
     serverAuthUserId,
-    setServerDialogOpen
+    setServerDialogOpen,
+    listAuthIdentities,
+    listRemoteRepositories
   ])
 
   /** 用户可显式更新当前服务器凭据；完成后自动刷新目录。 */
@@ -325,20 +435,29 @@ export function useRepositoryEntryController({
       setServerLoading(true)
       setServerError(null)
       await loginAuthInteractive(remoteBrowserUrl)
+      if (remoteRepositoryDetailsGeneration.current !== detailsGeneration) {
+        await onAuthStateChange(remoteBrowserUrl)
+        return
+      }
       const [identities, repositories] = await Promise.all([
         listAuthIdentities(),
         listRemoteRepositories(remoteBrowserUrl)
       ])
+      if (remoteRepositoryDetailsGeneration.current !== detailsGeneration) {
+        await onAuthStateChange(remoteBrowserUrl)
+        return
+      }
       setServerAuthIdentities(identities)
       setServerAuthUserId('')
       displayRemoteRepositories(remoteBrowserUrl, repositories, undefined, detailsGeneration)
       await onAuthStateChange(remoteBrowserUrl)
     } catch (error) {
+      if (remoteRepositoryDetailsGeneration.current !== detailsGeneration) return
       setRemoteRepositories([])
       if (isAuthenticationRequiredError(error)) onAuthenticationRequired(remoteBrowserUrl)
       setServerError(readErrorMessage(error))
     } finally {
-      setServerLoading(false)
+      if (remoteRepositoryDetailsGeneration.current === detailsGeneration) setServerLoading(false)
     }
   }, [
     applicationMode,
@@ -346,7 +465,10 @@ export function useRepositoryEntryController({
     onAuthenticationRequired,
     onAuthStateChange,
     remoteBrowserUrl,
-    serverLoading
+    serverLoading,
+    listAuthIdentities,
+    listRemoteRepositories,
+    loginAuthInteractive
   ])
 
   /*
@@ -370,11 +492,13 @@ export function useRepositoryEntryController({
           listAuthIdentities(),
           listRemoteRepositories(remoteBrowserUrl)
         ])
+        if (remoteRepositoryDetailsGeneration.current !== detailsGeneration) return
         setServerAuthIdentities(identities)
         setServerAuthUserId('')
         displayRemoteRepositories(remoteBrowserUrl, repositories, undefined, detailsGeneration)
         setServerError(null)
       } catch (error) {
+        if (remoteRepositoryDetailsGeneration.current !== detailsGeneration) return
         if (isAuthenticationRequiredError(error)) {
           setServerError(t('remoteAuthenticationRequired'))
           onAuthenticationRequired(remoteBrowserUrl)
@@ -382,7 +506,7 @@ export function useRepositoryEntryController({
           setServerError(readErrorMessage(error))
         }
       } finally {
-        setServerLoading(false)
+        if (remoteRepositoryDetailsGeneration.current === detailsGeneration) setServerLoading(false)
       }
     })()
   }, [
@@ -392,31 +516,42 @@ export function useRepositoryEntryController({
     onAuthenticationRequired,
     remoteBrowserUrl,
     serverDialogOpen,
-    serverLoading
+    serverLoading,
+    listAuthIdentities,
+    listRemoteRepositories
   ])
 
   /** Clone 弹层打开前读取远端详情，并同步刷新可选 Shared Store。 */
   const prepareRemoteClone = useCallback(
     async (repository: RemoteRepository) => {
       if (applicationMode !== 'tauri') {
-        setSelectedRemote(repository)
+        setSelectedRemote({ repository, serverUrl: remoteBrowserUrl, userId: serverAuthUserId })
         void refreshSharedStores()
         return
       }
+      const query = remoteDirectoryQuery
+      if (!query || query.generation !== remoteRepositoryDetailsGeneration.current) return
+      const detailsGeneration = ++remoteRepositoryDetailsGeneration.current
+      setRemoteDirectoryQuery({ ...query, generation: detailsGeneration })
       const operation = beginOperation('loadRemoteRepositoryInfo', repository.name)
       try {
         setServerLoading(true)
-        const details = await loadRemoteRepositoryInfo(remoteBrowserUrl, repository.name, serverAuthUserId)
-        setSelectedRemote({ ...repository, ...details })
+        const details = await loadRemoteRepositoryInfo(query.serverUrl, repository.name, query.userId)
+        if (remoteRepositoryDetailsGeneration.current !== detailsGeneration) {
+          finishOperation(operation, true, details.defaultBranch || details.name)
+          return
+        }
+        setSelectedRemote({ repository: { ...repository, ...details }, ...query })
         void refreshSharedStores()
         finishOperation(operation, true, details.defaultBranch || details.name)
       } catch (error) {
-        if (isAuthenticationRequiredError(error)) onAuthenticationRequired(remoteBrowserUrl)
         const message = readErrorMessage(error)
         finishOperation(operation, false, message)
+        if (remoteRepositoryDetailsGeneration.current !== detailsGeneration) return
+        if (isAuthenticationRequiredError(error)) onAuthenticationRequired(query.serverUrl)
         notify(t('unableToLoadRemoteRepositoryDetails'), message, 'warning')
       } finally {
-        setServerLoading(false)
+        if (remoteRepositoryDetailsGeneration.current === detailsGeneration) setServerLoading(false)
       }
     },
     [
@@ -427,7 +562,9 @@ export function useRepositoryEntryController({
       onAuthenticationRequired,
       refreshSharedStores,
       remoteBrowserUrl,
-      serverAuthUserId
+      remoteDirectoryQuery,
+      serverAuthUserId,
+      loadRemoteRepositoryInfo
     ]
   )
 
@@ -438,28 +575,30 @@ export function useRepositoryEntryController({
         notify(t('browserDemoMode'), t('startDesktopAppPerformReal_9915'), 'warning')
         return
       }
-      const operation = beginOperation('cloneRemoteRepository', selectedRemote.name)
+      const operation = beginOperation('cloneRemoteRepository', selectedRemote.repository.name)
       try {
         setCloneBusy(true)
         const clone = await cloneRepository(
-          remoteBrowserUrl,
-          selectedRemote.name,
+          selectedRemote.serverUrl,
+          selectedRemote.repository.name,
           parent,
           directoryName,
           viewPath,
           options,
-          serverAuthUserId
+          selectedRemote.userId
         )
+        const request = requests.beginOpen(clone.destinationPath)
         const snapshot = await loadRepositorySnapshot(clone.destinationPath, true)
-        upsertSnapshot(snapshot)
-        activateSnapshot(snapshot)
+        if (request && applySnapshot(request, snapshot)) {
+          activateSnapshot(snapshot)
+          setActiveView('history')
+        }
         setSelectedRemote(null)
         setServerDialogOpen(false)
-        setActiveView('history')
         finishOperation(operation, true, clone.destinationPath)
         notify(t('repositoryCloned'), clone.destinationPath, 'success')
       } catch (error) {
-        if (isAuthenticationRequiredError(error)) onAuthenticationRequired(remoteBrowserUrl)
+        if (isAuthenticationRequiredError(error)) onAuthenticationRequired(selectedRemote.serverUrl)
         const message = readErrorMessage(error)
         finishOperation(operation, false, message)
         notify(t('repositoryCloneFailed'), message, 'warning')
@@ -474,12 +613,13 @@ export function useRepositoryEntryController({
       finishOperation,
       notify,
       onAuthenticationRequired,
-      remoteBrowserUrl,
+      applySnapshot,
+      requests,
       selectedRemote,
-      serverAuthUserId,
       setActiveView,
       setServerDialogOpen,
-      upsertSnapshot
+      cloneRepository,
+      loadRepositorySnapshot
     ]
   )
 
@@ -517,17 +657,17 @@ export function useRepositoryEntryController({
       error: serverError,
       identities: serverAuthIdentities,
       selectedUserId: serverAuthUserId,
-      onBrowserServerUrlChange: setRemoteBrowserUrl,
-      onSelectedUserIdChange: setServerAuthUserId,
+      onBrowserServerUrlChange: changeRemoteBrowserUrl,
+      onSelectedUserIdChange: changeServerAuthUserId,
       onAuthenticate: () => void authenticateServer(),
       onRefresh: () => void refreshServerRepositories(),
       onClone: (repository: RemoteRepository) => void prepareRemoteClone(repository),
-      onClose: () => setServerDialogOpen(false)
+      onClose: closeServerDialog
     },
     cloneDialog: selectedRemote
       ? {
-          repository: selectedRemote,
-          serverUrl: remoteBrowserUrl,
+          repository: selectedRemote.repository,
+          serverUrl: selectedRemote.serverUrl,
           sharedStoreInfo,
           busy: cloneBusy,
           onChooseParent: selectCloneParentDirectory,

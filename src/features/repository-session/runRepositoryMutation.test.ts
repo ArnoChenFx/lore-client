@@ -59,6 +59,24 @@ function dependencies() {
 }
 
 describe('repository mutation lifecycle', () => {
+  it('records a completed mutation without moving another tab to its conflict view', async () => {
+    const callbacks = dependencies()
+    const result = await runRepositoryMutationLifecycle({
+      activeSnapshot: snapshot(),
+      labelKey: 'sync',
+      task: async () => undefined,
+      successDetail: 'Synchronized',
+      loadSnapshot: async () => snapshot(true),
+      ownsActiveView: () => false,
+      ...callbacks
+    })
+    expect(result).toBe(true)
+    expect(callbacks.applySnapshot).toHaveBeenCalled()
+    expect(callbacks.finishOperation).toHaveBeenCalled()
+    expect(callbacks.selectView).not.toHaveBeenCalled()
+    expect(callbacks.focusConflictFile).not.toHaveBeenCalled()
+  })
+
   it('refreshes the snapshot and reports a normal successful mutation', async () => {
     const before = snapshot()
     const after = { ...snapshot(), loadedAt: '2026-07-26T00:01:00.000Z' }

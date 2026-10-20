@@ -64,6 +64,12 @@ describe('repository session controller', () => {
     expect(upsertRepositorySnapshot([original], secondCopy)).toEqual([original, secondCopy])
   })
 
+  it('preserves distinct workspaces whose native paths differ only in case', () => {
+    const original = snapshot('repository', '/workspace/A')
+    const second = snapshot('repository', '/workspace/a')
+    expect(upsertRepositorySnapshot([original], second)).toEqual([original, second])
+  })
+
   it('replaces a reopened repository by path and preserves tab order', () => {
     const first = snapshot('first', 'C:/first')
     const unavailableRead = snapshot('temporary-id', 'C:/target')

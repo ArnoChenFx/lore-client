@@ -45,8 +45,7 @@ export function restoredActiveSnapshot(
 /**
  * 生成会话持久化路径。
  *
- * 读取失败的旧路径必须保留，避免一次离线启动永久丢失项目标签；已恢复路径按大小写
- * 不敏感规则去重，兼容 Windows 文件系统。
+ * 读取失败的旧路径必须保留，避免一次离线启动永久丢失项目标签；路径保留原生返回的大小写。
  */
 export function repositoryPathsForPersistence(
   snapshots: RepositorySnapshot[],
@@ -54,9 +53,7 @@ export function repositoryPathsForPersistence(
 ): string[] {
   return [
     ...snapshots.map((snapshot) => snapshot.repository.path),
-    ...unavailableRepositoryPaths.filter(
-      (path) => !snapshots.some((snapshot) => snapshot.repository.path.toLocaleLowerCase() === path.toLocaleLowerCase())
-    )
+    ...unavailableRepositoryPaths.filter((path) => !snapshots.some((snapshot) => snapshot.repository.path === path))
   ]
 }
 

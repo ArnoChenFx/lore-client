@@ -1,7 +1,12 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
-import type { RepositorySnapshot } from '../../types'
+import type { RepositorySnapshot, Revision } from '../../types'
 import { reorderItemsById } from './components/repositoryTabsModel'
+import {
+  repositoryPathKey,
+  RepositorySessionRequests,
+  type RepositorySessionRequest
+} from './repositorySessionRequests'
 
 interface InitialRepositorySelection {
   revisionId?: string
@@ -28,10 +33,10 @@ export function repositorySelection(snapshot: RepositorySnapshot): RepositorySel
  * 会话 Tab 的身份必须对应本地工作区，而不是 Lore 仓库 ID。
  *
  * 用户可以把同一个远端仓库克隆到多个目录；这些副本共享 Lore ID，却拥有独立的文件、
- * 工作区状态和窗口 Tab。路径按当前项目既有的 Windows 大小写不敏感规则规范化。
+ * 工作区状态和窗口 Tab。保留原生层返回路径的大小写，避免合并大小写敏感的工作区。
  */
 export function repositorySessionKey(snapshot: RepositorySnapshot): string {
-  return snapshot.repository.path.trim().toLocaleLowerCase('en-US')
+  return repositoryPathKey(snapshot.repository.path)
 }
 
 /**
@@ -49,6 +54,37 @@ export function upsertRepositorySnapshot(
   return snapshots.map((snapshot, snapshotIndex) => (snapshotIndex === index ? nextSnapshot : snapshot))
 }
 
+/** A history response only owns revisions, never the other fields it originally read. */
+export function updateRepositoryHistory(
+  snapshots: RepositorySnapshot[],
+  path: string,
+  revisions: Revision[]
+): RepositorySnapshot[] {
+  return snapshots.map((snapshot) =>
+    repositorySessionKey(snapshot) === repositoryPathKey(path) ? { ...snapshot, revisions } : snapshot
+  )
+}
+
+/** History queries and their branch pointers depend on these fields, not author labels. */
+function sameHistoryContext(left: RepositorySnapshot, right: RepositorySnapshot): boolean {
+  if (left.repository.branch !== right.repository.branch || left.repository.revision !== right.repository.revision) {
+    return false
+  }
+  if (left.branches.length !== right.branches.length) return false
+  const branches = new Map(right.branches.map((branch) => [branch.id, branch]))
+  return left.branches.every((branch) => {
+    const other = branches.get(branch.id)
+    return (
+      other &&
+      branch.name === other.name &&
+      branch.latest === other.latest &&
+      Boolean(branch.current) === Boolean(other.current) &&
+      Boolean(branch.remote) === Boolean(other.remote) &&
+      Boolean(branch.archived) === Boolean(other.archived)
+    )
+  })
+}
+
 /**
  * 管理多仓库会话及各对象类型的当前选区。
  *
@@ -62,6 +98,12 @@ export function useRepositorySession(
   const initialSnapshot = initialSnapshots[0]
   const snapshotSelection = initialSnapshot ? repositorySelection(initialSnapshot) : null
   const [snapshots, setSnapshots] = useState<RepositorySnapshot[]>(initialSnapshots)
+  // Event/IPC callbacks can run before React renders again (e.g. two closes).
+  const currentSnapshots = useRef(initialSnapshots)
+  const publishSnapshots = useCallback((next: RepositorySnapshot[]) => {
+    currentSnapshots.current = next
+    setSnapshots(next)
+  }, [])
   const [activeRepositoryId, setActiveRepositoryId] = useState(
     initialSnapshot ? repositorySessionKey(initialSnapshot) : ''
   )
@@ -73,36 +115,94 @@ export function useRepositorySession(
   )
   const [selectedTagId, setSelectedTagId] = useState(snapshotSelection?.tagId ?? initialSelection.tagId ?? '')
   const [unavailableRepositoryPaths, setUnavailableRepositoryPaths] = useState<string[]>([])
+  const [requests] = useState(
+    () => new RepositorySessionRequests(initialSnapshots.map((snapshot) => snapshot.repository.path))
+  )
+  const activeSessionKey = useRef(initialSnapshot ? repositorySessionKey(initialSnapshot) : '')
 
   const activateRepositorySnapshot = useCallback((snapshot: RepositorySnapshot) => {
     const selection = repositorySelection(snapshot)
+    activeSessionKey.current = repositorySessionKey(snapshot)
     setActiveRepositoryId(repositorySessionKey(snapshot))
     setSelectedRevisionId(selection.revisionId)
     setSelectedBranchId(selection.branchId)
     setSelectedTagId(selection.tagId)
   }, [])
 
-  const upsertSnapshot = useCallback((nextSnapshot: RepositorySnapshot) => {
-    setUnavailableRepositoryPaths((current) =>
-      current.filter((path) => path.toLocaleLowerCase() !== nextSnapshot.repository.path.toLocaleLowerCase())
-    )
-    setSnapshots((current) => upsertRepositorySnapshot(current, nextSnapshot))
-  }, [])
+  const upsertSnapshot = useCallback(
+    (nextSnapshot: RepositorySnapshot) => {
+      setUnavailableRepositoryPaths((current) =>
+        current.filter((path) => repositoryPathKey(path) !== repositorySessionKey(nextSnapshot))
+      )
+      // Synchronous demo projections may update existing tabs, but cannot reopen closed ones.
+      const current = currentSnapshots.current
+      if (current.some((snapshot) => repositorySessionKey(snapshot) === repositorySessionKey(nextSnapshot))) {
+        publishSnapshots(upsertRepositorySnapshot(current, nextSnapshot))
+      }
+    },
+    [publishSnapshots]
+  )
 
-  const reorderRepositoryTabs = useCallback((sourceRepositoryId: string, targetRepositoryId: string) => {
-    setSnapshots((current) => reorderItemsById(current, sourceRepositoryId, targetRepositoryId, repositorySessionKey))
-  }, [])
+  const applySnapshot = useCallback(
+    (request: RepositorySessionRequest, snapshot: RepositorySnapshot): boolean => {
+      if (
+        request.kind === 'history' ||
+        !requests.isCurrent(request) ||
+        repositorySessionKey(snapshot) !== request.path
+      ) {
+        return false
+      }
+      setUnavailableRepositoryPaths((current) => current.filter((path) => repositoryPathKey(path) !== request.path))
+      const current = currentSnapshots.current
+      const existing = current.find((item) => repositorySessionKey(item) === request.path)
+      if (!existing && request.kind !== 'open') return false
+      const sameAnchor = existing && sameHistoryContext(existing, snapshot)
+      if (existing && !sameAnchor) requests.invalidateHistory(request.path)
+      const preserveHistory = existing && request.kind === 'snapshot' && requests.hasNewerHistory(request) && sameAnchor
+      publishSnapshots(
+        upsertRepositorySnapshot(current, preserveHistory ? { ...snapshot, revisions: existing.revisions } : snapshot)
+      )
+      return true
+    },
+    [publishSnapshots, requests]
+  )
+  const applyHistory = useCallback(
+    (request: RepositorySessionRequest, revisions: Revision[]): boolean => {
+      if (request.kind !== 'history' || !requests.isCurrent(request)) return false
+      publishSnapshots(updateRepositoryHistory(currentSnapshots.current, request.path, revisions))
+      requests.didApplyHistory(request)
+      return true
+    },
+    [publishSnapshots, requests]
+  )
+  const isActiveRepository = useCallback((path: string) => activeSessionKey.current === repositoryPathKey(path), [])
+
+  const reorderRepositoryTabs = useCallback(
+    (sourceRepositoryId: string, targetRepositoryId: string) => {
+      publishSnapshots(
+        reorderItemsById(currentSnapshots.current, sourceRepositoryId, targetRepositoryId, repositorySessionKey)
+      )
+    },
+    [publishSnapshots]
+  )
 
   /** 原生偏好恢复完成后一次性替换整个会话，避免逐仓库追加产生中间选中态。 */
-  const replaceRepositorySession = useCallback((nextSnapshots: RepositorySnapshot[], unavailablePaths: string[]) => {
-    setSnapshots(nextSnapshots)
-    setUnavailableRepositoryPaths(unavailablePaths)
-    // 批量关闭和恢复都可能让旧活动 ID 失效；先清空，调用方若有首选快照会通过
-    // 统一激活入口同步对象选区。保留仍存在的 ID 可避免仅刷新快照时产生闪烁。
-    setActiveRepositoryId((current) =>
-      nextSnapshots.some((snapshot) => repositorySessionKey(snapshot) === current) ? current : ''
-    )
-  }, [])
+  const replaceRepositorySession = useCallback(
+    (nextSnapshots: RepositorySnapshot[], unavailablePaths: string[]) => {
+      requests.retain(nextSnapshots.map((snapshot) => snapshot.repository.path))
+      if (!nextSnapshots.some((snapshot) => repositorySessionKey(snapshot) === activeSessionKey.current)) {
+        activeSessionKey.current = ''
+      }
+      publishSnapshots(nextSnapshots)
+      setUnavailableRepositoryPaths(unavailablePaths)
+      // 批量关闭和恢复都可能让旧活动 ID 失效；先清空，调用方若有首选快照会通过
+      // 统一激活入口同步对象选区。保留仍存在的 ID 可避免仅刷新快照时产生闪烁。
+      setActiveRepositoryId((current) =>
+        nextSnapshots.some((snapshot) => repositorySessionKey(snapshot) === current) ? current : ''
+      )
+    },
+    [publishSnapshots, requests]
+  )
 
   /**
    * 关闭项目标签并返回应被激活的后继快照。
@@ -112,15 +212,22 @@ export function useRepositorySession(
    */
   const removeRepositorySnapshot = useCallback(
     (repositoryId: string): RepositorySnapshot | null => {
-      const remaining = snapshots.filter((snapshot) => repositorySessionKey(snapshot) !== repositoryId)
-      setSnapshots(remaining)
-      if (repositoryId !== activeRepositoryId) return null
+      const remaining = currentSnapshots.current.filter((snapshot) => repositorySessionKey(snapshot) !== repositoryId)
+      requests.close(repositoryId)
+      publishSnapshots(remaining)
+      if (repositoryId !== activeSessionKey.current) return null
 
       const next = remaining[0] ?? null
-      if (!next) setActiveRepositoryId('')
+      activeSessionKey.current = next ? repositorySessionKey(next) : ''
+      setActiveRepositoryId(activeSessionKey.current)
+      if (!next) {
+        setSelectedRevisionId('')
+        setSelectedBranchId('')
+        setSelectedTagId('')
+      }
       return next
     },
-    [activeRepositoryId, snapshots]
+    [publishSnapshots, requests]
   )
 
   return {
@@ -135,6 +242,10 @@ export function useRepositorySession(
     setSelectedTagId,
     activateRepositorySnapshot,
     upsertSnapshot,
+    requests,
+    applySnapshot,
+    applyHistory,
+    isActiveRepository,
     reorderRepositoryTabs,
     replaceRepositorySession,
     removeRepositorySnapshot

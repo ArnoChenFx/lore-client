@@ -151,6 +151,10 @@ function App() {
     setSelectedTagId,
     activateRepositorySnapshot,
     upsertSnapshot,
+    requests,
+    applySnapshot,
+    applyHistory,
+    isActiveRepository,
     reorderRepositoryTabs,
     replaceRepositorySession,
     removeRepositorySnapshot
@@ -202,7 +206,8 @@ function App() {
   const remoteAuthentication = useRemoteAuthenticationRecovery({
     applicationMode,
     snapshots: sessionSnapshots,
-    upsertSnapshot,
+    requests,
+    applySnapshot,
     onEnterOfflineMode: enterOfflineMode
   })
   /*
@@ -244,7 +249,8 @@ function App() {
     networkEnabled: !activeSnapshot || !remoteAuthentication.isRepositoryNetworkPaused(activeSnapshot.repository),
     repositoryPath: activeRepositoryPath,
     remoteState: activeSnapshot?.repository.remoteState ?? 'local',
-    upsertSnapshot,
+    requests,
+    applySnapshot,
     onRefreshError: notifyRepositoryRefreshError
   })
   useLocalChangesAutoRefresh({
@@ -371,7 +377,8 @@ function App() {
     defaultIdentity: preferences.defaultIdentity,
     sharedStoreInfo: sharedStores.info,
     activateRepositorySnapshot,
-    upsertSnapshot,
+    requests,
+    applySnapshot,
     setActiveView,
     setServerDialogOpen,
     tryBeginRepositoryMutation,
@@ -419,6 +426,12 @@ function App() {
         notify(t('repositoryOperationInProgress'), t('waitCurrentLoreCommandFinish_8cd5'), 'warning')
         return false
       }
+      const request = requests.beginMutation(activeSnapshot.repository.path)
+      if (!request) {
+        finishRepositoryMutation()
+        return false
+      }
+      const ownsActiveView = () => requests.isCurrent(request) && isActiveRepository(activeSnapshot.repository.path)
 
       try {
         setBusyAction(labelKey)
@@ -431,9 +444,9 @@ function App() {
           nextView,
           loadSnapshot: (repositoryPath) => loadRepositorySnapshot(repositoryPath, false),
           applySnapshot: (snapshot) => {
-            upsertSnapshot(snapshot)
-            activateSnapshot(snapshot)
+            if (applySnapshot(request, snapshot) && ownsActiveView()) activateSnapshot(snapshot)
           },
+          ownsActiveView,
           selectView: setActiveView,
           focusConflictFile: (file) => {
             const objectId = changeFileObjectId(file.id)
@@ -446,6 +459,7 @@ function App() {
           finishOperation
         })
       } finally {
+        requests.finishMutation(request)
         finishRepositoryMutation()
         setBusyAction(null)
       }
@@ -456,13 +470,15 @@ function App() {
       beginOperation,
       finishOperation,
       finishRepositoryMutation,
+      isActiveRepository,
       notify,
       openRepository,
       selectChangeFiles,
       setActiveView,
       setBusyAction,
       tryBeginRepositoryMutation,
-      upsertSnapshot
+      requests,
+      applySnapshot
     ]
   )
 
@@ -984,12 +1000,15 @@ function App() {
 
             {activeView === 'history' && (
               <HistoryPanelContainer
+                key={activeRepositoryId}
                 applicationMode={applicationMode}
                 snapshot={activeSnapshot}
                 selectedId={selectedRevisionId}
                 revealRequest={revisionRevealRequest}
                 onSelectedIdChange={setSelectedRevisionId}
-                onSnapshotChange={upsertSnapshot}
+                requests={requests}
+                onHistoryChange={applyHistory}
+                isActiveRepository={isActiveRepository}
                 onCheckout={(revision) => void checkoutRevisionFromList(revision)}
                 onContextMenu={openRevisionContextMenu}
                 onTagSelect={selectTag}
