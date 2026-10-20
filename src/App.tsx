@@ -373,7 +373,6 @@ function App() {
 
   const sharedStores = useSharedStoreController({
     applicationMode,
-    settingsOpen,
     beginOperation,
     finishOperation,
     notify
@@ -743,7 +742,7 @@ function App() {
                 onExternalDiffToolsChange: (externalDiffTools) => updatePreferences({ externalDiffTools }),
                 onExternalMergeToolsChange: (externalMergeTools) => updatePreferences({ externalMergeTools }),
                 onChooseExternalDiffExecutable: selectExternalDiffExecutable,
-                onRefreshSharedStores: () => void sharedStores.refresh(),
+                onRefreshSharedStores: sharedStores.refresh,
                 onChooseSharedStoreParent: sharedStores.chooseParent,
                 onCreateSharedStore: (remoteUrl, parentPath) => void sharedStores.create(remoteUrl, parentPath),
                 onSharedStoreAutomaticChange: (enabled) => void sharedStores.setAutomatic(enabled),

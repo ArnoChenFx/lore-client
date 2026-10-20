@@ -88,6 +88,8 @@ interface SettingsDialogProps {
 
 export type SettingsCategory = 'general' | 'identity' | 'integrations' | 'storage' | 'maintenance'
 
+const ignoreSharedStoreRefresh = () => undefined
+
 /** 客户端本地偏好面板；设置会立即应用并由对应 Hook 持久化。 */
 export function SettingsDialog({
   preference,
@@ -112,7 +114,7 @@ export function SettingsDialog({
   sharedStoreBusy = false,
   sharedStoreError = null,
   initialSharedStoreRemoteUrl = 'lore://127.0.0.1:41337',
-  onRefreshSharedStores = () => undefined,
+  onRefreshSharedStores = ignoreSharedStoreRefresh,
   onChooseSharedStoreParent = async () => null,
   onCreateSharedStore = () => undefined,
   onSharedStoreAutomaticChange = () => undefined,
@@ -141,6 +143,18 @@ export function SettingsDialog({
   const [applicationLogError, setApplicationLogError] = useState(false)
   const [binaryPreviewLimitDraft, setBinaryPreviewLimitDraft] = useState(String(binaryPreviewLimitMib))
   const lastEmittedIdentityRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (activeCategory !== 'storage') return
+    let active = true
+    // Store 用量会递归扫描磁盘；仅进入存储分类才启动，普通设置编辑不重复扫描。
+    queueMicrotask(() => {
+      if (active) onRefreshSharedStores()
+    })
+    return () => {
+      active = false
+    }
+  }, [activeCategory, onRefreshSharedStores])
 
   const themeOptions = [
     { id: 'system' as const, label: t('useSystemSetting'), icon: Monitor },
@@ -834,7 +848,7 @@ export function SettingsDialog({
                     <label>
                       <CheckboxInput
                         checked={sharedStoreListInstances}
-                        disabled={sharedStoreRegistryBusy}
+                        disabled={sharedStoreRegistryBusy || sharedStoreBusy}
                         onChange={(event) => onSharedStoreListInstancesChange(event.target.checked)}
                       />
                       <span>
@@ -842,7 +856,10 @@ export function SettingsDialog({
                         <small>{t('sharedStoreListInstancesDescription')}</small>
                       </span>
                     </label>
-                    <TextButton disabled={sharedStoreRegistryBusy} onClick={onLoadSharedStoreRegistry}>
+                    <TextButton
+                      disabled={sharedStoreRegistryBusy || sharedStoreBusy}
+                      onClick={onLoadSharedStoreRegistry}
+                    >
                       {sharedStoreRegistryBusy ? (
                         <LoaderCircle className="is-spinning" size={14} />
                       ) : (
