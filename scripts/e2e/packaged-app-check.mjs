@@ -325,20 +325,36 @@ async function main() {
     // genuine native result while testing event transport/stall rendering; never fake
     // a business response or add a production-only test entry point.
     await execute(`
-      const original = window.__TAURI_INTERNALS__.invoke
-      const state = { original, context: null, held: false, release: null }
+      // Tauri's invoke is non-writable; its Linux IPC transport uses fetch.
+      // Return the original Response unchanged after releasing the delivery gate.
+      const original = window.fetch
+      const state = { original, wrapped: null, context: null, held: false, release: null }
       window.__loreE2EStall = state
-      window.__TAURI_INTERNALS__.invoke = function (command, args, options) {
-        const result = original.call(this, command, args, options)
-        if (command !== 'lore_shared_store_info' || state.held) return result
+      const wrapped = function (input, init) {
+        const result = original.call(this, input, init)
+        let url
+        try {
+          url = new URL(input instanceof Request ? input.url : String(input), location.href)
+        } catch {
+          return result
+        }
+        const isIpc = (url.protocol === 'ipc:' && url.hostname === 'localhost') ||
+          (['http:', 'https:'].includes(url.protocol) && url.hostname === 'ipc.localhost')
+        if (!isIpc ||
+          decodeURIComponent(url.pathname.slice(1)) !== 'lore_shared_store_info' || state.held) return result
+        const args = typeof init?.body === 'string' ? JSON.parse(init.body) : null
+        if (!args?.operationContext) throw new Error('The real Shared Store request has no operationContext')
         state.held = true
         state.context = args.operationContext
         const released = new Promise(resolve => { state.release = resolve })
         return result.then(
-          value => released.then(() => value),
+          response => released.then(() => response),
           error => released.then(() => { throw error })
         )
       }
+      state.wrapped = wrapped
+      window.fetch = wrapped
+      if (window.fetch !== wrapped) throw new Error('Cannot observe the real IPC fetch transport')
       document.querySelector('button[aria-label="Client Settings"], button[aria-label="客户端设置"]').click()
     `)
     const storageTab = await waitFor(
@@ -404,7 +420,7 @@ async function main() {
     await execute(`
       const state = window.__loreE2EStall
       if (state) {
-        window.__TAURI_INTERNALS__.invoke = state.original
+        if (window.fetch === state.wrapped) window.fetch = state.original
         state.release?.()
         delete window.__loreE2EStall
       }

@@ -314,36 +314,54 @@ async function checkUiWorkflow(workspaces) {
   `), 'startup requests to finish')
 
   await execute(`
-    const original = window.__TAURI_INTERNALS__.invoke
+    // Tauri 2 defines invoke and ipc.postMessage as non-writable properties.
+    // Its Linux custom-protocol transport uses fetch. Delay only delivery of the
+    // real Response; Tauri still decodes it and runs its original callbacks.
+    const original = window.fetch
     const trace = window.__uiOperationTrace = {
       calls: [], stageContext: null, stageHeld: false, snapshotHeld: false,
       releaseStage: null, releaseSnapshot: null, stageReleased: false, snapshotReleased: false
     }
-    window.__TAURI_INTERNALS__.invoke = async function(command, args, options) {
+    const wrapped = async function(input, init) {
+      let url
+      try {
+        url = new URL(input instanceof Request ? input.url : String(input), location.href)
+      } catch {
+        return original.call(this, input, init)
+      }
+      if (url.protocol !== 'ipc:' || url.hostname !== 'localhost') {
+        return original.call(this, input, init)
+      }
+      const command = decodeURIComponent(url.pathname.slice(1))
+      let args
+      try { args = typeof init?.body === 'string' ? JSON.parse(init.body) : null } catch { args = null }
       const call = { command, context: args?.operationContext ?? null, startedAt: Date.now() }
       trace.calls.push(call)
       try {
-        const value = await original.call(this, command, args, options)
+        const response = await original.call(this, input, init)
         call.nativeFinishedAt = Date.now()
-        if (command === 'lore_stage' && args.repositoryPath === argumentsWorkspace) {
+        if (command === 'lore_stage' && args?.repositoryPath === argumentsWorkspace) {
           trace.stageContext = args.operationContext
           trace.stageHeld = true
           await new Promise(resolve => { trace.releaseStage = resolve })
           trace.stageReleased = true
         } else if (command === 'lore_repository_status' && trace.stageReleased &&
-          args.repositoryPath === argumentsWorkspace &&
+          args?.repositoryPath === argumentsWorkspace &&
           args.operationContext?.requestId === trace.stageContext?.requestId && !trace.snapshotHeld) {
           trace.snapshotHeld = true
           await new Promise(resolve => { trace.releaseSnapshot = resolve })
           trace.snapshotReleased = true
         }
         call.deliveredAt = Date.now()
-        return value
+        return response
       } catch (error) {
         call.error = String(error?.message ?? error)
         throw error
       }
     }
+    window.fetch = wrapped
+    if (window.fetch !== wrapped) throw new Error('Cannot observe the real IPC fetch transport')
+    trace.restore = () => { if (window.fetch === wrapped) window.fetch = original }
     const argumentsWorkspace = arguments[0]
     const stage = [...document.querySelectorAll('.change-group-toolbar button')]
       .find(element => element.textContent.trim() === 'Stage All')
@@ -384,7 +402,7 @@ async function checkUiWorkflow(workspaces) {
   await screenshot('ui-workspace-b-with-a-pending')
   await execute('window.__uiOperationTrace.releaseSnapshot(); return true')
   await waitFor(async () => await activeCount() === 0, 'the retained A workflow to complete after its real refresh')
-  const trace = await execute('return window.__uiOperationTrace.calls')
+  const trace = await execute('window.__uiOperationTrace.restore(); return window.__uiOperationTrace.calls')
   writeFileSync(join(evidenceDir, 'ui-invoke-trace.json'), JSON.stringify(trace, null, 2))
   record('real UI stage and refresh share one context and remain counted across workspace switches', {
     stageContext, snapshotContext: snapshot.context, calls: trace.length
@@ -423,6 +441,15 @@ try {
   }
 } finally {
   try {
+    if (sessionId) {
+      await execute(`
+        const trace = window.__uiOperationTrace
+        trace?.restore?.()
+        trace?.releaseStage?.()
+        trace?.releaseSnapshot?.()
+        return true
+      `).catch(() => {})
+    }
     await closeSession()
     if (temporaryRoot && !results.some(result => result.status === 'fail')) {
       rmSync(temporaryRoot, { recursive: true })
