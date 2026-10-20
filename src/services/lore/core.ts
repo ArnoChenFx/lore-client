@@ -295,6 +295,10 @@ function localizeCommandError(error: Partial<LoreCommandError>, command: string)
   if (error.code === 'repository_view_invalid_utf8') {
     return t('repositoryViewMustBeUtf8')
   }
+  if (error.code === 'repository_view_is_link') {
+    const message = t('repositoryViewIsLink')
+    return error.message ? `${message}\n${error.message}` : message
+  }
   if (error.code === 'repository_view_status_unavailable') {
     return t('repositoryViewStatusUnavailable')
   }

@@ -14,8 +14,8 @@ use super::{
         contains_conflict_markers, lore_commit, validate_conflict_resolution_preconditions,
     },
     workspace::{
-        lore_ignore_paths, lore_read_revision_text, lore_revision_changes, lore_stage,
-        lore_stage_move, lore_unstage, lore_workspace_diff, lore_write_patch_file,
+        lore_ignore_paths, lore_read_revision_text, lore_revision_changes, lore_revision_files,
+        lore_stage, lore_stage_move, lore_unstage, lore_workspace_diff, lore_write_patch_file,
     },
 };
 
@@ -476,6 +476,47 @@ fn revision_asset_preview_falls_back_to_full_read_when_range_parse_fails() {
         LoreFilePreviewContentState::Available
     );
     assert_eq!(preview.size, 25);
+
+    let oversized = build_file_preview(
+        &repository_path_string,
+        "Assets/T_Invalid.uasset",
+        Some(&revision),
+        false,
+        1,
+    )
+    .expect("An oversized file with invalid asset content can still use the size fallback");
+    assert_eq!(
+        oversized.content_state,
+        LoreFilePreviewContentState::TooLarge
+    );
+
+    // 使用真实 Store 请求不存在的合法内容地址：解析器会将该 I/O 错误包装为
+    // invalid_asset，适配层必须取回原始错误，且超限时不能把它当成 TooLarge 成功。
+    let mut missing_file = collect_revision_tree_files(&repository_path_string, &revision)
+        .unwrap()
+        .pop()
+        .unwrap();
+    let replacement = if missing_file.address.starts_with('a') {
+        "b"
+    } else {
+        "a"
+    };
+    missing_file.address.replace_range(..1, replacement);
+    let interval = build_revision_large_asset_preview(
+        &repository_path_string,
+        &missing_file,
+        Path::new("Assets/T_Invalid.uasset"),
+        missing_file.path.clone(),
+    );
+    let error = resolve_revision_asset_preview(
+        interval,
+        missing_file.size,
+        1,
+        || panic!("A missing Store object is not a successful TooLarge preview"),
+        || panic!("The full read must never exceed the size budget"),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "storage_get_failed");
 
     release_repository_cache(&repository_path)
         .expect("The cached repository context should be released before cleanup");
@@ -1527,7 +1568,9 @@ fn revision_text_command_rejects_invalid_paths_before_storage() {
 }
 
 #[test]
-fn revision_text_command_reads_committed_file_content() {
+fn revision_tree_and_text_reads_queue_independently_with_a_shared_budget() {
+    use std::future::Future;
+    use std::task::{Context, Waker};
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("System time should be later than the Unix epoch")
@@ -1568,13 +1611,42 @@ fn revision_text_command_reads_committed_file_content() {
     .expect("The text file should be committed");
     let revision = committed_revision(&commit);
 
-    let content = tauri::async_runtime::block_on(lore_read_revision_text(
+    // 占满全局预算后，实际 IPC 命令必须都留在异步队列中。较新的文本意图
+    // 只取消旧文本，不得取消同一 Inspector 仍需要的完整文件树。
+    let gate = HEAVY_READ_LOCK.get_or_init(|| tauri::async_runtime::Mutex::new(()));
+    let permit = tauri::async_runtime::block_on(gate.lock());
+    let mut old_text = Box::pin(lore_read_revision_text(
         repository_path_string.clone(),
         revision.clone(),
         "Content/World.txt".to_owned(),
         None,
-    ))
-    .expect("Committed text must be readable from the immutable revision");
+    ));
+    let mut tree = Box::pin(lore_revision_files(
+        repository_path_string.clone(),
+        revision.clone(),
+    ));
+    let mut text = Box::pin(lore_read_revision_text(
+        repository_path_string.clone(),
+        revision.clone(),
+        "Content/World.txt".to_owned(),
+        None,
+    ));
+    let mut context = Context::from_waker(Waker::noop());
+    assert!(old_text.as_mut().poll(&mut context).is_pending());
+    assert!(tree.as_mut().poll(&mut context).is_pending());
+    assert!(text.as_mut().poll(&mut context).is_pending());
+    drop(permit);
+
+    assert_eq!(
+        tauri::async_runtime::block_on(old_text).unwrap_err().code,
+        "heavy_read_superseded"
+    );
+    let files = tauri::async_runtime::block_on(tree)
+        .expect("A newer text request must not cancel the queued file tree");
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].path, "Content/World.txt");
+    let content = tauri::async_runtime::block_on(text)
+        .expect("Committed text must be readable from the immutable revision");
     assert_eq!(content, "const mode = 'dark';");
 }
 

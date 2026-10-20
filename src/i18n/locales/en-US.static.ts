@@ -1167,6 +1167,7 @@ const enUSStatic = {
   repositoryViewContainsErrors: 'The View contains invalid rules. Resolve the diagnostics and try again.',
   repositoryViewTooLarge: 'The View file exceeds the 256 KiB limit.',
   repositoryViewMustBeUtf8: 'The existing View file is not valid UTF-8 text.',
+  repositoryViewIsLink: 'The View is a symbolic link. Use a regular rules file and try again.',
   repositoryViewStatusUnavailable:
     'The workspace state could not be verified, so the View was not applied to protect local changes.',
   repositoryViewSyncFailedAndRolledBack:

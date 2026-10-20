@@ -635,7 +635,7 @@ pub async fn lore_read_revision_text(
     let limit = max_bytes
         .unwrap_or(DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES)
         .min(DEFAULT_WORKSPACE_TEXT_LIMIT_BYTES);
-    run_heavy_lore_task(&REVISION_FILES_READ_LANE, move || {
+    run_heavy_lore_task(&REVISION_TEXT_READ_LANE, move || {
         // 沿目标路径的祖先目录遍历不可变树，只返回精确匹配的文件，不做越界读取。
         let files = collect_revision_tree_files_at_paths(
             &repository_path,

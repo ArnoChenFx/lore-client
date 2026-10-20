@@ -51,6 +51,38 @@ describe('Lore event adapter', () => {
     expect(isAuthenticationRequiredError(new Error('authentication'))).toBe(false)
   })
 
+  it('preserves incomplete View recovery details and backup paths in both languages', async () => {
+    const upstream = {
+      code: 'repository_view_recovery_incomplete',
+      message:
+        'Apply sync failed. Recovery is incomplete: cache unavailable. The original view backup has been retained at E:\\Worlds\\.lore\\.view.backup.'
+    }
+    for (const language of ['en-US', 'zh-CN']) {
+      await i18n.changeLanguage(language)
+      const error = new LoreCommandClientError(upstream, 'lore_repository_view_apply')
+      expect(error.code).toBe(upstream.code)
+      expect(error.message).toBe(upstream.message)
+    }
+  })
+
+  it('localizes a linked View while preserving its error code and original detail', async () => {
+    const upstream = {
+      code: 'repository_view_is_link',
+      message: 'Cannot apply view rules because E:\\Worlds\\.lore\\view is a symbolic link; use a regular view file'
+    }
+    for (const [language, message] of [
+      ['en-US', 'The View is a symbolic link. Use a regular rules file and try again.'],
+      ['zh-CN', zhCN.repositoryViewIsLink]
+    ]) {
+      await i18n.changeLanguage(language)
+      const error = new LoreCommandClientError(upstream, 'lore_repository_view_apply')
+      expect(error.code).toBe(upstream.code)
+      expect(error.message).toBe(`${message}\n${upstream.message}`)
+      const withoutDetail = new LoreCommandClientError({ code: upstream.code }, 'lore_repository_view_apply')
+      expect(withoutDetail.message).toBe(message)
+    }
+  })
+
   it('localizes an existing patch destination while keeping the stable error code', async () => {
     const upstream = { code: 'patch_destination_exists', message: 'A file already exists at E:\\Patches\\World.patch' }
 

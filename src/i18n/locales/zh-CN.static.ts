@@ -1081,6 +1081,7 @@ const zhCNStatic = {
   repositoryViewContainsErrors: 'View 规则包含错误，请根据诊断修正后重试。',
   repositoryViewTooLarge: 'View 文件超过 256 KiB 上限。',
   repositoryViewMustBeUtf8: '现有 View 文件不是有效的 UTF-8 文本。',
+  repositoryViewIsLink: 'View 是符号链接；请使用普通规则文件后重试。',
   repositoryViewStatusUnavailable: '无法确认工作区状态；为保护本地更改，View 未应用。',
   repositoryViewSyncFailedAndRolledBack: 'Lore 同步失败；原 View 已恢复，并已尽力回滚工作区物化状态。',
   repositoryViewDematerializeFailedAndRolledBack:

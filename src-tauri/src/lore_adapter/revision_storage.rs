@@ -1127,6 +1127,8 @@ pub(super) struct RevisionStoreReader {
     position: u64,
     /// 最近一次区间读取的完整结果与其起始偏移；命中时避免重复请求。
     cached: Option<(u64, Vec<u8>)>,
+    /// 解析器会把 io::Error 改写成格式错误；保留 Store 原因，禁止误降级成 TooLarge。
+    source_error: Option<LoreCommandError>,
 }
 
 impl RevisionStoreReader {
@@ -1142,6 +1144,7 @@ impl RevisionStoreReader {
             size: file.size,
             position: 0,
             cached: None,
+            source_error: None,
         })
     }
 
@@ -1203,9 +1206,14 @@ impl Read for RevisionStoreReader {
         let request_length = (buf.len() as u64)
             .max(REVISION_RANGE_READ_BLOCK_BYTES)
             .min(self.size - request_start);
-        let data = self
-            .read_range(request_start, request_length)
-            .map_err(|error| io::Error::new(io::ErrorKind::Other, error.message))?;
+        let data = match self.read_range(request_start, request_length) {
+            Ok(data) => data,
+            Err(error) => {
+                let io_error = io::Error::other(error.message.clone());
+                self.source_error = Some(error);
+                return Err(io_error);
+            }
+        };
         if data.is_empty() {
             // 树元数据与存储内容不一致时按 EOF 结束，避免无限重试。
             return Ok(0);
@@ -1257,7 +1265,53 @@ pub(super) fn build_revision_large_asset_preview(
     normalized_path: String,
 ) -> Result<LoreFilePreview, LoreCommandError> {
     let mut reader = RevisionStoreReader::new(repository_path, file)?;
-    build_large_asset_preview_from_reader(relative_path, normalized_path, file.size, &mut reader)
+    let preview = build_large_asset_preview_from_reader(
+        relative_path,
+        normalized_path,
+        file.size,
+        &mut reader,
+    );
+    match reader.source_error.take() {
+        Some(error) => Err(error),
+        None => preview,
+    }
+}
+
+/// 只有格式解析失败可以降级；Store/认证/传输错误不能伪装为体积限制。
+pub(super) fn resolve_revision_asset_preview(
+    interval: Result<LoreFilePreview, LoreCommandError>,
+    size: u64,
+    preview_limit_bytes: u64,
+    too_large: impl FnOnce() -> LoreFilePreview,
+    read_full: impl FnOnce() -> Result<LoreFilePreview, LoreCommandError>,
+) -> Result<LoreFilePreview, LoreCommandError> {
+    match interval {
+        Ok(preview) if !preview.data.is_empty() => Ok(preview),
+        Ok(preview) => {
+            if binary_preview_size_exceeded(size, preview_limit_bytes) {
+                return Ok(too_large());
+            }
+            match read_full() {
+                Ok(full) => Ok(full),
+                Err(error) if error.code == "binary_preview_invalid_asset" => Ok(preview),
+                Err(error) => Err(error),
+            }
+        }
+        Err(interval_error) => {
+            if binary_preview_size_exceeded(size, preview_limit_bytes) {
+                return if interval_error.code == "binary_preview_invalid_asset" {
+                    Ok(too_large())
+                } else {
+                    Err(interval_error)
+                };
+            }
+            match read_full() {
+                Ok(full) => Ok(full),
+                Err(error) if error.code == "binary_preview_invalid_asset" => Err(interval_error),
+                Err(error) => Err(error),
+            }
+        }
+    }
 }
 
 /// 整读单个 Revision 文件并走完整解析；作为区间缩略图失败时的回退路径。
@@ -1350,59 +1404,32 @@ pub(super) fn build_file_preview(
              * 资产格式在 Revision 侧总是优先区间缩略图读取，避免为预览物化或下载
              * 完整对象（远端冷缓存时只拉触及叶片）。区间路径只产出缩略图正文；
              * 没有内嵌缩略图的合法包仍需完整解析（GLB 模型预览等），因此在区间
-             * 成功但无缩略图、或区间读取失败时都回退整读；超限文件保持元数据
-             * 降级，不因兜底突破完整正文内存预算。
+             * 成功但无缩略图、或区间读取失败时都回退整读；超限文件只有格式
+             * 错误可降级为元数据，不因兜底突破完整正文预算或掩盖 Store 错误。
              */
-            return match build_revision_large_asset_preview(
+            let interval = build_revision_large_asset_preview(
                 repository_path,
                 file,
                 &relative_path,
                 normalized_path.clone(),
-            ) {
-                Ok(preview) if !preview.data.is_empty() => Ok(preview),
-                Ok(preview) => {
-                    if binary_preview_size_exceeded(file.size, preview_limit_bytes) {
-                        return Ok(metadata_only_preview(
-                            file.size,
-                            LoreFilePreviewContentState::TooLarge,
-                        ));
-                    }
-                    match build_full_revision_preview(
+            );
+            return resolve_revision_asset_preview(
+                interval,
+                file.size,
+                preview_limit_bytes,
+                || metadata_only_preview(file.size, LoreFilePreviewContentState::TooLarge),
+                || {
+                    build_full_revision_preview(
                         repository_path,
                         file,
                         &relative_path,
-                        normalized_path,
+                        normalized_path.clone(),
                         kind,
                         source_mime_type,
                         preview_limit_bytes,
-                    ) {
-                        Ok(full) => Ok(full),
-                        // 完整读取失败时保留区间路径已解析出的元数据结果。
-                        Err(_) => Ok(preview),
-                    }
-                }
-                Err(interval_error) => {
-                    if binary_preview_size_exceeded(file.size, preview_limit_bytes) {
-                        return Ok(metadata_only_preview(
-                            file.size,
-                            LoreFilePreviewContentState::TooLarge,
-                        ));
-                    }
-                    match build_full_revision_preview(
-                        repository_path,
-                        file,
-                        &relative_path,
-                        normalized_path,
-                        kind,
-                        source_mime_type,
-                        preview_limit_bytes,
-                    ) {
-                        Ok(preview) => Ok(preview),
-                        // 完整读取也失败时保留区间路径的原始错误，便于诊断根因。
-                        Err(_) => Err(interval_error),
-                    }
-                }
-            };
+                    )
+                },
+            );
         }
         if binary_preview_size_exceeded(file.size, preview_limit_bytes) {
             return Ok(metadata_only_preview(
