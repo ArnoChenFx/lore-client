@@ -1,13 +1,10 @@
 import { useCallback, useRef, useState } from 'react'
 
+import { repositoryPathKey } from '../../shared/lib'
 import type { RepositorySnapshot, Revision } from '../../types'
 import { reorderItemsById } from './components/repositoryTabsModel'
 import { updateRepositoryAuthorNames } from './repositoryAuthorNames'
-import {
-  repositoryPathKey,
-  RepositorySessionRequests,
-  type RepositorySessionRequest
-} from './repositorySessionRequests'
+import { RepositorySessionRequests, type RepositorySessionRequest } from './repositorySessionRequests'
 
 interface InitialRepositorySelection {
   revisionId?: string

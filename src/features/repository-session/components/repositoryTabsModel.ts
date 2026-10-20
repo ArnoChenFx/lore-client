@@ -1,4 +1,9 @@
-import { DEFAULT_REPOSITORY_ICON_ID, isRepositoryAccentColor, isRepositoryIconId } from '../../../shared/lib'
+import {
+  DEFAULT_REPOSITORY_ICON_ID,
+  isRepositoryAccentColor,
+  isRepositoryIconId,
+  repositoryPathKey
+} from '../../../shared/lib'
 import type { Repository, RepositoryIconId, RepositoryTabCustomization } from '../../../types'
 
 /** 一个本地工作区 Tab；`sessionKey` 与可相同的 Lore Repository ID 明确分离。 */
@@ -43,14 +48,11 @@ export function reorderItemsById<T>(items: T[], sourceId: string, targetId: stri
   return reordered
 }
 
-/** Windows 工作区路径按项目既有规则大小写不敏感比较，不改变实际展示路径。 */
-function sameRepositoryPath(left: string, right: string): boolean {
-  return left.trim().toLocaleLowerCase('en-US') === right.trim().toLocaleLowerCase('en-US')
-}
-
 /** 把仓库原始 DTO 与可选客户端覆盖合成为 Tab 专用展示数据。 */
 export function resolveRepositoryTabPresentation(repository: Repository, customizations: RepositoryTabCustomization[]) {
-  const customization = customizations.find((item) => sameRepositoryPath(item.repositoryPath, repository.path))
+  const customization = customizations.find(
+    (item) => repositoryPathKey(item.repositoryPath) === repositoryPathKey(repository.path)
+  )
   const icon =
     isRepositoryIconId(customization?.icon) && customization.icon !== DEFAULT_REPOSITORY_ICON_ID
       ? customization.icon
@@ -84,7 +86,9 @@ export function updateRepositoryTabCustomizations(
   repository: Repository,
   patch: RepositoryTabCustomizationPatch
 ): RepositoryTabCustomization[] {
-  const existingIndex = customizations.findIndex((item) => sameRepositoryPath(item.repositoryPath, repository.path))
+  const existingIndex = customizations.findIndex(
+    (item) => repositoryPathKey(item.repositoryPath) === repositoryPathKey(repository.path)
+  )
   const existing = existingIndex >= 0 ? customizations[existingIndex] : undefined
   const requestedName = patch.name === undefined ? existing?.name : patch.name?.trim() || undefined
   const name = requestedName && requestedName !== repository.name ? requestedName.slice(0, 80) : undefined

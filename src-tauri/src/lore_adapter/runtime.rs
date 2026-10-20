@@ -211,15 +211,14 @@ pub(super) fn normalize_auth_user_ids(
 }
 
 pub(super) fn validate_repository_path(repository_path: &str) -> Result<PathBuf, LoreCommandError> {
-    let path = repository_path.trim();
-    if path.is_empty() {
+    if repository_path.trim().is_empty() {
         return Err(LoreCommandError::new(
             "empty_repository_path",
             "Select a Lore repository directory",
         ));
     }
 
-    let path = Path::new(path);
+    let path = Path::new(repository_path);
     if !path.is_dir() {
         return Err(LoreCommandError::new(
             "repository_directory_missing",
@@ -610,7 +609,7 @@ pub(super) fn validate_existing_directory(
     directory: &str,
     label: &str,
 ) -> Result<PathBuf, LoreCommandError> {
-    let directory = Path::new(directory.trim());
+    let directory = Path::new(directory);
     if !directory.is_dir() {
         return Err(LoreCommandError::new(
             "directory_missing",

@@ -1,6 +1,5 @@
-import { parseCommitIdentity } from '../../shared/lib'
+import { parseCommitIdentity, repositoryPathKey } from '../../shared/lib'
 import type { RepositorySnapshot } from '../../types'
-import { repositoryPathKey } from './repositorySessionRequests'
 
 /** Update only display fields on the latest snapshot; absent mappings leave other authors untouched. */
 export function updateRepositoryAuthorNames(

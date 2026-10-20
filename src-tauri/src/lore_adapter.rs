@@ -170,7 +170,7 @@ pub(crate) fn sync_auth_account_bindings(
 ) -> Result<(), LoreCommandError> {
     let mut next = HashMap::new();
     for binding in bindings {
-        let repository_path = Path::new(binding.repository_path.trim());
+        let repository_path = Path::new(&binding.repository_path);
         let canonical = std::fs::canonicalize(repository_path)
             .unwrap_or_else(|_| repository_path.to_path_buf());
         next.insert(
@@ -191,12 +191,16 @@ pub(crate) fn sync_auth_account_bindings(
 }
 
 fn repository_binding_key(path: &Path) -> String {
-    let value = display_path_without_windows_verbatim_prefix(path);
-    if cfg!(windows) {
-        value.to_lowercase()
-    } else {
-        value
-    }
+    // Callers resolve existing paths natively first; folding case would merge distinct
+    // workspaces on a case-sensitive Windows directory or volume.
+    display_path_without_windows_verbatim_prefix(path)
+}
+
+/// Resolve saved aliases with the same native directory probe used by manual open.
+/// Unavailable or unmanaged directories remain unchanged in the preferences layer.
+pub(crate) fn resolve_existing_repository_path(path: &str) -> Option<String> {
+    let selected = validate_existing_directory(path, "Saved workspace").ok()?;
+    probe_repository_directory(&selected).repository_path
 }
 
 fn bound_auth_account(

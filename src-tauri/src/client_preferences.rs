@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -6,7 +7,9 @@ use tauri::{AppHandle, Manager};
 
 use crate::asset_preview::{binary_preview_limit_bytes, DEFAULT_BINARY_PREVIEW_LIMIT_MIB};
 use crate::atomic_file::write_file_atomically;
-use crate::lore_adapter::{sync_auth_account_bindings, LoreCommandError};
+use crate::lore_adapter::{
+    resolve_existing_repository_path, sync_auth_account_bindings, LoreCommandError,
+};
 
 /// 当前偏好文件格式版本；后续调整字段语义时在 Rust 边界执行显式迁移。
 const CLIENT_PREFERENCES_VERSION: u32 = 5;
@@ -295,7 +298,7 @@ fn read_preferences_file(path: &Path) -> Result<Option<ClientPreferences>, LoreC
             ),
         )
     })?;
-    let preferences = serde_json::from_str::<ClientPreferences>(&content).map_err(|error| {
+    let mut preferences = serde_json::from_str::<ClientPreferences>(&content).map_err(|error| {
         LoreCommandError::new(
             "preferences_invalid",
             format!(
@@ -305,7 +308,77 @@ fn read_preferences_file(path: &Path) -> Result<Option<ClientPreferences>, LoreC
         )
     })?;
     validate_preferences(&preferences)?;
+    resolve_saved_workspace_identities(&mut preferences);
     Ok(Some(preferences))
+}
+
+/// Paths are resolved once while loading the saved snapshot, before either UI or
+/// native authentication observes it. Unavailable paths survive unchanged. A
+/// canonical spelling wins conflicts; otherwise the first saved entry wins.
+/// Tab fields are merged independently so alias-only colors/icons are retained.
+fn resolve_saved_workspace_identities(preferences: &mut ClientPreferences) {
+    let mut resolved = HashMap::<String, String>::new();
+    let mut resolve = |path: &str| {
+        resolved
+            .entry(path.to_owned())
+            .or_insert_with(|| {
+                resolve_existing_repository_path(path).unwrap_or_else(|| path.to_owned())
+            })
+            .clone()
+    };
+    let mut paths = HashSet::new();
+    preferences.repository_paths = std::mem::take(&mut preferences.repository_paths)
+        .into_iter()
+        .map(|path| resolve(&path))
+        .filter(|path| paths.insert(path.clone()))
+        .collect();
+    preferences.active_repository_path = preferences
+        .active_repository_path
+        .take()
+        .map(|path| resolve(&path));
+
+    let mut accounts = HashMap::<String, (usize, bool)>::new();
+    let mut bindings: Vec<RepositoryAuthAccountBinding> = Vec::new();
+    for mut binding in std::mem::take(&mut preferences.auth_account_bindings) {
+        let path = resolve(&binding.repository_path);
+        let canonical = binding.repository_path == path;
+        binding.repository_path = path.clone();
+        if let Some((index, existing_canonical)) = accounts.get_mut(&path) {
+            if canonical && !*existing_canonical {
+                bindings[*index] = binding;
+                *existing_canonical = true;
+            }
+        } else {
+            accounts.insert(path, (bindings.len(), canonical));
+            bindings.push(binding);
+        }
+    }
+    preferences.auth_account_bindings = bindings;
+
+    let mut customized = HashMap::<String, (usize, bool)>::new();
+    let mut customizations: Vec<RepositoryTabCustomization> = Vec::new();
+    for mut customization in std::mem::take(&mut preferences.repository_tab_customizations) {
+        let path = resolve(&customization.repository_path);
+        let canonical = customization.repository_path == path;
+        customization.repository_path = path.clone();
+        if let Some((index, existing_canonical)) = customized.get_mut(&path) {
+            let existing = &mut customizations[*index];
+            if canonical && !*existing_canonical {
+                existing.name = customization.name.or(existing.name.take());
+                existing.color = customization.color.or(existing.color.take());
+                existing.icon = customization.icon.or(existing.icon.take());
+                *existing_canonical = true;
+            } else {
+                existing.name = existing.name.take().or(customization.name);
+                existing.color = existing.color.take().or(customization.color);
+                existing.icon = existing.icon.take().or(customization.icon);
+            }
+        } else {
+            customized.insert(path, (customizations.len(), canonical));
+            customizations.push(customization);
+        }
+    }
+    preferences.repository_tab_customizations = customizations;
 }
 
 fn write_preferences_file(
@@ -503,6 +576,196 @@ fn validate_preferences(preferences: &ClientPreferences) -> Result<(), LoreComma
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn workspace_path(directory: &Path, name: &str) -> String {
+        let root = directory.join(name);
+        fs::create_dir_all(root.join(".lore")).unwrap();
+        let path = fs::canonicalize(root)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        if let Some(unc) = path.strip_prefix("\\\\?\\UNC\\") {
+            format!(r"\\{unc}")
+        } else {
+            path.strip_prefix("\\\\?\\").unwrap_or(&path).to_owned()
+        }
+    }
+
+    #[test]
+    fn loaded_workspace_aliases_share_one_identity_and_preserve_preferred_fields() {
+        let directory = tempfile::tempdir().unwrap();
+        let canonical = workspace_path(directory.path(), "Repo");
+        let alias = Path::new(&canonical)
+            .join(".")
+            .to_string_lossy()
+            .into_owned();
+        let missing = directory
+            .path()
+            .join("Unavailable ")
+            .to_string_lossy()
+            .into_owned();
+        let path = directory.path().join(PREFERENCES_FILE_NAME);
+        let preferences = ClientPreferences {
+            repository_paths: vec![alias.clone(), canonical.clone(), missing.clone()],
+            active_repository_path: Some(alias.clone()),
+            auth_account_bindings: vec![
+                RepositoryAuthAccountBinding {
+                    repository_path: alias.clone(),
+                    auth_url: "https://alias.example".to_owned(),
+                    user_id: "alias-user".to_owned(),
+                },
+                RepositoryAuthAccountBinding {
+                    repository_path: canonical.clone(),
+                    auth_url: "https://canonical.example".to_owned(),
+                    user_id: "canonical-user".to_owned(),
+                },
+                RepositoryAuthAccountBinding {
+                    repository_path: missing.clone(),
+                    auth_url: "https://offline.example".to_owned(),
+                    user_id: "offline-user".to_owned(),
+                },
+            ],
+            repository_tab_customizations: vec![
+                RepositoryTabCustomization {
+                    repository_path: alias,
+                    name: Some("Alias name".to_owned()),
+                    color: Some("#e47a3f".to_owned()),
+                    icon: None,
+                },
+                RepositoryTabCustomization {
+                    repository_path: canonical.clone(),
+                    name: Some("Canonical name".to_owned()),
+                    color: None,
+                    icon: Some("gamepad".to_owned()),
+                },
+                RepositoryTabCustomization {
+                    repository_path: missing.clone(),
+                    name: Some("Offline name".to_owned()),
+                    color: None,
+                    icon: None,
+                },
+            ],
+            ..Default::default()
+        };
+        for canonical_first in [false, true] {
+            let mut preferences = preferences.clone();
+            if canonical_first {
+                preferences.auth_account_bindings.swap(0, 1);
+                preferences.repository_tab_customizations.swap(0, 1);
+            }
+            write_preferences_file(&path, &preferences).unwrap();
+            let restored = read_preferences_file(&path).unwrap().unwrap();
+            assert_eq!(
+                restored.repository_paths,
+                vec![canonical.clone(), missing.clone()]
+            );
+            assert_eq!(restored.active_repository_path, Some(canonical.clone()));
+            assert_eq!(restored.auth_account_bindings.len(), 2);
+            assert_eq!(restored.auth_account_bindings[0].repository_path, canonical);
+            assert_eq!(restored.auth_account_bindings[0].user_id, "canonical-user");
+            assert_eq!(
+                restored.auth_account_bindings[0].auth_url,
+                "https://canonical.example"
+            );
+            assert_eq!(restored.auth_account_bindings[1].repository_path, missing);
+            assert_eq!(restored.repository_tab_customizations.len(), 2);
+            let customization = &restored.repository_tab_customizations[0];
+            assert_eq!(customization.name.as_deref(), Some("Canonical name"));
+            assert_eq!(customization.color.as_deref(), Some("#e47a3f"));
+            assert_eq!(customization.icon.as_deref(), Some("gamepad"));
+            // Loading normalizes only the returned snapshot, never silently overwrites disk.
+            assert!(fs::read_to_string(&path).unwrap().contains("Alias name"));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn loaded_workspace_paths_preserve_real_case_space_and_backslash_names() {
+        let directory = tempfile::tempdir().unwrap();
+        let paths = ["Repo", "repo", "Repo ", r"A\B", "A/B"]
+            .iter()
+            .map(|name| workspace_path(directory.path(), name))
+            .collect::<Vec<_>>();
+        let alias = directory.path().join("linked-repo");
+        std::os::unix::fs::symlink(&paths[0], &alias).unwrap();
+        let mut saved_paths = paths.clone();
+        saved_paths.push(alias.to_string_lossy().into_owned());
+        let path = directory.path().join(PREFERENCES_FILE_NAME);
+        let preferences = ClientPreferences {
+            repository_paths: saved_paths,
+            active_repository_path: Some(paths[2].clone()),
+            auth_account_bindings: paths
+                .iter()
+                .enumerate()
+                .map(|(index, repository_path)| RepositoryAuthAccountBinding {
+                    repository_path: repository_path.clone(),
+                    auth_url: "https://auth.example".to_owned(),
+                    user_id: format!("user-{index}"),
+                })
+                .collect(),
+            ..Default::default()
+        };
+        write_preferences_file(&path, &preferences).unwrap();
+        let restored = read_preferences_file(&path).unwrap().unwrap();
+        // Case-insensitive volumes may resolve both case variants to the same native path.
+        let expected = paths.iter().fold(Vec::new(), |mut unique, path| {
+            if !unique.contains(path) {
+                unique.push(path.clone());
+            }
+            unique
+        });
+        assert_eq!(restored.repository_paths, expected);
+        assert_eq!(restored.active_repository_path, Some(paths[2].clone()));
+        assert_eq!(
+            restored
+                .auth_account_bindings
+                .iter()
+                .map(|binding| &binding.repository_path)
+                .collect::<Vec<_>>(),
+            expected.iter().collect::<Vec<_>>()
+        );
+        assert!(restored
+            .repository_paths
+            .iter()
+            .any(|path| path.ends_with(r"A\B")));
+        assert!(restored
+            .repository_paths
+            .iter()
+            .any(|path| path.ends_with("Repo ")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn loaded_workspace_windows_aliases_use_the_native_filesystem_resolution() {
+        let directory = tempfile::tempdir().unwrap();
+        let canonical = workspace_path(directory.path(), "CasePreserved");
+        let differently_cased = canonical.to_uppercase();
+        let extended = fs::canonicalize(&canonical)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let mut paths = vec![canonical.clone(), extended];
+        // A case-sensitive directory need not accept this spelling at all.
+        if Path::new(&differently_cased).exists() {
+            paths.push(differently_cased);
+        }
+        let path = directory.path().join(PREFERENCES_FILE_NAME);
+        write_preferences_file(
+            &path,
+            &ClientPreferences {
+                repository_paths: paths,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            read_preferences_file(&path)
+                .unwrap()
+                .unwrap()
+                .repository_paths,
+            vec![canonical]
+        );
+    }
 
     #[test]
     fn missing_preferences_file_returns_none_instead_of_fake_saved_state() {

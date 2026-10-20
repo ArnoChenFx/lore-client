@@ -53,10 +53,10 @@ describe('repository tab ordering model', () => {
     expect(reorderItemsById(items, 'a', 'missing', readId)).toBe(items)
   })
 
-  it('applies a custom name, color, and icon by case-insensitive repository path', () => {
+  it('applies a custom name, color, and icon by native-resolved repository path', () => {
     const presentation = resolveRepositoryTabPresentation(repository, [
       {
-        repositoryPath: 'e:\\worlds\\lore',
+        repositoryPath: 'E:\\Worlds\\Lore',
         name: 'Environment',
         color: '#e47a3f',
         icon: 'gamepad'
@@ -99,5 +99,20 @@ describe('repository tab ordering model', () => {
       displayIcon: 'boxes',
       hasCustomIcon: false
     })
+  })
+  it('keeps different native workspace customizations independent', () => {
+    const paths = ['/workspace/Repo', '/workspace/repo', '/workspace/Repo ']
+    let customizations = paths.map((repositoryPath, index) => ({ repositoryPath, name: `Workspace ${index}` }))
+    for (const [index, path] of paths.entries()) {
+      expect(resolveRepositoryTabPresentation({ ...repository, path }, customizations).displayName).toBe(
+        `Workspace ${index}`
+      )
+    }
+    customizations = updateRepositoryTabCustomizations(
+      customizations,
+      { ...repository, path: paths[1] },
+      { name: 'Changed' }
+    ) as typeof customizations
+    expect(customizations.map((entry) => entry.name)).toEqual(['Workspace 0', 'Changed', 'Workspace 2'])
   })
 })

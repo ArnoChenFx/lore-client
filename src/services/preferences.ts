@@ -5,7 +5,8 @@ import {
   DEFAULT_EXTERNAL_MERGE_TOOLS,
   DEFAULT_REPOSITORY_ICON_ID,
   isRepositoryAccentColor,
-  isRepositoryIconId
+  isRepositoryIconId,
+  repositoryPathKey
 } from '../shared/lib'
 import type { ClientPreferences, WorkspaceLayout } from '../types'
 import { invokeLogged, logError } from './logging'
@@ -86,29 +87,23 @@ function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
-/** 偏好文件只保存适合展示和再次打开的普通路径，不保留 Windows `\\?\` 前缀。 */
-function normalizePersistedRepositoryPath(path: string): string {
-  if (path.startsWith('\\\\?\\UNC\\')) {
-    return `\\\\${path.slice('\\\\?\\UNC\\'.length)}`
-  }
-  return path.startsWith('\\\\?\\') ? path.slice(4) : path
-}
-
 function normalizePreferences(value: Partial<ClientPreferences> | null | undefined): ClientPreferences {
   const layout = value?.workspaceLayout
   const diff = value?.diff
   const repositoryPaths = Array.isArray(value?.repositoryPaths)
     ? value.repositoryPaths
         .filter((path): path is string => typeof path === 'string' && path.trim().length > 0)
-        .map((path) => normalizePersistedRepositoryPath(path.trim()))
+        .map(repositoryPathKey)
         .filter(
           (path, index, paths) =>
-            paths.findIndex((candidate) => candidate.toLocaleLowerCase() === path.toLocaleLowerCase()) === index
+            paths.findIndex((candidate) => repositoryPathKey(candidate) === repositoryPathKey(path)) === index
         )
     : []
   const activeRepositoryPath =
     typeof value?.activeRepositoryPath === 'string'
-      ? normalizePersistedRepositoryPath(value.activeRepositoryPath.trim()) || null
+      ? value.activeRepositoryPath.trim().length > 0
+        ? repositoryPathKey(value.activeRepositoryPath)
+        : null
       : null
   const authAccountBindings = Array.isArray(value?.authAccountBindings)
     ? value.authAccountBindings
@@ -119,7 +114,7 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
             typeof binding?.userId === 'string'
         )
         .map((binding) => ({
-          repositoryPath: normalizePersistedRepositoryPath(binding.repositoryPath.trim()).slice(0, 4_096),
+          repositoryPath: repositoryPathKey(binding.repositoryPath),
           authUrl: binding.authUrl.trim().slice(0, 2_048),
           userId: binding.userId.trim().slice(0, 512)
         }))
@@ -134,7 +129,7 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
         .filter(
           (binding, index, bindings) =>
             bindings.findIndex(
-              (candidate) => candidate.repositoryPath.toLocaleLowerCase() === binding.repositoryPath.toLocaleLowerCase()
+              (candidate) => repositoryPathKey(candidate.repositoryPath) === repositoryPathKey(binding.repositoryPath)
             ) === index
         )
         .slice(0, 256)
@@ -143,7 +138,7 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
     ? value.repositoryTabCustomizations
         .filter((customization) => typeof customization?.repositoryPath === 'string')
         .map((customization) => {
-          const repositoryPath = normalizePersistedRepositoryPath(customization.repositoryPath.trim()).slice(0, 4_096)
+          const repositoryPath = repositoryPathKey(customization.repositoryPath)
           const name =
             typeof customization.name === 'string'
               ? customization.name.replaceAll('\r', '').replaceAll('\n', '').trim().slice(0, 80)
@@ -170,8 +165,7 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
           (customization, index, customizations) =>
             customizations.findIndex(
               (candidate) =>
-                candidate.repositoryPath.toLocaleLowerCase('en-US') ===
-                customization.repositoryPath.toLocaleLowerCase('en-US')
+                repositoryPathKey(candidate.repositoryPath) === repositoryPathKey(customization.repositoryPath)
             ) === index
         )
         .slice(0, 256)
