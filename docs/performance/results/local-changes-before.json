@@ -1,0 +1,441 @@
+{
+  "metadata": {
+    "commit": "fcf7663084dadb6581b6e4a272707e7723bf8ffd",
+    "sourceChanges": "",
+    "startedAt": "2026-10-20T08:07:08.574Z",
+    "platform": "linux 6.18.55",
+    "cpu": "AMD EPYC 9V74 80-Core Processor",
+    "logicalCpus": 5,
+    "hostMemoryBytes": 35743760384,
+    "build": "production Vite build, repository React Compiler configuration",
+    "viewport": {
+      "width": 1440,
+      "height": 900,
+      "componentWidth": 720
+    },
+    "repeats": 3,
+    "maxSampledBrowserTreeRssBytes": 1610612736,
+    "warmup": "Fresh browser/profile per measured repetition; 100-file mount and selection before each recorded fixture",
+    "limitations": [
+      "Real LocalChanges component with synthetic changes; no repository loading, Diff panel or native calls.",
+      "Timing starts at browser click/input capture or root.render and ends two animation frames after the expected DOM state. It includes polling/frame cadence and is not INP or a physical display measurement.",
+      "Heap is retained JavaScript heap after forced GC, not peak native memory.",
+      "Linux RSS is sampled every 100 ms by scanning /proc/*/status PPid relationships for the owned browser. Shared pages can be counted repeatedly and short peaks may be missed.",
+      "No CPU throttling. Results depend on host contention and are diagnostic, not CI pass thresholds."
+    ],
+    "measurementSourcesSha256": "0d3e325a892267a7c28282ecb5814cdab01735021c034544c9594993faeb1269",
+    "browser": "Chrome/154.0.8037.57"
+  },
+  "measurements": [
+    {
+      "mode": "tree",
+      "count": 1000,
+      "runs": [
+        {
+          "mount": {
+            "durationMs": 288.19999999925494,
+            "matchingFiles": 1000,
+            "rows": 1000,
+            "elements": 13239
+          },
+          "browserTreeRssBeforeFixtureBytes": 542019584,
+          "retainedJsHeapBytes": 7305596,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 15308,
+            "jsEventListeners": 2191
+          },
+          "selection": {
+            "durationMs": 116.5,
+            "rows": 1000
+          },
+          "filter": {
+            "durationMs": 73.80000000074506,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 289.2999999988824,
+            "rows": 1000
+          },
+          "sampledBrowserTreePeakRssBytes": 729440256
+        },
+        {
+          "mount": {
+            "durationMs": 286.8999999985099,
+            "matchingFiles": 1000,
+            "rows": 1000,
+            "elements": 13239
+          },
+          "browserTreeRssBeforeFixtureBytes": 536244224,
+          "retainedJsHeapBytes": 7317680,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 15308,
+            "jsEventListeners": 2191
+          },
+          "selection": {
+            "durationMs": 118.30000000074506,
+            "rows": 1000
+          },
+          "filter": {
+            "durationMs": 39.70000000111759,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 274.19999999925494,
+            "rows": 1000
+          },
+          "sampledBrowserTreePeakRssBytes": 731758592
+        },
+        {
+          "mount": {
+            "durationMs": 283.3999999985099,
+            "matchingFiles": 1000,
+            "rows": 1000,
+            "elements": 13239
+          },
+          "browserTreeRssBeforeFixtureBytes": 539971584,
+          "retainedJsHeapBytes": 7305276,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 15308,
+            "jsEventListeners": 2191
+          },
+          "selection": {
+            "durationMs": 120.20000000111759,
+            "rows": 1000
+          },
+          "filter": {
+            "durationMs": 52.30000000074506,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 271,
+            "rows": 1000
+          },
+          "sampledBrowserTreePeakRssBytes": 723877888
+        }
+      ]
+    },
+    {
+      "mode": "tree",
+      "count": 5000,
+      "runs": [
+        {
+          "mount": {
+            "durationMs": 1453.2999999988824,
+            "matchingFiles": 5000,
+            "rows": 5000,
+            "elements": 65719
+          },
+          "browserTreeRssBeforeFixtureBytes": 540749824,
+          "retainedJsHeapBytes": 25577100,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 75868,
+            "jsEventListeners": 10311
+          },
+          "selection": {
+            "durationMs": 425.40000000037253,
+            "rows": 5000
+          },
+          "filter": {
+            "durationMs": 138.2999999988824,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 1288.0999999996275,
+            "rows": 5000
+          },
+          "sampledBrowserTreePeakRssBytes": 1199222784
+        },
+        {
+          "mount": {
+            "durationMs": 1330.2999999988824,
+            "matchingFiles": 5000,
+            "rows": 5000,
+            "elements": 65719
+          },
+          "browserTreeRssBeforeFixtureBytes": 538419200,
+          "retainedJsHeapBytes": 25573164,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 75868,
+            "jsEventListeners": 10311
+          },
+          "selection": {
+            "durationMs": 442.59999999962747,
+            "rows": 5000
+          },
+          "filter": {
+            "durationMs": 148.40000000037253,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 1350.5999999996275,
+            "rows": 5000
+          },
+          "sampledBrowserTreePeakRssBytes": 1198854144
+        },
+        {
+          "mount": {
+            "durationMs": 1385.3999999985099,
+            "matchingFiles": 5000,
+            "rows": 5000,
+            "elements": 65719
+          },
+          "browserTreeRssBeforeFixtureBytes": 539176960,
+          "retainedJsHeapBytes": 25569136,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 75868,
+            "jsEventListeners": 10311
+          },
+          "selection": {
+            "durationMs": 475.30000000074506,
+            "rows": 5000
+          },
+          "filter": {
+            "durationMs": 150.69999999925494,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 1357,
+            "rows": 5000
+          },
+          "sampledBrowserTreePeakRssBytes": 1200730112
+        }
+      ]
+    },
+    {
+      "mode": "flat",
+      "count": 1000,
+      "runs": [
+        {
+          "mount": {
+            "durationMs": 286,
+            "matchingFiles": 1000,
+            "rows": 1000,
+            "elements": 14099
+          },
+          "browserTreeRssBeforeFixtureBytes": 539099136,
+          "retainedJsHeapBytes": 7492984,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 17146,
+            "jsEventListeners": 2156
+          },
+          "selection": {
+            "durationMs": 102.60000000149012,
+            "rows": 1000
+          },
+          "filter": {
+            "durationMs": 55.80000000074506,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 307.5,
+            "rows": 1000
+          },
+          "sampledBrowserTreePeakRssBytes": 741453824
+        },
+        {
+          "mount": {
+            "durationMs": 327.1000000014901,
+            "matchingFiles": 1000,
+            "rows": 1000,
+            "elements": 14099
+          },
+          "browserTreeRssBeforeFixtureBytes": 538099712,
+          "retainedJsHeapBytes": 7457236,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 17146,
+            "jsEventListeners": 2156
+          },
+          "selection": {
+            "durationMs": 108.5,
+            "rows": 1000
+          },
+          "filter": {
+            "durationMs": 63.90000000037253,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 321.30000000074506,
+            "rows": 1000
+          },
+          "sampledBrowserTreePeakRssBytes": 741519360
+        },
+        {
+          "mount": {
+            "durationMs": 320.40000000037253,
+            "matchingFiles": 1000,
+            "rows": 1000,
+            "elements": 14099
+          },
+          "browserTreeRssBeforeFixtureBytes": 539561984,
+          "retainedJsHeapBytes": 7458224,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 17146,
+            "jsEventListeners": 2156
+          },
+          "selection": {
+            "durationMs": 121.5,
+            "rows": 1000
+          },
+          "filter": {
+            "durationMs": 67.09999999962747,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 294.90000000037253,
+            "rows": 1000
+          },
+          "sampledBrowserTreePeakRssBytes": 737390592
+        }
+      ]
+    },
+    {
+      "mode": "flat",
+      "count": 5000,
+      "runs": [
+        {
+          "mount": {
+            "durationMs": 1750.4000000003725,
+            "matchingFiles": 5000,
+            "rows": 5000,
+            "elements": 70099
+          },
+          "browserTreeRssBeforeFixtureBytes": 540909568,
+          "retainedJsHeapBytes": 26378788,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 85146,
+            "jsEventListeners": 10156
+          },
+          "selection": {
+            "durationMs": 494,
+            "rows": 5000
+          },
+          "filter": {
+            "durationMs": 156.90000000037253,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 1620.5999999996275,
+            "rows": 5000
+          },
+          "sampledBrowserTreePeakRssBytes": 1257394176
+        },
+        {
+          "mount": {
+            "durationMs": 1628.699999999255,
+            "matchingFiles": 5000,
+            "rows": 5000,
+            "elements": 70099
+          },
+          "browserTreeRssBeforeFixtureBytes": 540516352,
+          "retainedJsHeapBytes": 26368564,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 85146,
+            "jsEventListeners": 10156
+          },
+          "selection": {
+            "durationMs": 566.5999999996275,
+            "rows": 5000
+          },
+          "filter": {
+            "durationMs": 195.69999999925494,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 1656,
+            "rows": 5000
+          },
+          "sampledBrowserTreePeakRssBytes": 1250582528
+        },
+        {
+          "mount": {
+            "durationMs": 1632,
+            "matchingFiles": 5000,
+            "rows": 5000,
+            "elements": 70099
+          },
+          "browserTreeRssBeforeFixtureBytes": 535818240,
+          "retainedJsHeapBytes": 26363340,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 85146,
+            "jsEventListeners": 10156
+          },
+          "selection": {
+            "durationMs": 519.6999999992549,
+            "rows": 5000
+          },
+          "filter": {
+            "durationMs": 152.30000000074506,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 1416,
+            "rows": 5000
+          },
+          "sampledBrowserTreePeakRssBytes": 1252655104
+        }
+      ]
+    }
+  ],
+  "omitted": [
+    {
+      "mode": "tree",
+      "count": 10000,
+      "reason": "The preceding size exceeded a 2-second mount, 500-ms selection or 1-GiB sampled browser RSS; larger fixtures were not attempted."
+    },
+    {
+      "mode": "flat",
+      "count": 10000,
+      "reason": "The preceding size exceeded a 2-second mount, 500-ms selection or 1-GiB sampled browser RSS; larger fixtures were not attempted."
+    }
+  ],
+  "rowGeometry": {
+    "tree": [
+      {
+        "kind": "directory",
+        "text": "Content2",
+        "height": 29
+      },
+      {
+        "kind": "directory",
+        "text": "group-00002",
+        "height": 29
+      },
+      {
+        "kind": "file",
+        "text": "Masset-000000.txt",
+        "height": 36
+      },
+      {
+        "kind": "file",
+        "text": "Rrenamed-with-a-long-display-name.txtContent/original-location/original-name.txt → Content/group-0000/renamed-with-a-long-display-name.txt",
+        "height": 36
+      }
+    ],
+    "flat": [
+      {
+        "kind": "file",
+        "text": "Masset-000000.txtContent/group-0000",
+        "height": 36
+      },
+      {
+        "kind": "file",
+        "text": "Rrenamed-with-a-long-display-name.txtContent/original-location/original-name.txt → Content/group-0000/renamed-with-a-long-display-name.txt",
+        "height": 36
+      }
+    ]
+  },
+  "completedAt": "2026-10-20T08:07:54.341Z",
+  "passed": true
+}

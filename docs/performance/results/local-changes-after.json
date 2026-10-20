@@ -1,0 +1,938 @@
+{
+  "metadata": {
+    "commit": "8afb978082a37fae7364799cd4e7dbf39e6262e7",
+    "sourceChanges": "",
+    "startedAt": "2026-10-20T08:27:52.114Z",
+    "platform": "linux 6.18.55",
+    "cpu": "AMD EPYC 9V74 80-Core Processor",
+    "logicalCpus": 5,
+    "hostMemoryBytes": 35743760384,
+    "build": "production Vite build, repository React Compiler configuration",
+    "viewport": {
+      "width": 1440,
+      "height": 900,
+      "requestedComponentWidth": 720
+    },
+    "repeats": 3,
+    "maxSampledBrowserTreeRssBytes": 1610612736,
+    "warmup": "Fresh browser/profile per measured repetition; 100-file mount and selection before each recorded fixture",
+    "limitations": [
+      "Real LocalChanges component with synthetic changes; no repository loading, Diff panel or native calls.",
+      "Timing starts at browser click/input capture or root.render and ends two animation frames after the expected DOM state. It includes polling/frame cadence and is not INP or a physical display measurement.",
+      "Heap is retained JavaScript heap after forced GC, not peak native memory.",
+      "Linux RSS is sampled every 100 ms by scanning /proc/*/status PPid relationships for the owned browser. Shared pages can be counted repeatedly and short peaks may be missed.",
+      "No CPU throttling. Results depend on host contention and are diagnostic, not CI pass thresholds."
+    ],
+    "cgroup": {
+      "cpu.max": "400000 100000",
+      "memory.max": "34359738368"
+    },
+    "measurementSourcesSha256": "51ff7e5901b6a2b5e5ea089ee2705b0de110ed82392b5bfe3d52c0f4e5b5c19b",
+    "browser": "Chrome/154.0.8037.57"
+  },
+  "measurements": [
+    {
+      "mode": "tree",
+      "count": 1000,
+      "runs": [
+        {
+          "mount": {
+            "durationMs": 49.80000000074506,
+            "matchingFiles": 1000,
+            "rows": 15,
+            "elements": 357
+          },
+          "browserTreeRssBeforeFixtureBytes": 542806016,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 3513696,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 440,
+            "jsEventListeners": 199
+          },
+          "selection": {
+            "durationMs": 42.70000000111759,
+            "rows": 15
+          },
+          "filter": {
+            "durationMs": 29.90000000037253,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 57.59999999962747,
+            "rows": 15
+          },
+          "sampledBrowserTreePeakRssBytes": 618217472
+        },
+        {
+          "mount": {
+            "durationMs": 49.399999998509884,
+            "matchingFiles": 1000,
+            "rows": 15,
+            "elements": 357
+          },
+          "browserTreeRssBeforeFixtureBytes": 541212672,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 3511300,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 440,
+            "jsEventListeners": 199
+          },
+          "selection": {
+            "durationMs": 39.80000000074506,
+            "rows": 15
+          },
+          "filter": {
+            "durationMs": 40.90000000037253,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 39.29999999888241,
+            "rows": 15
+          },
+          "sampledBrowserTreePeakRssBytes": 618840064
+        },
+        {
+          "mount": {
+            "durationMs": 49.59999999962747,
+            "matchingFiles": 1000,
+            "rows": 15,
+            "elements": 357
+          },
+          "browserTreeRssBeforeFixtureBytes": 536653824,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 3511596,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 440,
+            "jsEventListeners": 199
+          },
+          "selection": {
+            "durationMs": 50.30000000074506,
+            "rows": 15
+          },
+          "filter": {
+            "durationMs": 35.90000000037253,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 43.69999999925494,
+            "rows": 15
+          },
+          "sampledBrowserTreePeakRssBytes": 618344448
+        }
+      ]
+    },
+    {
+      "mode": "tree",
+      "count": 5000,
+      "runs": [
+        {
+          "mount": {
+            "durationMs": 48.90000000037253,
+            "matchingFiles": 5000,
+            "rows": 15,
+            "elements": 357
+          },
+          "browserTreeRssBeforeFixtureBytes": 537296896,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 5520080,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 440,
+            "jsEventListeners": 199
+          },
+          "selection": {
+            "durationMs": 65.09999999962747,
+            "rows": 15
+          },
+          "filter": {
+            "durationMs": 50.59999999962747,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 39.70000000111759,
+            "rows": 15
+          },
+          "sampledBrowserTreePeakRssBytes": 628342784
+        },
+        {
+          "mount": {
+            "durationMs": 50.69999999925494,
+            "matchingFiles": 5000,
+            "rows": 15,
+            "elements": 357
+          },
+          "browserTreeRssBeforeFixtureBytes": 536203264,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 5518848,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 440,
+            "jsEventListeners": 199
+          },
+          "selection": {
+            "durationMs": 67.59999999962747,
+            "rows": 15
+          },
+          "filter": {
+            "durationMs": 48.899999998509884,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 52.19999999925494,
+            "rows": 15
+          },
+          "sampledBrowserTreePeakRssBytes": 632692736
+        },
+        {
+          "mount": {
+            "durationMs": 48.79999999888241,
+            "matchingFiles": 5000,
+            "rows": 15,
+            "elements": 357
+          },
+          "browserTreeRssBeforeFixtureBytes": 536809472,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 5517464,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 440,
+            "jsEventListeners": 199
+          },
+          "selection": {
+            "durationMs": 64.30000000074506,
+            "rows": 15
+          },
+          "filter": {
+            "durationMs": 45,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 57.80000000074506,
+            "rows": 15
+          },
+          "sampledBrowserTreePeakRssBytes": 634941440
+        }
+      ]
+    },
+    {
+      "mode": "tree",
+      "count": 10000,
+      "runs": [
+        {
+          "mount": {
+            "durationMs": 81.09999999962747,
+            "matchingFiles": 10000,
+            "rows": 15,
+            "elements": 357
+          },
+          "browserTreeRssBeforeFixtureBytes": 534978560,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 8122084,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 440,
+            "jsEventListeners": 199
+          },
+          "selection": {
+            "durationMs": 76.70000000111759,
+            "rows": 15
+          },
+          "filter": {
+            "durationMs": 37.80000000074506,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 53.30000000074506,
+            "rows": 15
+          },
+          "sampledBrowserTreePeakRssBytes": 647487488
+        },
+        {
+          "mount": {
+            "durationMs": 81.19999999925494,
+            "matchingFiles": 10000,
+            "rows": 15,
+            "elements": 357
+          },
+          "browserTreeRssBeforeFixtureBytes": 536494080,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 8108988,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 440,
+            "jsEventListeners": 199
+          },
+          "selection": {
+            "durationMs": 81.5,
+            "rows": 15
+          },
+          "filter": {
+            "durationMs": 53.5,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 57.30000000074506,
+            "rows": 15
+          },
+          "sampledBrowserTreePeakRssBytes": 639676416
+        },
+        {
+          "mount": {
+            "durationMs": 64.90000000037253,
+            "matchingFiles": 10000,
+            "rows": 15,
+            "elements": 357
+          },
+          "browserTreeRssBeforeFixtureBytes": 539234304,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 8127652,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 440,
+            "jsEventListeners": 199
+          },
+          "selection": {
+            "durationMs": 90.19999999925494,
+            "rows": 15
+          },
+          "filter": {
+            "durationMs": 35.399999998509884,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 61.70000000111759,
+            "rows": 15
+          },
+          "sampledBrowserTreePeakRssBytes": 648343552
+        }
+      ]
+    },
+    {
+      "mode": "tree",
+      "count": 20000,
+      "runs": [
+        {
+          "mount": {
+            "durationMs": 94,
+            "matchingFiles": 20000,
+            "rows": 15,
+            "elements": 357
+          },
+          "browserTreeRssBeforeFixtureBytes": 537522176,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 13842780,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 440,
+            "jsEventListeners": 199
+          },
+          "selection": {
+            "durationMs": 109,
+            "rows": 15
+          },
+          "filter": {
+            "durationMs": 42.80000000074506,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 87.5,
+            "rows": 15
+          },
+          "sampledBrowserTreePeakRssBytes": 668602368
+        },
+        {
+          "mount": {
+            "durationMs": 93.59999999962747,
+            "matchingFiles": 20000,
+            "rows": 15,
+            "elements": 357
+          },
+          "browserTreeRssBeforeFixtureBytes": 537333760,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 13842412,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 440,
+            "jsEventListeners": 199
+          },
+          "selection": {
+            "durationMs": 102.09999999962747,
+            "rows": 15
+          },
+          "filter": {
+            "durationMs": 69.30000000074506,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 55.40000000037253,
+            "rows": 15
+          },
+          "sampledBrowserTreePeakRssBytes": 669245440
+        },
+        {
+          "mount": {
+            "durationMs": 91,
+            "matchingFiles": 20000,
+            "rows": 15,
+            "elements": 357
+          },
+          "browserTreeRssBeforeFixtureBytes": 536502272,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 13831448,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 440,
+            "jsEventListeners": 199
+          },
+          "selection": {
+            "durationMs": 108.19999999925494,
+            "rows": 15
+          },
+          "filter": {
+            "durationMs": 40,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 88.90000000037253,
+            "rows": 15
+          },
+          "sampledBrowserTreePeakRssBytes": 667549696
+        }
+      ]
+    },
+    {
+      "mode": "flat",
+      "count": 1000,
+      "runs": [
+        {
+          "mount": {
+            "durationMs": 49.5,
+            "matchingFiles": 1000,
+            "rows": 17,
+            "elements": 355
+          },
+          "browserTreeRssBeforeFixtureBytes": 538951680,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 3608864,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 453,
+            "jsEventListeners": 192
+          },
+          "selection": {
+            "durationMs": 32.59999999962747,
+            "rows": 17
+          },
+          "filter": {
+            "durationMs": 32.899999998509884,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 58.29999999888241,
+            "rows": 17
+          },
+          "sampledBrowserTreePeakRssBytes": 618156032
+        },
+        {
+          "mount": {
+            "durationMs": 49.5,
+            "matchingFiles": 1000,
+            "rows": 17,
+            "elements": 355
+          },
+          "browserTreeRssBeforeFixtureBytes": 539131904,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 3609284,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 453,
+            "jsEventListeners": 192
+          },
+          "selection": {
+            "durationMs": 37.09999999962747,
+            "rows": 17
+          },
+          "filter": {
+            "durationMs": 38,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 38.69999999925494,
+            "rows": 17
+          },
+          "sampledBrowserTreePeakRssBytes": 617254912
+        },
+        {
+          "mount": {
+            "durationMs": 48.80000000074506,
+            "matchingFiles": 1000,
+            "rows": 17,
+            "elements": 355
+          },
+          "browserTreeRssBeforeFixtureBytes": 536784896,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 3611284,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 453,
+            "jsEventListeners": 192
+          },
+          "selection": {
+            "durationMs": 40.09999999962747,
+            "rows": 17
+          },
+          "filter": {
+            "durationMs": 27.800000000745058,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 51.09999999962747,
+            "rows": 17
+          },
+          "sampledBrowserTreePeakRssBytes": 619094016
+        }
+      ]
+    },
+    {
+      "mode": "flat",
+      "count": 5000,
+      "runs": [
+        {
+          "mount": {
+            "durationMs": 49.5,
+            "matchingFiles": 5000,
+            "rows": 17,
+            "elements": 355
+          },
+          "browserTreeRssBeforeFixtureBytes": 539049984,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 6040380,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 453,
+            "jsEventListeners": 192
+          },
+          "selection": {
+            "durationMs": 53.5,
+            "rows": 17
+          },
+          "filter": {
+            "durationMs": 33.69999999925494,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 53.70000000111759,
+            "rows": 17
+          },
+          "sampledBrowserTreePeakRssBytes": 628285440
+        },
+        {
+          "mount": {
+            "durationMs": 51.19999999925494,
+            "matchingFiles": 5000,
+            "rows": 17,
+            "elements": 355
+          },
+          "browserTreeRssBeforeFixtureBytes": 542113792,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 6041908,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 453,
+            "jsEventListeners": 192
+          },
+          "selection": {
+            "durationMs": 63.5,
+            "rows": 17
+          },
+          "filter": {
+            "durationMs": 39.09999999962747,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 59.79999999888241,
+            "rows": 17
+          },
+          "sampledBrowserTreePeakRssBytes": 635203584
+        },
+        {
+          "mount": {
+            "durationMs": 48.70000000111759,
+            "matchingFiles": 5000,
+            "rows": 17,
+            "elements": 355
+          },
+          "browserTreeRssBeforeFixtureBytes": 538841088,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 6042740,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 453,
+            "jsEventListeners": 192
+          },
+          "selection": {
+            "durationMs": 70.09999999962747,
+            "rows": 17
+          },
+          "filter": {
+            "durationMs": 42.09999999962747,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 59.59999999962747,
+            "rows": 17
+          },
+          "sampledBrowserTreePeakRssBytes": 629153792
+        }
+      ]
+    },
+    {
+      "mode": "flat",
+      "count": 10000,
+      "runs": [
+        {
+          "mount": {
+            "durationMs": 81.89999999850988,
+            "matchingFiles": 10000,
+            "rows": 17,
+            "elements": 355
+          },
+          "browserTreeRssBeforeFixtureBytes": 536080384,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 9224564,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 453,
+            "jsEventListeners": 192
+          },
+          "selection": {
+            "durationMs": 75.70000000111759,
+            "rows": 17
+          },
+          "filter": {
+            "durationMs": 50.90000000037253,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 50.19999999925494,
+            "rows": 17
+          },
+          "sampledBrowserTreePeakRssBytes": 639504384
+        },
+        {
+          "mount": {
+            "durationMs": 81.40000000037253,
+            "matchingFiles": 10000,
+            "rows": 17,
+            "elements": 355
+          },
+          "browserTreeRssBeforeFixtureBytes": 538730496,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 9238236,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 453,
+            "jsEventListeners": 192
+          },
+          "selection": {
+            "durationMs": 80.70000000111759,
+            "rows": 17
+          },
+          "filter": {
+            "durationMs": 53.80000000074506,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 57.59999999962747,
+            "rows": 17
+          },
+          "sampledBrowserTreePeakRssBytes": 641642496
+        },
+        {
+          "mount": {
+            "durationMs": 81.19999999925494,
+            "matchingFiles": 10000,
+            "rows": 17,
+            "elements": 355
+          },
+          "browserTreeRssBeforeFixtureBytes": 539963392,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 9238076,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 453,
+            "jsEventListeners": 192
+          },
+          "selection": {
+            "durationMs": 79.09999999962747,
+            "rows": 17
+          },
+          "filter": {
+            "durationMs": 40.29999999888241,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 68.90000000037253,
+            "rows": 17
+          },
+          "sampledBrowserTreePeakRssBytes": 650104832
+        }
+      ]
+    },
+    {
+      "mode": "flat",
+      "count": 20000,
+      "runs": [
+        {
+          "mount": {
+            "durationMs": 93.89999999850988,
+            "matchingFiles": 20000,
+            "rows": 17,
+            "elements": 355
+          },
+          "browserTreeRssBeforeFixtureBytes": 539336704,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 15746868,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 453,
+            "jsEventListeners": 192
+          },
+          "selection": {
+            "durationMs": 117.69999999925494,
+            "rows": 17
+          },
+          "filter": {
+            "durationMs": 62.80000000074506,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 70.90000000037253,
+            "rows": 17
+          },
+          "sampledBrowserTreePeakRssBytes": 671154176
+        },
+        {
+          "mount": {
+            "durationMs": 107.09999999962747,
+            "matchingFiles": 20000,
+            "rows": 17,
+            "elements": 355
+          },
+          "browserTreeRssBeforeFixtureBytes": 537010176,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 15750316,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 453,
+            "jsEventListeners": 192
+          },
+          "selection": {
+            "durationMs": 110,
+            "rows": 17
+          },
+          "filter": {
+            "durationMs": 55,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 90.19999999925494,
+            "rows": 17
+          },
+          "sampledBrowserTreePeakRssBytes": 684400640
+        },
+        {
+          "mount": {
+            "durationMs": 92.39999999850988,
+            "matchingFiles": 20000,
+            "rows": 17,
+            "elements": 355
+          },
+          "browserTreeRssBeforeFixtureBytes": 539176960,
+          "geometry": {
+            "rootWidth": 980,
+            "rootHeight": 900,
+            "componentWidth": 980,
+            "componentHeight": 900
+          },
+          "retainedJsHeapBytes": 15750964,
+          "domCounters": {
+            "documents": 1,
+            "nodes": 453,
+            "jsEventListeners": 192
+          },
+          "selection": {
+            "durationMs": 129.2999999988824,
+            "rows": 17
+          },
+          "filter": {
+            "durationMs": 42.19999999925494,
+            "rows": 1
+          },
+          "clearFilter": {
+            "durationMs": 71.20000000111759,
+            "rows": 17
+          },
+          "sampledBrowserTreePeakRssBytes": 679772160
+        }
+      ]
+    }
+  ],
+  "omitted": [],
+  "rowGeometry": {
+    "tree": [
+      {
+        "kind": "directory",
+        "text": "Content2",
+        "height": 29
+      },
+      {
+        "kind": "directory",
+        "text": "group-00002",
+        "height": 29
+      },
+      {
+        "kind": "file",
+        "text": "Masset-000000.txt",
+        "height": 36
+      },
+      {
+        "kind": "file",
+        "text": "Rrenamed-with-a-long-display-name.txtContent/original-location/original-name.txt → Content/group-0000/renamed-with-a-long-display-name.txt",
+        "height": 36
+      }
+    ],
+    "flat": [
+      {
+        "kind": "file",
+        "text": "Masset-000000.txtContent/group-0000",
+        "height": 36
+      },
+      {
+        "kind": "file",
+        "text": "Rrenamed-with-a-long-display-name.txtContent/original-location/original-name.txt → Content/group-0000/renamed-with-a-long-display-name.txt",
+        "height": 36
+      }
+    ]
+  },
+  "completedAt": "2026-10-20T08:28:23.305Z",
+  "passed": true
+}
