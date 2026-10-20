@@ -1,14 +1,20 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'bun:test'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'bun:test'
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
-const reactActual = await import('react')
+// Preserve values rather than Bun's live module namespace, which mock() rewrites.
+const reactActual = { ...(await import('react')) }
 const cleanups: (() => void)[] = []
 vi.mock('react', () => ({
   ...reactActual,
   useRef: <T,>(initial: T) => ({ current: initial }),
   useEffect: (setup: () => () => void) => cleanups.push(setup())
 }))
+
+// restoreAllMocks() does not restore Bun module mocks.
+afterAll(() => {
+  vi.mock('react', () => reactActual)
+})
 
 const { PaneResizer } = await import('./PaneResizer')
 
