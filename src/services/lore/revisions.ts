@@ -18,7 +18,6 @@ import type {
   RevisionHistoryQuery,
   WorkingTreeDiff
 } from '../../types'
-import { collectRevisionAuthorIdentities, resolveAuthorNames } from './authors'
 import { LoreCommandClientError, invokeCommand, runOperation } from './core'
 import {
   ZERO_HASH_PATTERN,
@@ -317,8 +316,7 @@ export async function loadRevisionHistory(
     date: query.beforeDate || null,
     onlyBranch: query.onlyBranch
   })
-  const resolvedAuthorNames = await resolveAuthorNames(repository, collectRevisionAuthorIdentities(result.events))
-  return parseRevisions(result.events, repository, branches, resolvedAuthorNames)
+  return parseRevisions(result.events, repository, branches)
 }
 
 export function parseRevisionInfo(events: LoreEvent[]): LoreRevisionInfo {
@@ -533,6 +531,7 @@ export function parseRevisions(
       revisionNumber: readNumber(entry.revisionNumber),
       committedAt,
       author,
+      authorIdentity: historicalIdentity,
       authorEmail: email || undefined,
       initials: author.slice(0, 1).toLocaleUpperCase(),
       branchPointers,

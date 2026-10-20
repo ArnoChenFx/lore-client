@@ -1,9 +1,10 @@
-type RepositoryRequestKind = 'open' | 'snapshot' | 'history' | 'mutation'
+type RepositoryRequestKind = 'open' | 'snapshot' | 'history' | 'mutation' | 'authors'
 
 export interface RepositorySessionRequest {
   readonly path: string
   readonly session: number
   readonly generation: number
+  readonly authorGeneration: number
   readonly id: number
   readonly kind: RepositoryRequestKind
   readonly historyId: number
@@ -13,6 +14,7 @@ export interface RepositorySessionRequest {
 interface SessionRequests {
   session: number
   generation: number
+  authorGeneration: number
   snapshotId: number
   historyId: number
   historyVersion: number
@@ -32,6 +34,8 @@ export function repositoryPathKey(path: string): string {
  */
 export class RepositorySessionRequests {
   private readonly sessions = new Map<string, SessionRequests>()
+  // Native contexts belong to a path even while its tab is closed or replaced.
+  private readonly authorAuthenticationRefreshes = new Map<string, number>()
   private nextSession = 0
   private nextRequest = 0
   private interactionVersion = 0
@@ -77,6 +81,30 @@ export class RepositorySessionRequests {
     return this.begin(repositoryPathKey(path), kind)
   }
 
+  /** Display enrichment observes the current generation without superseding core reads. */
+  beginAuthorLookup(path: string): RepositorySessionRequest | null {
+    const key = repositoryPathKey(path)
+    const session = this.sessions.get(key)
+    if (!session || session.mutating || this.authorAuthenticationRefreshes.has(key)) return null
+    return this.request(key, session, 'authors', session.snapshotId)
+  }
+
+  /** Auth contexts change before the UI's auth version advances; do not attach fresh observers to old work. */
+  pauseAuthorLookupsForAuthentication(path: string): () => void {
+    const key = repositoryPathKey(path)
+    const session = this.sessions.get(key)
+    if (session) session.authorGeneration += 1
+    this.authorAuthenticationRefreshes.set(key, (this.authorAuthenticationRefreshes.get(key) ?? 0) + 1)
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      const remaining = (this.authorAuthenticationRefreshes.get(key) ?? 1) - 1
+      if (remaining > 0) this.authorAuthenticationRefreshes.set(key, remaining)
+      else this.authorAuthenticationRefreshes.delete(key)
+    }
+  }
+
   beginMutation(path: string): RepositorySessionRequest | null {
     const key = repositoryPathKey(path)
     const session = this.sessions.get(key)
@@ -95,6 +123,12 @@ export class RepositorySessionRequests {
   isCurrent(request: RepositorySessionRequest): boolean {
     const session = this.sessions.get(request.path)
     if (!session || session.session !== request.session || session.generation !== request.generation) return false
+    if (
+      request.kind === 'authors' &&
+      (session.authorGeneration !== request.authorGeneration || this.authorAuthenticationRefreshes.has(request.path))
+    ) {
+      return false
+    }
     const currentId =
       request.kind === 'history'
         ? session.historyId
@@ -122,6 +156,7 @@ export class RepositorySessionRequests {
     this.sessions.set(path, {
       session: ++this.nextSession,
       generation: 0,
+      authorGeneration: 0,
       snapshotId: 0,
       historyId: 0,
       historyVersion: 0,
@@ -144,6 +179,7 @@ export class RepositorySessionRequests {
       path,
       session: session.session,
       generation: session.generation,
+      authorGeneration: session.authorGeneration,
       id,
       kind,
       historyId: session.historyId,

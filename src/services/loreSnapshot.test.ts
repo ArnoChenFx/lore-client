@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'bun:test'
 
 import i18n from '../i18n'
+import type { Repository } from '../types'
 
 /*
  * 被测服务通过动态导入加载，保证 vi.mock 注册在前，且工厂函数引用的 invokeMock 等变量
@@ -44,6 +45,7 @@ const {
   initializeRepository,
   loadFileHistory,
   loadRepositorySnapshot,
+  RepositoryAuthorNameResolver,
   loadRemoteRepositoryInfo,
   loadRevisionChanges,
   loadRevisionDiff,
@@ -61,6 +63,19 @@ const {
   switchBranch,
   writeConflictResolution
 } = await import('./lore')
+
+async function hydrateAuthors(repository: Repository, identities: readonly string[]): Promise<Map<string, string>> {
+  const resolver = new RepositoryAuthorNameResolver(repository)
+  let resolved = new Map<string, string>()
+  try {
+    await resolver.hydrate(identities, (names) => {
+      resolved = new Map(names)
+    })
+    return resolved
+  } finally {
+    resolver.dispose()
+  }
+}
 
 describe('repository snapshot branch loading', () => {
   beforeEach(async () => {
@@ -303,7 +318,7 @@ describe('repository snapshot branch loading', () => {
     ])
   })
 
-  it('resolves branch creator user IDs to Auth user names in the repository snapshot', async () => {
+  it('returns branch creator facts before optional Auth enrichment', async () => {
     repositoryStatusEvents = [
       {
         tagName: 'repositoryStatusRevision',
@@ -347,8 +362,47 @@ describe('repository snapshot branch loading', () => {
 
     const snapshot = await loadRepositorySnapshot('E:\\Worlds\\RealLore')
 
-    expect(snapshot.branches[0]).toMatchObject({ name: 'main', author: 'Arno Chen' })
+    expect(snapshot.branches[0]).toMatchObject({ name: 'main', author: 'user-42', creatorIdentity: 'user-42' })
+    expect(invokeMock).not.toHaveBeenCalledWith('lore_auth_user_info', expect.anything())
+    expect(await hydrateAuthors(snapshot.repository, ['user-42'])).toEqual(new Map([['user-42', 'Arno Chen']]))
   })
+
+  it.each(['snapshot', 'history'] as const)(
+    'loads core %s while author cache and Auth responses are deferred',
+    async (kind) => {
+      branchListEvents[0].data.creator = 'user-42'
+      const fallbackInvoke = invokeMock.getMockImplementation()
+      const blocked = new Promise<never>(() => undefined)
+      invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+        if (command.includes('author_cache') || command.startsWith('lore_auth_')) return blocked
+        if (command === 'lore_revision_history') {
+          return {
+            operation: 'revision.history',
+            status: 0,
+            events: [
+              { tagName: 'revisionHistoryEntry', data: { revision: 'tip', revisionNumber: 1, parent: [] } },
+              { tagName: 'metadata', data: { key: 'committed-by', value: { tagName: 'string', data: 'user-42' } } }
+            ]
+          }
+        }
+        if (!fallbackInvoke) throw new Error(`The test does not handle command: ${command}`)
+        return fallbackInvoke(command, args)
+      })
+      const repository = loreEventParsers.parseRepository('E:\\Worlds\\RealLore', repositoryStatusEvents)
+      const pending =
+        kind === 'snapshot'
+          ? loadRepositorySnapshot(repository.path).then((snapshot) => snapshot.revisions)
+          : loadRevisionHistory(repository, [], { onlyBranch: false, limit: 100 })
+      const result = await Promise.race([
+        pending,
+        new Promise<'timed-out'>((resolve) => setTimeout(() => resolve('timed-out'), 100))
+      ])
+
+      expect(result).toEqual([expect.objectContaining({ id: 'tip', author: 'user-42', authorIdentity: 'user-42' })])
+      expect(invokeMock.mock.calls.some(([command]) => String(command).includes('author_cache'))).toBe(false)
+      expect(invokeMock).not.toHaveBeenCalledWith('lore_auth_user_info', expect.anything())
+    }
+  )
 
   it('uses cached Auth user names for branch creators while the repository is offline', async () => {
     branchListEvents = [
@@ -379,7 +433,8 @@ describe('repository snapshot branch loading', () => {
 
     const snapshot = await loadRepositorySnapshot('E:\\Worlds\\RealLore')
 
-    expect(snapshot.branches[0]).toMatchObject({ name: 'main', author: 'Cached Arno' })
+    expect(snapshot.branches[0]).toMatchObject({ name: 'main', author: 'user-42', creatorIdentity: 'user-42' })
+    expect(await hydrateAuthors(snapshot.repository, ['user-42'])).toEqual(new Map([['user-42', 'Cached Arno']]))
     expect(invokeMock).not.toHaveBeenCalledWith('lore_auth_user_info', expect.anything())
   })
 
@@ -692,8 +747,15 @@ describe('repository snapshot branch loading', () => {
 
     const revisions = await loadRevisionHistory(repository, [], { onlyBranch: false, limit: 100 })
 
-    expect(revisions[0]).toMatchObject({ author: 'Arno Chen', authorEmail: 'arno@example.com' })
+    expect(revisions[0]).toMatchObject({ author: 'user-42', authorIdentity: 'user-42', authorEmail: undefined })
     expect(revisions[1]).toMatchObject({ author: 'Artist Team', authorEmail: undefined })
+    expect(invokeMock).toHaveBeenCalledTimes(1)
+    expect(
+      await hydrateAuthors(
+        repository,
+        revisions.map((revision) => revision.authorIdentity!)
+      )
+    ).toEqual(new Map([['user-42', 'Arno Chen <arno@example.com>']]))
     expect(invokeMock).toHaveBeenCalledTimes(4)
   })
 
@@ -737,6 +799,7 @@ describe('repository snapshot branch loading', () => {
     await expect(loadRevisionHistory(repository, [], { onlyBranch: false, limit: 100 })).resolves.toEqual([
       expect.objectContaining({ author: 'user-42', authorEmail: undefined })
     ])
+    expect(await hydrateAuthors(repository, ['user-42'])).toEqual(new Map())
   })
 
   it('uses only the bound local Auth profile while the repository is offline', async () => {
@@ -781,8 +844,9 @@ describe('repository snapshot branch loading', () => {
     })
 
     await expect(loadRevisionHistory(repository, [], { onlyBranch: false, limit: 100 })).resolves.toEqual([
-      expect.objectContaining({ author: 'Arno Chen', authorEmail: undefined })
+      expect.objectContaining({ author: 'user-42', authorIdentity: 'user-42', authorEmail: undefined })
     ])
+    expect(await hydrateAuthors(repository, ['user-42'])).toEqual(new Map([['user-42', 'Arno Chen']]))
   })
 
   it('uses the persistent author cache without a bound account while the repository is offline', async () => {
@@ -816,8 +880,11 @@ describe('repository snapshot branch loading', () => {
     })
 
     await expect(loadRevisionHistory(repository, [], { onlyBranch: false, limit: 100 })).resolves.toEqual([
-      expect.objectContaining({ author: 'Cached Author', authorEmail: 'cached@example.com' })
+      expect.objectContaining({ author: 'user-42', authorIdentity: 'user-42', authorEmail: undefined })
     ])
+    expect(await hydrateAuthors(repository, ['user-42'])).toEqual(
+      new Map([['user-42', 'Cached Author <cached@example.com>']])
+    )
     expect(invokeMock).not.toHaveBeenCalledWith('lore_auth_user_info', expect.anything())
   })
 

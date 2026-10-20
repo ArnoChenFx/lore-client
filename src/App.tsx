@@ -47,6 +47,7 @@ import {
   useRepositoryRefresh,
   useRemoteAuthenticationRecovery,
   useRepositorySession,
+  useRepositoryAuthorEnrichment,
   useRepositorySessionLifecycle,
   repositorySessionKey,
   resolveRepositoryTabPresentation,
@@ -154,6 +155,7 @@ function App() {
     requests,
     applySnapshot,
     applyHistory,
+    applyAuthorNames,
     isActiveRepository,
     reorderRepositoryTabs,
     replaceRepositorySession,
@@ -215,6 +217,14 @@ function App() {
    * 标题栏、工具栏、状态栏与仓库工具不会显示互相冲突的连接状态。
    */
   const snapshots = remoteAuthentication.snapshots
+  useRepositoryAuthorEnrichment({
+    enabled: applicationMode === 'tauri',
+    snapshots,
+    authStateVersion: remoteAuthentication.authStateVersion,
+    bindings: preferences.authAccountBindings,
+    requests,
+    applyAuthorNames
+  })
   const {
     operations,
     loreOperationStreams,

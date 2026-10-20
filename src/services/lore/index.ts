@@ -13,6 +13,8 @@ export {
   subscribeRemoteAuthenticationRequired
 } from './auth'
 export type { RemoteAuthenticationRequiredEvent } from './auth'
+export { RepositoryAuthorNameResolver } from './authors'
+export type { AuthorNameResolverDependencies } from './authors'
 export {
   archiveBranch,
   cherryPickRevision,

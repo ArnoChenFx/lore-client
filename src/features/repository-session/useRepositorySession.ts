@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 
 import type { RepositorySnapshot, Revision } from '../../types'
 import { reorderItemsById } from './components/repositoryTabsModel'
+import { updateRepositoryAuthorNames } from './repositoryAuthorNames'
 import {
   repositoryPathKey,
   RepositorySessionRequests,
@@ -147,6 +148,7 @@ export function useRepositorySession(
     (request: RepositorySessionRequest, snapshot: RepositorySnapshot): boolean => {
       if (
         request.kind === 'history' ||
+        request.kind === 'authors' ||
         !requests.isCurrent(request) ||
         repositorySessionKey(snapshot) !== request.path
       ) {
@@ -172,6 +174,16 @@ export function useRepositorySession(
       publishSnapshots(updateRepositoryHistory(currentSnapshots.current, request.path, revisions))
       requests.didApplyHistory(request)
       return true
+    },
+    [publishSnapshots, requests]
+  )
+  const applyAuthorNames = useCallback(
+    (request: RepositorySessionRequest, names: ReadonlyMap<string, string>): boolean => {
+      if (request.kind !== 'authors' || !requests.isCurrent(request)) return false
+      const current = currentSnapshots.current
+      const next = updateRepositoryAuthorNames(current, request.path, names)
+      if (next !== current) publishSnapshots(next)
+      return next !== current
     },
     [publishSnapshots, requests]
   )
@@ -245,6 +257,7 @@ export function useRepositorySession(
     requests,
     applySnapshot,
     applyHistory,
+    applyAuthorNames,
     isActiveRepository,
     reorderRepositoryTabs,
     replaceRepositorySession,

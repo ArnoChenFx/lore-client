@@ -201,6 +201,8 @@ export interface Branch {
   ahead?: number
   behind?: number
   author?: string
+  /** Lore 固化的创建者身份，显示名补全不得覆盖此值。 */
+  creatorIdentity?: string
 }
 
 /** BranchInfo 与保护元数据合并后的稳定协作详情。 */
@@ -296,6 +298,8 @@ export interface Revision {
   /** @deprecated 仅兼容旧演示数据；原生历史使用 revisionNumber。 */
   description?: string
   author: string
+  /** 提交时的原始身份；作者名补全以此关联，不从可变展示名称反推。 */
+  authorIdentity?: string
   /** 从提交时 identity 拆出的邮箱；只用于头像哈希，不替代历史作者文字。 */
   authorEmail?: string
   initials: string

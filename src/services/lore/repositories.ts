@@ -15,7 +15,6 @@ import type {
   RepositoryDirectoryProbe,
   RepositorySnapshot
 } from '../../types'
-import { collectBranchCreatorIdentities, collectRevisionAuthorIdentities, resolveAuthorNames } from './authors'
 import { parseBranches } from './branches'
 import { RepositoryConfigValues, loadRepositoryConfig } from './config'
 import { loadConflictSession } from './conflicts'
@@ -270,24 +269,16 @@ export async function loadRepositorySnapshot(repositoryPath: string, scan = fals
     limit: 100,
     revision: historyAnchor || null
   })
-  /*
-   * Branch creator 与 Revision 作者都可能是 Auth userId。把两类 identity 合并为一次
-   * 仓库级查询，既避免卡片泄露 userId，也不会为同一个用户重复访问 Auth 服务。
-   */
-  const resolvedAuthorNames = await resolveAuthorNames(statusRepository, [
-    ...collectRevisionAuthorIdentities(history.events),
-    ...collectBranchCreatorIdentities(branchList.events)
-  ])
   const tags = await listTags(repositoryPath)
   const config = await loadRepositoryConfig(repositoryPath)
 
   const repository = parseRepository(repositoryPath, status.events, config)
-  const branches = parseBranches(branchList.events, repository, resolvedAuthorNames)
+  const branches = parseBranches(branchList.events, repository)
 
   return {
     repository,
     branches,
-    revisions: parseRevisions(history.events, repository, branches, resolvedAuthorNames),
+    revisions: parseRevisions(history.events, repository, branches),
     changes,
     tags,
     conflictSession,
