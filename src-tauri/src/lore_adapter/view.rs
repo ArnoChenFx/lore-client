@@ -387,6 +387,30 @@ pub(super) fn write_repository_view_temporary(
     view_path: &Path,
     content: &str,
 ) -> Result<(PathBuf, PathBuf, bool), LoreCommandError> {
+    // 回滚只恢复普通规则文件的内容；必须在创建事务文件前拒绝链接，避免丢失链接关系。
+    // symlink_metadata 同样识别悬空链接，不能把它当成尚不存在的 View。
+    match fs::symlink_metadata(view_path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(LoreCommandError::new(
+                "repository_view_is_link",
+                format!(
+                    "Cannot apply view rules because {} is a symbolic link; use a regular view file",
+                    view_path.display()
+                ),
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(LoreCommandError::new(
+                "repository_view_read_failed",
+                format!(
+                    "Failed to inspect the view file {}: {error}",
+                    view_path.display()
+                ),
+            ));
+        }
+    }
     let parent = view_path.parent().ok_or_else(|| {
         LoreCommandError::new(
             "repository_view_parent_missing",
@@ -712,6 +736,81 @@ mod recovery_tests {
 
     fn apply_failure() -> LoreCommandError {
         LoreCommandError::new("repository_view_sync_failed", "Apply sync failed")
+    }
+
+    #[cfg(unix)]
+    fn assert_view_symlink_rejected_without_changes(target_exists: bool) {
+        let directory = tempfile::tempdir().unwrap();
+        let metadata = directory.path().join("repository").join(".lore");
+        fs::create_dir_all(&metadata).unwrap();
+        let target = directory.path().join("shared-view");
+        if target_exists {
+            fs::write(&target, "shared rules").unwrap();
+        }
+        let view = metadata.join("view");
+        std::os::unix::fs::symlink(&target, &view).unwrap();
+
+        let error = write_repository_view_temporary(&view, "replacement rules")
+            .expect_err("A linked view must be rejected before the write transaction starts");
+
+        assert_eq!(error.code, "repository_view_is_link");
+        assert!(error.message.contains(view.to_str().unwrap()));
+        assert!(fs::symlink_metadata(&view)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(fs::read_link(&view).unwrap(), target);
+        assert_eq!(
+            fs::read_dir(&metadata)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect::<Vec<_>>(),
+            vec![std::ffi::OsString::from("view")],
+            "Rejection must not create temporary or backup files",
+        );
+        if target_exists {
+            assert_eq!(fs::read_to_string(&target).unwrap(), "shared rules");
+        } else {
+            assert_eq!(
+                fs::symlink_metadata(&target).unwrap_err().kind(),
+                std::io::ErrorKind::NotFound,
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn view_write_rejects_existing_symlink_before_creating_transaction_files() {
+        assert_view_symlink_rejected_without_changes(true);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn view_write_rejects_dangling_symlink_before_creating_transaction_files() {
+        assert_view_symlink_rejected_without_changes(false);
+    }
+
+    #[test]
+    fn view_write_preserves_regular_file_and_missing_file_behavior() {
+        for had_original in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let view = directory.path().join("view");
+            if had_original {
+                fs::write(&view, "original rules").unwrap();
+            }
+
+            let (temporary, backup, backed_up) =
+                write_repository_view_temporary(&view, "replacement rules").unwrap();
+
+            assert_eq!(backed_up, had_original);
+            assert_eq!(fs::read_to_string(&view).unwrap(), "replacement rules");
+            assert!(!temporary.exists());
+            if had_original {
+                assert_eq!(fs::read_to_string(backup).unwrap(), "original rules");
+            } else {
+                assert!(!backup.exists());
+            }
+        }
     }
 
     #[test]

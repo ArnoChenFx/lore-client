@@ -65,6 +65,24 @@ describe('Lore event adapter', () => {
     }
   })
 
+  it('localizes a linked View while preserving its error code and original detail', async () => {
+    const upstream = {
+      code: 'repository_view_is_link',
+      message: 'Cannot apply view rules because E:\\Worlds\\.lore\\view is a symbolic link; use a regular view file'
+    }
+    for (const [language, message] of [
+      ['en-US', 'The View is a symbolic link. Use a regular rules file and try again.'],
+      ['zh-CN', zhCN.repositoryViewIsLink]
+    ]) {
+      await i18n.changeLanguage(language)
+      const error = new LoreCommandClientError(upstream, 'lore_repository_view_apply')
+      expect(error.code).toBe(upstream.code)
+      expect(error.message).toBe(`${message}\n${upstream.message}`)
+      const withoutDetail = new LoreCommandClientError({ code: upstream.code }, 'lore_repository_view_apply')
+      expect(withoutDetail.message).toBe(message)
+    }
+  })
+
   it('localizes an existing patch destination while keeping the stable error code', async () => {
     const upstream = { code: 'patch_destination_exists', message: 'A file already exists at E:\\Patches\\World.patch' }
 
