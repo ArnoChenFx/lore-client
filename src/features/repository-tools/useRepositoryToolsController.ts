@@ -51,7 +51,7 @@ import {
   verifyRepositoryFragment,
   verifyRepositoryPath
 } from '../../services/lore'
-import { changeFilePath, LatestTaskQueue, readErrorMessage } from '../../shared/lib'
+import { changeFilePath, LatestTaskQueue, readErrorMessage, repositoryPathKey } from '../../shared/lib'
 import type {
   ApplicationMode,
   LoreDependencyGraphQuery,
@@ -216,16 +216,10 @@ export function resolvePublishAuthAccount(
   bindings: readonly RepositoryAuthAccountBinding[],
   identities: readonly LoreAuthIdentity[]
 ): ResolvedPublishAuthAccount | null {
-  const normalizedPath = repositoryPath
-    .trim()
-    .replace(/[\\/]+$/, '')
-    .toLocaleLowerCase()
   const binding = bindings.find(
     (candidate) =>
-      candidate.repositoryPath
-        .trim()
-        .replace(/[\\/]+$/, '')
-        .toLocaleLowerCase() === normalizedPath && candidate.userId.trim().length > 0
+      repositoryPathKey(candidate.repositoryPath) === repositoryPathKey(repositoryPath) &&
+      candidate.userId.trim().length > 0
   )
   if (binding) {
     return {
@@ -958,7 +952,7 @@ export function useRepositoryToolsController({
              */
             await setRepositoryAuthAccountBinding(repository.path, selectedUserId, selectedIdentity.authUrl)
             const nextBindings = authAccountBindings.filter(
-              (binding) => binding.repositoryPath.toLocaleLowerCase() !== repository.path.toLocaleLowerCase()
+              (binding) => repositoryPathKey(binding.repositoryPath) !== repositoryPathKey(repository.path)
             )
             nextBindings.push({
               repositoryPath: repository.path,
@@ -1135,7 +1129,7 @@ export function useRepositoryToolsController({
           setLoading(true)
           await setRepositoryAuthAccountBinding(targetRepository.path, identity?.userId, identity?.authUrl)
           const nextBindings = authAccountBindings.filter(
-            (binding) => binding.repositoryPath.toLocaleLowerCase() !== targetRepository.path.toLocaleLowerCase()
+            (binding) => repositoryPathKey(binding.repositoryPath) !== repositoryPathKey(targetRepository.path)
           )
           if (identity) {
             nextBindings.push({

@@ -118,7 +118,7 @@ export async function clearAuthIdentities(): Promise<LoreOperationResult> {
  * Status 读取按最新 Token Store 与仓库账户绑定重新建立远端连接。
  */
 export async function refreshRepositoryAuthenticationContexts(repositoryPaths: string[]): Promise<void> {
-  const normalizedPaths = [...new Set(repositoryPaths.map((path) => path.trim()).filter(Boolean))]
+  const normalizedPaths = [...new Set(repositoryPaths.filter((path) => path.trim().length > 0))]
   if (normalizedPaths.length === 0) return
   await invokeLogged('lore_auth_repository_contexts_refresh', {
     repositoryPaths: normalizedPaths

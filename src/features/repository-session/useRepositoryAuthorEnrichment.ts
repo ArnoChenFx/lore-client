@@ -2,13 +2,10 @@ import { useEffect, useState } from 'react'
 
 import { useCurrentTime } from '../../hooks/useCurrentTime'
 import { RepositoryAuthorNameResolver } from '../../services/lore'
+import { repositoryPathKey } from '../../shared/lib'
 import type { Repository, RepositoryAuthAccountBinding, RepositorySnapshot } from '../../types'
 import { repositoryAuthorIdentities } from './repositoryAuthorNames'
-import {
-  repositoryPathKey,
-  RepositorySessionRequests,
-  type RepositorySessionRequest
-} from './repositorySessionRequests'
+import { RepositorySessionRequests, type RepositorySessionRequest } from './repositorySessionRequests'
 
 interface AuthorNameResolver {
   hydrate: (

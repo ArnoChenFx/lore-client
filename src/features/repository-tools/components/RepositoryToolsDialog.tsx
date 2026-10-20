@@ -34,7 +34,8 @@ import {
   fileLockOwnerLabel,
   formatCommitIdentity,
   isUnidentifiedFileLockOwner,
-  parseCommitIdentity
+  parseCommitIdentity,
+  repositoryPathKey
 } from '../../../shared/lib'
 import { CheckboxInput, SelectInput } from '../../../shared/ui'
 import type {
@@ -179,15 +180,7 @@ export function RepositoryToolsDialog({
   const boundPublishAccount = useMemo(
     () =>
       authAccountBindings.find(
-        (binding) =>
-          binding.repositoryPath
-            .trim()
-            .replace(/[\\/]+$/, '')
-            .toLocaleLowerCase() ===
-          repository.path
-            .trim()
-            .replace(/[\\/]+$/, '')
-            .toLocaleLowerCase()
+        (binding) => repositoryPathKey(binding.repositoryPath) === repositoryPathKey(repository.path)
       ),
     [authAccountBindings, repository.path]
   )

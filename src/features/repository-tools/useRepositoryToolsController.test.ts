@@ -144,7 +144,7 @@ describe('repository tools controller helpers', () => {
         'E:\\Game\\Project',
         [
           {
-            repositoryPath: 'e:\\game\\project\\',
+            repositoryPath: 'E:\\Game\\Project',
             authUrl: 'https://auth.example.com',
             userId: 'bound-user'
           }
@@ -269,5 +269,16 @@ describe('repository tools controller helpers', () => {
     expect(isPublishAuthenticationError(authenticationError)).toBe(true)
     expect(isPublishAuthenticationError(nameMismatchError)).toBe(false)
     expect(isPublishAuthenticationError(new Error('authentication'))).toBe(false)
+  })
+  it('never borrows the publishing account of a differently cased or spaced workspace', () => {
+    const paths = ['/workspace/Repo', '/workspace/repo', '/workspace/Repo ']
+    const bindings = paths.map((repositoryPath, index) => ({
+      repositoryPath,
+      authUrl: 'https://auth.example.com',
+      userId: `user-${index}`
+    }))
+    for (const [index, path] of paths.entries()) {
+      expect(resolvePublishAuthAccount(path, bindings, [])?.userId).toBe(`user-${index}`)
+    }
   })
 })

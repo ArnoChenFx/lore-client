@@ -2,6 +2,7 @@ import { KeyRound, LoaderCircle, LogIn, LogOut, Plus, RefreshCw, ShieldAlert, Tr
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { repositoryPathKey } from '../../../shared/lib'
 import { ControlInput, IconButton, SelectInput, TextButton, TextInput } from '../../../shared/ui'
 import type { LoreAuthIdentity, Repository, RepositoryAuthAccountBinding } from '../../../types'
 
@@ -380,11 +381,11 @@ export function AuthAccountsPanel({
               <p>{t('repositoryAccountBindingHint')}</p>
               {sortedRepositories.map((repository) => {
                 const binding = bindings.find(
-                  (candidate) => candidate.repositoryPath.toLocaleLowerCase() === repository.path.toLocaleLowerCase()
+                  (candidate) => repositoryPathKey(candidate.repositoryPath) === repositoryPathKey(repository.path)
                 )
                 const value = binding ? authIdentityKey(binding) : ''
                 return (
-                  <label key={repository.id}>
+                  <label key={repositoryPathKey(repository.path)}>
                     <span>
                       <strong>{repository.name}</strong>
                       <small>{repository.path}</small>

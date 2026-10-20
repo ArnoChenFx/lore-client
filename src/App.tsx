@@ -78,7 +78,13 @@ import {
   selectExternalDiffExecutable,
   writeConflictResolution
 } from './services/lore'
-import { changeDirectoryPathFromObjectId, changeFileObjectId, changeFilePath, readErrorMessage } from './shared/lib'
+import {
+  changeDirectoryPathFromObjectId,
+  changeFileObjectId,
+  changeFilePath,
+  readErrorMessage,
+  repositoryPathKey
+} from './shared/lib'
 import { PaneResizer } from './shared/ui'
 import type { ConflictResolutionResult } from './shared/ui'
 import type {
@@ -288,8 +294,7 @@ function App() {
   const updateRepositoryTabCustomization = useCallback(
     (repositoryPath: string, patch: RepositoryTabCustomizationPatch) => {
       const snapshot = snapshots.find(
-        (candidate) =>
-          candidate.repository.path.toLocaleLowerCase('en-US') === repositoryPath.toLocaleLowerCase('en-US')
+        (candidate) => repositoryPathKey(candidate.repository.path) === repositoryPathKey(repositoryPath)
       )
       if (!snapshot) return
       updatePreferences({

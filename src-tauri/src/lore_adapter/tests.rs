@@ -4433,3 +4433,22 @@ fn measure_status_event_volume() {
         println!("  {tag}: {count}");
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn workspace_identity_validation_preserves_real_trailing_spaces() {
+    let directory = tempfile::tempdir().unwrap();
+    let ordinary = directory.path().join("Repo");
+    let spaced = directory.path().join("Repo ");
+    fs::create_dir_all(&ordinary).unwrap();
+    fs::create_dir_all(&spaced).unwrap();
+    let expected = fs::canonicalize(&spaced).unwrap();
+    assert_eq!(
+        validate_repository_path(spaced.to_str().unwrap()).unwrap(),
+        expected
+    );
+    assert_eq!(
+        validate_existing_directory(spaced.to_str().unwrap(), "Workspace").unwrap(),
+        expected
+    );
+}

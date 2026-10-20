@@ -9,13 +9,9 @@ import {
   refreshRepositoryAuthenticationContexts,
   subscribeRemoteAuthenticationRequired
 } from '../../services/lore'
-import { readErrorMessage } from '../../shared/lib'
+import { readErrorMessage, repositoryPathKey } from '../../shared/lib'
 import type { ApplicationMode, Repository, RepositorySnapshot } from '../../types'
-import {
-  repositoryPathKey,
-  type RepositorySessionRequest,
-  type RepositorySessionRequests
-} from './repositorySessionRequests'
+import { type RepositorySessionRequest, type RepositorySessionRequests } from './repositorySessionRequests'
 
 export interface RemoteAuthenticationTarget {
   serverUrl: string

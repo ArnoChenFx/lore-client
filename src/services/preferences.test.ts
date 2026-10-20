@@ -68,7 +68,7 @@ describe('client preferences stored on disk', () => {
     updateClientPreferences({
       authAccountBindings: [
         {
-          repositoryPath: '\\\\?\\E:\\Worlds\\Lore',
+          repositoryPath: 'E:\\Worlds\\Lore',
           authUrl: 'https://auth.example.com',
           userId: 'user-1'
         },
@@ -134,10 +134,10 @@ describe('client preferences stored on disk', () => {
     expect(getClientPreferences().automaticallyCheckForUpdates).toBe(true)
   })
 
-  it('normalizes Windows extended paths and deduplicates repository tabs', () => {
+  it('deduplicates canonical Windows repository paths from the native boundary', () => {
     updateClientPreferences({
-      repositoryPaths: ['\\\\?\\E:\\Worlds\\Lore', 'E:\\Worlds\\Lore'],
-      activeRepositoryPath: '\\\\?\\E:\\Worlds\\Lore'
+      repositoryPaths: ['E:\\Worlds\\Lore', 'E:\\Worlds\\Lore'],
+      activeRepositoryPath: 'E:\\Worlds\\Lore'
     })
 
     expect(getClientPreferences()).toMatchObject({
@@ -150,7 +150,7 @@ describe('client preferences stored on disk', () => {
     updateClientPreferences({
       repositoryTabCustomizations: [
         {
-          repositoryPath: '\\\\?\\E:\\Worlds\\Lore',
+          repositoryPath: 'E:\\Worlds\\Lore',
           name: '  Environment\r\n',
           color: '#e47a3f',
           icon: 'gamepad'
@@ -313,5 +313,32 @@ describe('client preferences stored on disk', () => {
       revisionHistoryLaneMode: 'unsupported' as typeof DEFAULT_CLIENT_PREFERENCES.revisionHistoryLaneMode
     })
     expect(getClientPreferences().revisionHistoryLaneMode).toBe('flat')
+  })
+  it('keeps native workspace identities distinct in persisted tabs, accounts, and customizations', () => {
+    const paths = ['/workspace/Repo', '/workspace/repo', '/workspace/Repo ', '/workspace/A\\B', '/workspace/A/B']
+    updateClientPreferences({
+      repositoryPaths: paths,
+      activeRepositoryPath: paths[2],
+      authAccountBindings: paths.map((repositoryPath, index) => ({
+        repositoryPath,
+        authUrl: 'https://auth.example.com',
+        userId: `user-${index}`
+      })),
+      repositoryTabCustomizations: paths.map((repositoryPath, index) => ({
+        repositoryPath,
+        name: `Workspace ${index}`
+      }))
+    })
+    const preferences = getClientPreferences()
+    expect(preferences.repositoryPaths).toEqual(paths)
+    expect(preferences.activeRepositoryPath).toBe(paths[2])
+    expect(preferences.authAccountBindings.map((binding) => binding.repositoryPath)).toEqual(paths)
+    expect(preferences.repositoryTabCustomizations.map((customization) => customization.repositoryPath)).toEqual(paths)
+    updateClientPreferences({
+      repositoryPaths: [],
+      activeRepositoryPath: null,
+      authAccountBindings: [],
+      repositoryTabCustomizations: []
+    })
   })
 })

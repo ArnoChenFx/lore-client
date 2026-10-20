@@ -87,4 +87,33 @@ describe('RepositoryToolsDialog publishing account', () => {
     expect(closeButton).toBeTruthy()
     expect(closeButton).not.toContain('disabled')
   })
+
+  it('selects only the account bound to the exact native workspace path', () => {
+    const paths = ['/workspace/Repo', '/workspace/repo', '/workspace/Repo ', '/workspace/A\\B', '/workspace/A/B']
+    const baseProps = createDialogProps()
+    const authAccountBindings = paths.map((repositoryPath, index) => ({
+      repositoryPath,
+      authUrl: 'https://auth.example.com',
+      userId: `user-${index}`
+    }))
+    const publishAuthIdentities = authAccountBindings.map(({ authUrl, userId }) => ({
+      ...baseProps.publishAuthIdentities![0],
+      authUrl,
+      userId
+    }))
+
+    paths.forEach((path, index) => {
+      const html = renderToStaticMarkup(
+        <RepositoryToolsDialog
+          {...baseProps}
+          repository={{ ...baseProps.repository, path }}
+          authAccountBindings={authAccountBindings}
+          publishAuthIdentities={publishAuthIdentities}
+        />
+      )
+      const selectedAccount = html.match(/<option[^>]*value="(user-\d+)"[^>]*selected=""[^>]*>/)?.[1]
+
+      expect(selectedAccount).toBe(`user-${index}`)
+    })
+  })
 })

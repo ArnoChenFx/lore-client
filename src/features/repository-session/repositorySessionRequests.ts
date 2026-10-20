@@ -1,3 +1,5 @@
+import { repositoryPathKey } from '../../shared/lib'
+
 type RepositoryRequestKind = 'open' | 'snapshot' | 'history' | 'mutation' | 'authors'
 
 export interface RepositorySessionRequest {
@@ -20,11 +22,6 @@ interface SessionRequests {
   historyVersion: number
   mutationId: number
   mutating: boolean
-}
-
-/** Display paths already come from the native boundary; case is part of their identity. */
-export function repositoryPathKey(path: string): string {
-  return path.trim()
 }
 
 /**

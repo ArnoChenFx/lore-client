@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it, vi } from 'bun:test'
 
 import type { RemoteRepository, RepositorySnapshot, Revision } from '../../types'
+import { RepositorySessionRequests } from './repositorySessionRequests'
 
 interface HookState {
   cursor: number
@@ -536,5 +537,18 @@ describe('server directory publication races', () => {
       { useSharedStore: false },
       'queried-user'
     )
+  })
+})
+
+describe('native workspace identity preservation', () => {
+  it('keeps trailing-space workspace requests independent', () => {
+    const requests = new RepositorySessionRequests(['/workspace/Repo', '/workspace/Repo '])
+    const ordinary = requests.beginRead('/workspace/Repo', 'snapshot')!
+    const spaced = requests.beginRead('/workspace/Repo ', 'snapshot')!
+    expect(requests.isCurrent(ordinary)).toBe(true)
+    expect(requests.isCurrent(spaced)).toBe(true)
+    requests.close('/workspace/Repo ')
+    expect(requests.isCurrent(ordinary)).toBe(true)
+    expect(requests.isCurrent(spaced)).toBe(false)
   })
 })
