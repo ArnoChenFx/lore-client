@@ -3803,6 +3803,16 @@ button.sidebar__repo-mark:focus-visible {
   overflow: auto;
 }
 
+.change-list-window {
+  position: relative;
+  width: 100%;
+}
+
+.change-list-window__row {
+  position: absolute;
+  width: 100%;
+}
+
 .change-file-row {
   min-height: 36px;
   grid-template-columns:
