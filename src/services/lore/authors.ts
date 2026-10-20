@@ -1,16 +1,9 @@
 /** 修订与分支创建者的显示名解析，以及带缓存的作者名读写。 */
-import type { LoreEvent, Repository } from '../../types'
+import type { Repository } from '../../types'
 import { invokeLogged } from '../logging'
 import { runOperation } from './core'
-import { readKnownLoreLabel, readMetadataValue, readString } from './utils'
+import { readKnownLoreLabel, readString } from './utils'
 
-/**
- * 批量收集 Revision 历史中可能是 userId 的作者 identity。
- *
- * userId 由 Auth 提供方定义，客户端没有稳定正则可以区分它和普通
- * 自由文本。因此沿用上游 CLI 的做法：去重后整批交给 Auth，只消费
- * 服务端实际返回的映射。
- */
 function containsIdentityControlCharacter(value: string): boolean {
   for (const character of value) {
     const codePoint = character.codePointAt(0) ?? 0
@@ -19,126 +12,257 @@ function containsIdentityControlCharacter(value: string): boolean {
   return false
 }
 
-export function collectRevisionAuthorIdentities(events: LoreEvent[]): string[] {
-  const identities = new Set<string>()
-  let currentMetadata: Map<string, unknown> | null = null
+export interface AuthorNameResolverDependencies {
+  loadCached: (repositoryId: string, identities: readonly string[]) => Promise<ReadonlyMap<string, string>>
+  loadRemote: (repositoryPath: string, identities: readonly string[]) => Promise<ReadonlyMap<string, string>>
+  loadLocal: (repositoryPath: string, identities: readonly string[]) => Promise<ReadonlyMap<string, string>>
+  remember: (repositoryId: string, names: ReadonlyMap<string, string>) => Promise<void>
+  now: () => number
+}
 
-  /** 只提交该 Revision 最终会显示的 identity，与 `parseRevisions` 保持同一优先级。 */
-  const appendCurrentIdentity = () => {
-    if (!currentMetadata) return
-    const identity = readKnownLoreLabel(currentMetadata.get('committed-by') ?? currentMetadata.get('created-by'))
-    if (identity && identity.length <= 512 && !containsIdentityControlCharacter(identity)) {
-      identities.add(identity)
+interface AuthorNameListener {
+  identities: ReadonlySet<string>
+  onNames: (names: ReadonlyMap<string, string>) => void
+  previous: Map<string, string>
+}
+
+const AUTHOR_FRESHNESS_MS = 5 * 60_000
+const AUTHOR_RETRY_MS = 30_000
+const MAX_AUTHOR_IDENTITIES_PER_REQUEST = 1_000
+
+function validIdentity(identity: string): boolean {
+  return Boolean(readKnownLoreLabel(identity)) && identity.length <= 512 && !containsIdentityControlCharacter(identity)
+}
+
+/** Even cache and Auth responses must not introduce identities absent from this request. */
+function requestedAuthorNames(names: ReadonlyMap<string, string>, identities: readonly string[]): Map<string, string> {
+  const requested = new Set(identities)
+  const resolved = new Map<string, string>()
+  for (const [identity, value] of names) {
+    const name = value.trim()
+    if (
+      requested.has(identity) &&
+      name &&
+      name !== identity &&
+      name.length <= 512 &&
+      !containsIdentityControlCharacter(name)
+    ) {
+      resolved.set(identity, name)
+    }
+  }
+  return resolved
+}
+
+async function loadAuthAuthorNames(
+  repositoryPath: string,
+  identities: readonly string[],
+  command: 'lore_auth_user_info' | 'lore_auth_repository_local_user_info'
+): Promise<Map<string, string>> {
+  const result = await runOperation(command, { repositoryPath, userIds: identities })
+  return requestedAuthorNames(
+    new Map(
+      result.events
+        .filter((event) => event.tagName === 'authUserInfo')
+        .map((event) => [readString(event.data.id).trim(), readString(event.data.name)])
+    ),
+    identities
+  )
+}
+
+const defaultDependencies: AuthorNameResolverDependencies = {
+  loadCached: loadCachedAuthorNames,
+  loadRemote: (path, identities) => loadAuthAuthorNames(path, identities, 'lore_auth_user_info'),
+  loadLocal: (path, identities) => loadAuthAuthorNames(path, identities, 'lore_auth_repository_local_user_info'),
+  remember: rememberAuthorNames,
+  now: Date.now
+}
+
+/**
+ * The native cache key is bounded to 512 characters. Hash the durable repository
+ * and authentication scope instead of storing long paths or using an unscoped fallback.
+ */
+async function scopedCacheKey(repositoryId: string, scope: string): Promise<string | null> {
+  try {
+    if (!globalThis.crypto?.subtle) return null
+    const value = new TextEncoder().encode(JSON.stringify([repositoryId, scope]))
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', value)
+    return `author-scope-v1:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`
+  } catch {
+    return null
+  }
+}
+
+/**
+ * One owner creates this resolver for one repository/authentication scope.
+ * Cache and Auth work only enrich already-visible facts; no global names survive
+ * disposal. Each identity owns its freshness and pending request, so overlapping
+ * history pages share lookups without repeatedly querying free-form identities.
+ */
+export class RepositoryAuthorNameResolver {
+  private readonly dependencies: AuthorNameResolverDependencies
+  private readonly cacheRepositoryId: Promise<string | null>
+  private readonly names = new Map<string, string>()
+  private readonly freshUntil = new Map<string, number>()
+  private readonly inFlight = new Map<string, Promise<void>>()
+  private readonly listeners = new Set<AuthorNameListener>()
+  private disposed = false
+
+  constructor(
+    private readonly repository: Repository,
+    dependencies: Partial<AuthorNameResolverDependencies> = {},
+    cacheScope?: string
+  ) {
+    this.dependencies = { ...defaultDependencies, ...dependencies }
+    this.cacheRepositoryId =
+      cacheScope === undefined ? Promise.resolve(repository.id) : scopedCacheKey(repository.id, cacheScope)
+  }
+
+  async hydrate(
+    identityCandidates: readonly string[],
+    onNames: (names: ReadonlyMap<string, string>) => void,
+    signal?: AbortSignal
+  ): Promise<void> {
+    if (this.disposed || signal?.aborted) return
+    const identities = [...new Set(identityCandidates.filter(validIdentity))]
+    if (identities.length === 0) return
+    const listener: AuthorNameListener = { identities: new Set(identities), onNames, previous: new Map() }
+    this.listeners.add(listener)
+    let completeAbort: (() => void) | undefined
+    const abortObserver = () => {
+      this.listeners.delete(listener)
+      completeAbort?.()
+    }
+    const aborted = signal
+      ? new Promise<void>((resolve) => {
+          completeAbort = resolve
+          signal.addEventListener('abort', abortObserver, { once: true })
+        })
+      : null
+    try {
+      this.publish(listener)
+      if (signal?.aborted || this.disposed) return
+      const now = this.dependencies.now()
+      const missing = identities.filter(
+        (identity) => !this.inFlight.has(identity) && (this.freshUntil.get(identity) ?? 0) <= now
+      )
+      for (let offset = 0; offset < missing.length; offset += MAX_AUTHOR_IDENTITIES_PER_REQUEST) {
+        // History alone may contain 1,000 distinct authors; branch creators can
+        // add more. Both native Auth and cache commands enforce this batch limit.
+        const batch = missing.slice(offset, offset + MAX_AUTHOR_IDENTITIES_PER_REQUEST)
+        const task = this.refresh(batch).finally(() => {
+          for (const identity of batch) {
+            if (this.inFlight.get(identity) === task) this.inFlight.delete(identity)
+          }
+        })
+        for (const identity of batch) this.inFlight.set(identity, task)
+      }
+      const pending = Promise.all(new Set(identities.flatMap((identity) => this.inFlight.get(identity) ?? [])))
+      // Cancelling an observer releases UI closures, while the request remains
+      // shared by a later snapshot's observer until its owning scope is disposed.
+      await (aborted ? Promise.race([pending, aborted]) : pending)
+    } finally {
+      this.listeners.delete(listener)
+      signal?.removeEventListener('abort', abortObserver)
     }
   }
 
-  for (const event of events) {
-    if (event.tagName === 'revisionHistoryEntry') {
-      appendCurrentIdentity()
-      currentMetadata = new Map()
-    } else if (event.tagName === 'metadata' && currentMetadata) {
-      const key = readString(event.data.key)
-      if (key === 'committed-by' || key === 'created-by') {
-        currentMetadata.set(key, readMetadataValue(event.data.value))
+  dispose(): void {
+    this.disposed = true
+    this.listeners.clear()
+    this.names.clear()
+    this.freshUntil.clear()
+    this.inFlight.clear()
+  }
+
+  private publish(listener: AuthorNameListener): void {
+    if (this.disposed) return
+    const names = new Map<string, string>()
+    for (const identity of listener.identities) {
+      const name = this.names.get(identity)
+      if (name) names.set(identity, name)
+    }
+    if (
+      names.size === listener.previous.size &&
+      [...names].every(([identity, name]) => listener.previous.get(identity) === name)
+    ) {
+      return
+    }
+    listener.previous = names
+    listener.onNames(names)
+  }
+
+  private publishNames(): void {
+    for (const listener of this.listeners) this.publish(listener)
+  }
+
+  private async refresh(identities: readonly string[]): Promise<void> {
+    const cacheRepositoryId = await this.cacheRepositoryId
+    if (this.disposed) return
+    if (cacheRepositoryId) {
+      try {
+        const cached = requestedAuthorNames(
+          await this.dependencies.loadCached(cacheRepositoryId, identities),
+          identities
+        )
+        if (this.disposed) return
+        // A late or outdated disk cache must not replace a name already confirmed in memory.
+        for (const [identity, name] of cached) {
+          if (!this.names.has(identity)) this.names.set(identity, name)
+        }
+        this.publishNames()
+      } catch {
+        // A damaged or unavailable optional cache cannot prevent a direct Auth lookup.
       }
     }
-  }
-  appendCurrentIdentity()
-  return [...identities]
-}
-
-/**
- * Branch List 的 creator 与 Revision identity 使用同一种 Auth userId 语义。
- * 这里只收集可安全查询的真实值；缺失值和 Lore 哨兵继续交给界面本地化降级。
- */
-export function collectBranchCreatorIdentities(events: LoreEvent[]): string[] {
-  const identities = new Set<string>()
-  for (const event of events) {
-    if (event.tagName !== 'branchListEntry') continue
-    const identity = readKnownLoreLabel(event.data.creator)
-    if (identity && identity.length <= 512 && !containsIdentityControlCharacter(identity)) {
-      identities.add(identity)
+    if (this.disposed) return
+    let resolved: Map<string, string> | undefined
+    if (this.repository.online) {
+      try {
+        resolved = requestedAuthorNames(
+          await this.dependencies.loadRemote(this.repository.path, identities),
+          identities
+        )
+      } catch {
+        // The local command only exposes the repository's bound account, never a guessed identity.
+      }
+    }
+    if (this.disposed) return
+    if (!resolved) {
+      try {
+        resolved = requestedAuthorNames(await this.dependencies.loadLocal(this.repository.path, identities), identities)
+      } catch {
+        // Missing accounts and unavailable Auth leave historical identities and cached names usable.
+      }
+    }
+    if (this.disposed) return
+    const now = this.dependencies.now()
+    for (const identity of identities) {
+      const name = resolved?.get(identity)
+      if (name) this.names.set(identity, name)
+      this.freshUntil.set(identity, now + (name ? AUTHOR_FRESHNESS_MS : AUTHOR_RETRY_MS))
+    }
+    this.publishNames()
+    if (!this.disposed && cacheRepositoryId && resolved?.size) {
+      // Persisting is also optional; a slow write cannot hold the lookup's in-flight slot indefinitely.
+      void this.dependencies.remember(cacheRepositoryId, resolved).catch(() => undefined)
     }
   }
-  return [...identities]
 }
 
-/**
- * 尽力把历史 userId 解析为 Auth 用户名。
- *
- * 这是不可依赖的显示增强：未绑定账户、离线、无权限、旧服务器
- * 或部分 ID 不存在时都返回已成功的子集，调用方继续使用原 identity。
- */
+/** Compatibility for callers that explicitly need a complete optional enrichment result. */
 export async function resolveAuthorNames(
   repository: Repository,
   identityCandidates: readonly string[]
 ): Promise<Map<string, string>> {
-  const identities = [...new Set(identityCandidates)]
-  if (identities.length === 0) return new Map()
-  /*
-   * 持久化缓存是离线基线；在线或 Token Store 中的已验证资料只会覆盖它。
-   * 缓存键包含稳定 Repository ID，不能把其他仓库或 Auth 域的相同 userId 串入。
-   */
-  const resolved = await loadCachedAuthorNames(repository.id, identities)
-
-  if (repository.online) {
-    try {
-      const result = await runOperation('lore_auth_user_info', {
-        repositoryPath: repository.path,
-        userIds: identities
-      })
-      const remotelyResolved = new Map<string, string>()
-      for (const event of result.events) {
-        if (event.tagName !== 'authUserInfo') continue
-        const userId = readString(event.data.id).trim()
-        const username = readString(event.data.name).trim()
-        if (
-          userId &&
-          username &&
-          username !== userId &&
-          username.length <= 512 &&
-          !containsIdentityControlCharacter(username)
-        ) {
-          remotelyResolved.set(userId, username)
-        }
-      }
-      await rememberAuthorNames(repository.id, remotelyResolved)
-      for (const [userId, username] of remotelyResolved) resolved.set(userId, username)
-      return resolved
-    } catch {
-      // 在线状态与 Auth 服务可用性并不等价；远端查询失败后继续尝试本地绑定缓存。
-    }
-  }
-
-  /*
-   * 离线时不制造必然失败的远端操作记录；只尝试仓库当前绑定账户的本地脱敏资料。
-   * Rust 会把候选严格限制为绑定 userId，避免把当前账户名称套给其他历史作者。
-   */
+  const resolver = new RepositoryAuthorNameResolver(repository)
+  let resolved = new Map<string, string>()
   try {
-    const localResult = await runOperation('lore_auth_repository_local_user_info', {
-      repositoryPath: repository.path,
-      userIds: identities
+    await resolver.hydrate(identityCandidates, (names) => {
+      resolved = new Map(names)
     })
-    const locallyResolved = new Map<string, string>()
-    for (const event of localResult.events) {
-      if (event.tagName !== 'authUserInfo') continue
-      const userId = readString(event.data.id).trim()
-      const username = readString(event.data.name).trim()
-      if (
-        userId &&
-        username &&
-        username !== userId &&
-        username.length <= 512 &&
-        !containsIdentityControlCharacter(username)
-      ) {
-        locallyResolved.set(userId, username)
-      }
-    }
-    await rememberAuthorNames(repository.id, locallyResolved)
-    for (const [userId, username] of locallyResolved) resolved.set(userId, username)
     return resolved
-  } catch {
-    return resolved
+  } finally {
+    resolver.dispose()
   }
 }
 

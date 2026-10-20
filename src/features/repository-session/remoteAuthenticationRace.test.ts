@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'bun:test'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'bun:test'
 
 import type { RepositorySnapshot } from '../../types'
 import { RepositorySessionRequests } from './repositorySessionRequests'
@@ -21,7 +21,7 @@ const hookState = {
   cursor: 0,
   values: [] as unknown[]
 }
-const reactActual = await import('react')
+const reactActual = { ...(await import('react')) }
 
 vi.mock('react', () => ({
   ...reactActual,
@@ -50,6 +50,10 @@ vi.mock('react', () => ({
     return [hookState.values[index] as T, setValue] as const
   }
 }))
+
+afterAll(() => {
+  vi.mock('react', () => reactActual)
+})
 
 const { useRemoteAuthenticationRecovery } = await import('./remoteAuthentication')
 
@@ -122,9 +126,11 @@ describe('remote authentication refresh timing', () => {
 
     // 原生连接仍在刷新时，旧 unauthorized 快照不得重新打开恢复弹窗。
     expect(renderRecovery().authenticationTarget).toBeNull()
+    expect(requests.beginAuthorLookup('E:\\alpha')).toBeNull()
 
     releaseRefresh?.()
     await refreshPromise
     expect(renderRecovery().authenticationTarget).toBeNull()
+    expect(requests.beginAuthorLookup('E:\\alpha')).not.toBeNull()
   })
 })

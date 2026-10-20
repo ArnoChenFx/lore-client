@@ -240,23 +240,31 @@ export function useRemoteAuthenticationRecovery({
         const key = remoteServerKey(repositoryServerUrl(snapshot.repository))
         return key && (!requestedServerKey || key === requestedServerKey)
       })
+      const resumeAuthorLookups = relevantSnapshots.map((snapshot) =>
+        requests.pauseAuthorLookupsForAuthentication(snapshot.repository.path)
+      )
       const pending = new Map(
         relevantSnapshots.map((snapshot) => [
           repositoryPathKey(snapshot.repository.path),
           requests.beginRead(snapshot.repository.path, 'snapshot')
         ])
       )
-      const refreshed = await refreshRepositoryAuthenticationState(
-        relevantSnapshots,
-        (snapshot) => {
-          const request = pending.get(repositoryPathKey(snapshot.repository.path))
-          return request ? applySnapshot(request, snapshot) : false
-        },
-        {
-          refreshContexts,
-          loadSnapshot
-        }
-      )
+      let refreshed: AuthenticationRefreshResult
+      try {
+        refreshed = await refreshRepositoryAuthenticationState(
+          relevantSnapshots,
+          (snapshot) => {
+            const request = pending.get(repositoryPathKey(snapshot.repository.path))
+            return request ? applySnapshot(request, snapshot) : false
+          },
+          {
+            refreshContexts,
+            loadSnapshot
+          }
+        )
+      } finally {
+        for (const resume of resumeAuthorLookups) resume()
+      }
       /*
        * 版本号必须在原生上下文失效与快照重读之后再推进，避免账户页、服务器目录和
        * 仓库工具在同一时刻抢先读取旧上下文。
