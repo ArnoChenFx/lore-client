@@ -2037,6 +2037,7 @@ pub fn prepare_large_asset_preview_payload(
 /// `.blend` 与 Unreal 主包若存在编辑器缩略图，`data` 只包含重编码后的 PNG；若没有
 /// 缩略图则保持空载荷并继续返回结构化元数据。这样 WebView 不会收到随后被界面忽略的
 /// 整份专有资产，同时工作区与 Revision 仍复用完全相同的稳定 DTO。
+/// 已解析的归档同样只交付目录元数据，界面不需要整份归档正文。
 pub fn prepare_file_preview_payload(
     path: &Path,
     kind: &'static str,
@@ -2055,7 +2056,12 @@ pub fn prepare_file_preview_payload(
             });
         }
 
-        if kind == "asset" {
+        if kind == "asset"
+            || matches!(
+                parsed_asset.structured_preview,
+                StructuredAssetPreview::Archive { .. }
+            )
+        {
             return Ok(PreparedFilePreviewPayload {
                 mime_type: source_mime_type,
                 data: Vec::new(),
@@ -2609,6 +2615,23 @@ mod tests {
         };
         assert_eq!(entries[0].path, "maps/a.bsp");
         assert_eq!(entries[0].size, 4);
+        let payload = prepare_file_preview_payload(
+            Path::new("test.pak"),
+            "archive",
+            "application/octet-stream",
+            bytes,
+        )
+        .unwrap();
+        assert!(
+            payload.data.is_empty(),
+            "The archive body is not needed by the directory UI"
+        );
+        let Some(StructuredAssetPreview::Archive { entries, .. }) = payload.structured_preview
+        else {
+            panic!("expected archive directory in IPC payload");
+        };
+        assert_eq!(entries[0].path, "maps/a.bsp");
+        assert_eq!(entries[0].size, 4);
     }
 
     #[test]
@@ -2636,6 +2659,23 @@ mod tests {
         let preview = parse_zip_directory(&bytes).unwrap();
         let StructuredAssetPreview::Archive { entries, .. } = preview else {
             panic!("expected archive preview");
+        };
+        assert_eq!(entries[0].path, "Data/config.bin");
+        assert_eq!(entries[0].size, 4);
+        let payload = prepare_file_preview_payload(
+            Path::new("test.zip"),
+            "archive",
+            "application/zip",
+            bytes,
+        )
+        .unwrap();
+        assert!(
+            payload.data.is_empty(),
+            "The ZIP body must not cross the IPC boundary"
+        );
+        let Some(StructuredAssetPreview::Archive { entries, .. }) = payload.structured_preview
+        else {
+            panic!("expected ZIP directory in IPC payload");
         };
         assert_eq!(entries[0].path, "Data/config.bin");
         assert_eq!(entries[0].size, 4);
