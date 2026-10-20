@@ -47,7 +47,7 @@ const results = {
     logicalCpus: cpus().length,
     hostMemoryBytes: totalmem(),
     build: 'production Vite build, repository React Compiler configuration',
-    viewport: { width: 1440, height: 900, componentWidth: 720 },
+    viewport: { width: 1440, height: 900, requestedComponentWidth: 720 },
     repeats,
     maxSampledBrowserTreeRssBytes: maxRssBytes,
     warmup: 'Fresh browser/profile per measured repetition; 100-file mount and selection before each recorded fixture',
@@ -231,11 +231,30 @@ async function launchBrowser(executable, url) {
   await click('.change-file-row')
   await actionResult()
 
-  return baselineRss
+  const geometry = await cdp.evaluate(`(() => {
+    const root = document.getElementById('root').getBoundingClientRect();
+    const component = document.querySelector('.local-changes').getBoundingClientRect();
+    return {
+      rootWidth: root.width, rootHeight: root.height,
+      componentWidth: component.width, componentHeight: component.height
+    };
+  })()`)
+  return { baselineRss, geometry }
 }
 
 try {
   const executable = resolveBrowserExecutable()
+  results.metadata.cgroup = Object.fromEntries(
+    await Promise.all(
+      ['cpu.max', 'memory.max'].map(async (name) => {
+        try {
+          return [name, (await readFile(`/sys/fs/cgroup/${name}`, 'utf8')).trim()]
+        } catch {
+          return [name, null]
+        }
+      })
+    )
+  )
   results.metadata.measurementSourcesSha256 = createHash('sha256')
     .update(await readFile(fileURLToPath(import.meta.url)))
     .update(await readFile(resolve(root, 'scripts/performance/local-changes.tsx')))
@@ -276,11 +295,11 @@ try {
       const runs = []
       results.measurements.push({ mode, count, runs })
       for (let iteration = 0; iteration < repeats; iteration++) {
-        const baselineRss = await launchBrowser(executable, url)
+        const { baselineRss, geometry } = await launchBrowser(executable, url)
         peakRss = 0
         activeAttempt = { mode, count, iteration: iteration + 1, phase: 'mount' }
         const mount = await cdp.evaluate(`window.localChangesBenchmark.mount(${count}, ${JSON.stringify(mode)})`)
-        const run = { mount, browserTreeRssBeforeFixtureBytes: baselineRss }
+        const run = { mount, browserTreeRssBeforeFixtureBytes: baselineRss, geometry }
         runs.push(run)
         activeAttempt.phase = 'retained-heap'
         await cdp.send('HeapProfiler.collectGarbage')
