@@ -51,11 +51,6 @@ export function groupOverviewBranches(branches: Branch[]): OverviewBranchGroups 
   }
 }
 
-export function activeOverviewBranches(branches: Branch[]): Branch[] {
-  const { localBranches, remoteBranches } = groupOverviewBranches(branches)
-  return [...localBranches, ...remoteBranches]
-}
-
 export function BranchOverview({
   branches,
   demoMode,

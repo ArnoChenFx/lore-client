@@ -65,7 +65,7 @@ export function projectRevisionInspector({
           path: file.path,
           name: file.name,
           size: file.size ?? '—',
-          binary: Boolean(file.binary)
+          contentClassification: file.contentClassification
         }))
       : revisionFilesRevisionId === selectedRevision?.id
         ? revisionFiles

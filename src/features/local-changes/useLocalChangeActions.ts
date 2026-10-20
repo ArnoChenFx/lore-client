@@ -98,7 +98,10 @@ export function reconcileChangeSelection(
 ): ChangeSelection {
   const available = new Set(collectChangeObjectIds(files))
   const fallback =
-    files.find((file) => !file.staged && !file.binary) ?? files.find((file) => !file.staged) ?? files[0] ?? null
+    files.find((file) => !file.staged && file.contentClassification.kind !== 'binary') ??
+    files.find((file) => !file.staged) ??
+    files[0] ??
+    null
   const fallbackId = fallback ? changeFileObjectId(fallback.id) : ''
   const retained = selectedIds.filter((id) => available.has(id))
   const nextSelectedIds = retained.length > 0 ? retained : fallbackId ? [fallbackId] : []

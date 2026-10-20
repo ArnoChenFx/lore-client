@@ -166,7 +166,7 @@ describe('Lore event adapter', () => {
         status: 'modified',
         additions: 1,
         deletions: 1,
-        binary: false
+        contentClassification: { kind: 'text', source: 'loreDiff' }
       },
       {
         name: 'Legacy.uasset',
@@ -174,7 +174,7 @@ describe('Lore event adapter', () => {
         status: 'deleted',
         additions: 0,
         deletions: 0,
-        binary: true
+        contentClassification: { kind: 'binary', source: 'loreDiff' }
       },
       {
         name: 'World.gd',
@@ -182,7 +182,7 @@ describe('Lore event adapter', () => {
         status: 'added',
         additions: 1,
         deletions: 0,
-        binary: false
+        contentClassification: { kind: 'text', source: 'loreDiff' }
       }
     ])
   })
@@ -234,8 +234,7 @@ describe('Lore event adapter', () => {
         status: 'modified',
         staged: true,
         size: '4.0 KB',
-        contentClassification: { kind: 'unknown', source: 'deferred' },
-        binary: false
+        contentClassification: { kind: 'unknown', source: 'deferred' }
       })
     ])
   })

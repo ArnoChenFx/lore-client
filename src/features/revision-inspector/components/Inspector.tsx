@@ -106,7 +106,7 @@ interface FileSelectionModifiers {
 }
 
 function fileIcon(file: ChangeFile | RevisionFile) {
-  if (file.binary) {
+  if (file.contentClassification.kind === 'binary') {
     return <Binary size={14} />
   }
   if (file.name.endsWith('.json')) {
@@ -703,7 +703,7 @@ export function Inspector({
         path: file.path,
         name: file.name,
         size: file.size ?? '—',
-        binary: Boolean(file.binary)
+        contentClassification: file.contentClassification
       })),
     [files, treeFiles]
   )

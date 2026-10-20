@@ -255,7 +255,7 @@ function ChangeGroup({
             </small>
           )}
         </span>
-        {file.binary && <em>{t('binary')}</em>}
+        {file.contentClassification.kind === 'binary' && <em>{t('binary')}</em>}
         <button
           type="button"
           className="change-file-row__action"

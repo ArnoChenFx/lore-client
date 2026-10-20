@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'bun:test'
 
+import type { RepositoryFileReference, RevisionFile } from '../../../types'
 import { resolveRevisionTreeReveal } from './revisionTreeReveal'
 
 describe('Revision file tree reveal', () => {
-  const planChange = {
+  const planChange: RepositoryFileReference = {
+    contentClassification: { kind: 'unknown', source: 'deferred' },
     id: 'revision-change:plan.txt',
     path: '.',
     name: 'plan.txt'
@@ -16,12 +18,12 @@ describe('Revision file tree reveal', () => {
   })
 
   it('reveals a root file after the full tree loads', () => {
-    const planTreeFile = {
+    const planTreeFile: RevisionFile = {
       id: 'revision-tree-file:plan.txt',
       path: '.',
       name: 'plan.txt',
       size: '12 B',
-      binary: false
+      contentClassification: { kind: 'text', source: 'utf8' }
     }
 
     expect(resolveRevisionTreeReveal(true, [planTreeFile], [planChange], planChange)).toEqual({

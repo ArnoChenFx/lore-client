@@ -31,7 +31,7 @@ function createSnapshot(conflict: boolean): RepositorySnapshot {
             staged: true,
             additions: 0,
             deletions: 0,
-            binary: false,
+            contentClassification: { kind: 'text', source: 'utf8' },
             conflict: true,
             conflictUnresolved: true
           }

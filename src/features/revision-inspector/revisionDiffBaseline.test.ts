@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'bun:test'
 
-import { chooseRevisionDiffBaseline, loadRevisionDiffBaseline } from './revisionDiffBaseline'
+import type { ChangeFile } from '../../types'
+import {
+  chooseRevisionDiffBaseline,
+  loadRevisionDiffBaseline,
+  type RevisionDiffBaselineResult
+} from './revisionDiffBaseline'
 
 describe('chooseRevisionDiffBaseline', () => {
   it('selects the first nonempty parent Diff when a merge Revision has an empty first-parent Diff', () => {
@@ -17,7 +22,7 @@ describe('chooseRevisionDiffBaseline', () => {
             staged: false,
             additions: 0,
             deletions: 0,
-            binary: false
+            contentClassification: { kind: 'text', source: 'utf8' }
           }
         ]
       }
@@ -28,7 +33,7 @@ describe('chooseRevisionDiffBaseline', () => {
   })
 
   it('preserves first-parent semantics when the first parent has changes', () => {
-    const first = {
+    const first: RevisionDiffBaselineResult = {
       sourceRevision: 'first-parent',
       changes: [
         {
@@ -39,7 +44,7 @@ describe('chooseRevisionDiffBaseline', () => {
           staged: false,
           additions: 0,
           deletions: 0,
-          binary: false
+          contentClassification: { kind: 'text', source: 'utf8' }
         }
       ]
     }
@@ -64,7 +69,7 @@ describe('chooseRevisionDiffBaseline', () => {
       activeLoads += 1
       maximumActiveLoads = Math.max(maximumActiveLoads, activeLoads)
       await Promise.resolve()
-      const changes =
+      const changes: ChangeFile[] =
         sourceRevision === 'second-parent'
           ? [
               {
@@ -75,7 +80,7 @@ describe('chooseRevisionDiffBaseline', () => {
                 staged: false,
                 additions: 0,
                 deletions: 0,
-                binary: false
+                contentClassification: { kind: 'text', source: 'utf8' }
               }
             ]
           : []

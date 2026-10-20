@@ -31,7 +31,6 @@ const csvFile: ChangeFile = {
   name: 'market.csv',
   status: 'added',
   staged: false,
-  binary: false,
   contentClassification: { kind: 'text', source: 'utf8' },
   additions: 0,
   deletions: 0

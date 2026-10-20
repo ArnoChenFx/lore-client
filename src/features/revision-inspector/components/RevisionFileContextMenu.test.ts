@@ -8,6 +8,7 @@ import {
 } from './RevisionFileContextMenu'
 
 const file: ChangeFile = {
+  contentClassification: { kind: 'unknown', source: 'deferred' },
   id: 'file-1',
   path: 'Content/World/Meridian',
   name: 'GoldenHour_Profile.uasset',

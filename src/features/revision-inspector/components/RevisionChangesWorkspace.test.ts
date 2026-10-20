@@ -26,7 +26,7 @@ describe('revision change default selection', () => {
     staged: false,
     additions: 0,
     deletions: 0,
-    binary: false
+    contentClassification: { kind: 'text', source: 'utf8' }
   }
   const treeFirstChange: ChangeFile = {
     ...firstChange,

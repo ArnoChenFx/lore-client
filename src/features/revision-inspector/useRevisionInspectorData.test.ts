@@ -24,6 +24,7 @@ const revision: Revision = {
 }
 
 const change: ChangeFile = {
+  contentClassification: { kind: 'unknown', source: 'deferred' },
   id: 'change-1',
   name: 'file.ts',
   path: 'src',
@@ -38,7 +39,7 @@ const treeFile: RevisionFile = {
   name: 'file.ts',
   path: 'src',
   size: '1 KB',
-  binary: false
+  contentClassification: { kind: 'text', source: 'utf8' }
 }
 
 describe('revision inspector projection', () => {
@@ -141,7 +142,7 @@ describe('revision inspector projection', () => {
         name: 'file.ts',
         path: 'src',
         size: '—',
-        binary: false
+        contentClassification: { kind: 'unknown', source: 'deferred' }
       }
     ])
   })

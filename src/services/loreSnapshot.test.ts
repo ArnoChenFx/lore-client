@@ -594,7 +594,6 @@ describe('repository snapshot branch loading', () => {
         path: 'Scenes',
         name: 'Main.tscn',
         status: 'added',
-        binary: false,
         contentClassification: { kind: 'unknown', source: 'deferred' }
       }),
       expect.objectContaining({
@@ -602,7 +601,6 @@ describe('repository snapshot branch loading', () => {
         path: 'assets',
         name: 'hero.glb',
         status: 'renamed',
-        binary: false,
         contentClassification: { kind: 'unknown', source: 'deferred' },
         previousPath: 'assets/legacy-hero.glb'
       })

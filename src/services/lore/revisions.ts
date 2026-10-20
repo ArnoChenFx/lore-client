@@ -175,7 +175,6 @@ export async function loadRevisionChanges(
       additions: 0,
       deletions: 0,
       contentClassification,
-      binary: contentClassification.kind === 'binary',
       size: formatBytes(change.size),
       previousPath: change.sourcePath?.replaceAll('\\', '/') || undefined
     }
@@ -209,8 +208,7 @@ export async function loadRevisionFiles(repositoryPath: string, revision: string
       path: separatorIndex >= 0 ? fullPath.slice(0, separatorIndex) : '.',
       name: separatorIndex >= 0 ? fullPath.slice(separatorIndex + 1) : fullPath,
       size: formatBytes(file.size),
-      contentClassification,
-      binary: contentClassification.kind === 'binary'
+      contentClassification
     }
   })
 }
@@ -254,8 +252,7 @@ export function revisionDiffsToChangeFiles(diffs: readonly WorkingTreeDiff[]): C
        * Lore 已经按真实内容识别二进制。只要没有明确 marker，就不能再因为 `.gd`
        * 或无扩展名等未列入白名单的路径把内容隐藏；空补丁表示零字节结构变化。
        */
-      contentClassification,
-      binary: contentClassification.kind === 'binary'
+      contentClassification
     }
   })
 }
@@ -398,7 +395,6 @@ export function parseChanges(events: LoreEvent[]): ChangeFile[] {
         additions: 0,
         deletions: 0,
         contentClassification,
-        binary: contentClassification.kind === 'binary',
         size: formatBytes(readNumber(event.data.size)),
         previousPath: readString(event.data.fromPath).replaceAll('\\', '/') || undefined,
         conflict: readBoolean(event.data.flagConflict),

@@ -353,7 +353,7 @@ export const initialChanges: ChangeFile[] = [
     staged: true,
     additions: 42,
     deletions: 17,
-    binary: true,
+    contentClassification: { kind: 'binary', source: 'signature' },
     size: '2.6 MB'
   },
   {
@@ -364,11 +364,12 @@ export const initialChanges: ChangeFile[] = [
     staged: true,
     additions: 18,
     deletions: 8,
-    binary: true,
+    contentClassification: { kind: 'binary', source: 'signature' },
     size: '840 KB',
     previousPath: 'Content/World/Meridian/Lighting/Harbor_DistanceFog.uasset'
   },
   {
+    contentClassification: { kind: 'text', source: 'utf8' },
     id: 'change-3',
     path: 'Content/World/Meridian/Layers',
     name: 'Meridian_Lighting.layer.json',
@@ -385,10 +386,11 @@ export const initialChanges: ChangeFile[] = [
     staged: false,
     additions: 33,
     deletions: 15,
-    binary: true,
+    contentClassification: { kind: 'binary', source: 'signature' },
     size: '8.1 MB'
   },
   {
+    contentClassification: { kind: 'text', source: 'utf8' },
     id: 'change-5',
     path: 'Config/World',
     name: 'StreamingBudget.ini',
@@ -405,7 +407,7 @@ export const initialChanges: ChangeFile[] = [
     staged: false,
     additions: 0,
     deletions: 1,
-    binary: true,
+    contentClassification: { kind: 'binary', source: 'signature' },
     size: '1.3 MB'
   }
 ]
@@ -419,7 +421,7 @@ export const inspectorFiles: ChangeFile[] = [
     staged: true,
     additions: 88,
     deletions: 12,
-    binary: true,
+    contentClassification: { kind: 'binary', source: 'signature' },
     size: '2.6 MB'
   },
   {
@@ -430,11 +432,12 @@ export const inspectorFiles: ChangeFile[] = [
     staged: true,
     additions: 61,
     deletions: 9,
-    binary: true,
+    contentClassification: { kind: 'binary', source: 'signature' },
     size: '840 KB',
     previousPath: 'Content/World/Meridian/Lighting/Harbor_DistanceFog.uasset'
   },
   {
+    contentClassification: { kind: 'text', source: 'utf8' },
     id: 'file-3',
     path: 'Content/World/Meridian/Layers',
     name: 'Meridian_Lighting.layer.json',
@@ -444,6 +447,7 @@ export const inspectorFiles: ChangeFile[] = [
     deletions: 0
   },
   {
+    contentClassification: { kind: 'text', source: 'utf8' },
     id: 'file-4',
     path: 'Config/World',
     name: 'StreamingBudget.ini',

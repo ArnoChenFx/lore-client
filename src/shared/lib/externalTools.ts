@@ -129,11 +129,6 @@ export const DEFAULT_EXTERNAL_MERGE_TOOLS: ExternalMergeToolPreference[] = (
   ['beyondCompare', 'cursor', 'p4merge', 'vscode', 'meld'] as const
 ).map((kind) => externalToolPreset('merge', kind))
 
-/** 返回单个 Diff 工具预设，供配置测试与编辑器复用。 */
-export function externalDiffToolPreset(kind: Exclude<ExternalDiffToolKind, 'none'>): ExternalDiffToolPreference {
-  return kind === 'custom' ? createCustomExternalTool('diff') : externalToolPreset('diff', kind)
-}
-
 /** 名称、命令和对应模式必需的路径模板完整时，配置才有资格进入 Rust 探测。 */
 export function isExternalToolConfigured(tool: ExternalDiffToolPreference, mode: 'diff' | 'merge' = 'diff'): boolean {
   const template = tool.arguments.join('\n')
@@ -145,8 +140,6 @@ export function isExternalToolConfigured(tool: ExternalDiffToolPreference, mode:
     placeholders.every((placeholder) => template.includes(placeholder))
   )
 }
-
-export const isExternalDiffToolConfigured = (tool: ExternalDiffToolPreference) => isExternalToolConfigured(tool, 'diff')
 
 /** 主工具置顶，其余保持用户列表顺序。 */
 export function orderExternalTools<T extends ExternalDiffToolPreference>(tools: T[]): T[] {

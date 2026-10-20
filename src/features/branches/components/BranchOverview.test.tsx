@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import i18n from '../../../i18n'
 import type { Branch } from '../../../types'
-import { activeOverviewBranches, BranchOverview, groupOverviewBranches } from './BranchOverview'
+import { BranchOverview, groupOverviewBranches } from './BranchOverview'
 
 const currentBranch: Branch = {
   id: 'local:main',
@@ -28,10 +28,6 @@ const remoteBranch: Branch = {
 }
 
 describe('archived branch filtering in the branch overview', () => {
-  it('excludes archived branches from active pointers', () => {
-    expect(activeOverviewBranches([currentBranch, archivedBranch, remoteBranch])).toEqual([currentBranch, remoteBranch])
-  })
-
   it('groups local and remote branches and sorts each path level', () => {
     const branches: Branch[] = [
       { id: 'local:root', name: 'Alpha' },

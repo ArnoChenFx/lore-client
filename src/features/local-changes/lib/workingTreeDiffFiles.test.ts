@@ -4,6 +4,7 @@ import type { ChangeFile } from '../../../types'
 import { WorkingTreeDiffFilesError, resolveWorkingTreeDiffFiles } from './workingTreeDiffFiles'
 
 const baseFile: Omit<ChangeFile, 'status'> = {
+  contentClassification: { kind: 'unknown', source: 'deferred' },
   id: '1',
   path: 'Content',
   name: 'World.txt',

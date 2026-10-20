@@ -383,13 +383,8 @@ export interface RepositoryFileReference {
   id: string
   path: string
   name: string
-  /**
-   * 权威内容分类。旧演示夹具可能暂时缺省，此时兼容层才读取 `binary`。
-   * 新的真实后端结果不得再根据扩展名生成该字段。
-   */
-  contentClassification?: FileContentClassification
-  /** @deprecated 仅保留给旧组件与演示夹具；真实结果由 `contentClassification` 投影。 */
-  binary?: boolean
+  /** 权威三态内容分类；尚未读取正文时必须明确携带 unknown，不能按扩展名猜测。 */
+  contentClassification: FileContentClassification
   size?: string
 }
 
@@ -416,7 +411,6 @@ export interface ChangeFile extends RepositoryFileReference {
  */
 export interface RevisionFile extends RepositoryFileReference {
   size: string
-  binary: boolean
 }
 
 /** Lore `file::diff` 的稳定前端投影；`patch` 保留标准 unified diff 文本。 */
