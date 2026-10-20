@@ -109,12 +109,11 @@ export class RepositoryAuthorNameResolver {
 
   constructor(
     private readonly repository: Repository,
-    dependencies: Partial<AuthorNameResolverDependencies> = {},
-    cacheScope?: string
+    cacheScope: string,
+    dependencies: Partial<AuthorNameResolverDependencies> = {}
   ) {
     this.dependencies = { ...defaultDependencies, ...dependencies }
-    this.cacheRepositoryId =
-      cacheScope === undefined ? Promise.resolve(repository.id) : scopedCacheKey(repository.id, cacheScope)
+    this.cacheRepositoryId = scopedCacheKey(repository.id, cacheScope)
   }
 
   async hydrate(

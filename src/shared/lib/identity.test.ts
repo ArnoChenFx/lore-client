@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import {
-  formatCommitIdentity,
-  parseCommitIdentity,
-  revisionAuthorFromIdentity,
-  shouldDisplayRevisionAuthorEmail
-} from './identity'
+import { formatCommitIdentity, parseCommitIdentity, shouldDisplayRevisionAuthorEmail } from './identity'
 
 describe('Lore commit identity compatibility', () => {
   it('encodes a separate author and email into the single identity field used by Lore', () => {
@@ -13,19 +8,15 @@ describe('Lore commit identity compatibility', () => {
   })
 
   it('parses a Git-style identity into separate author text and Gravatar email', () => {
-    expect(revisionAuthorFromIdentity('YourName <yourname@Example.com>')).toEqual({
-      author: 'YourName',
+    expect(parseCommitIdentity('YourName <yourname@Example.com>')).toMatchObject({
+      name: 'YourName',
       email: 'yourname@Example.com'
     })
   })
 
   it('supports email-only and free-form identities from legacy repositories', () => {
     expect(parseCommitIdentity('legacy@example.com')).toMatchObject({ name: '', email: 'legacy@example.com' })
-    expect(revisionAuthorFromIdentity('legacy@example.com')).toEqual({
-      author: 'legacy@example.com',
-      email: 'legacy@example.com'
-    })
-    expect(revisionAuthorFromIdentity('Art Team')).toEqual({ author: 'Art Team', email: undefined })
+    expect(parseCommitIdentity('Art Team')).toEqual({ name: 'Art Team', email: '', raw: 'Art Team' })
   })
 
   it('shows a separate email line only when the author also has a distinct name', () => {

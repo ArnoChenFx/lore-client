@@ -7,7 +7,6 @@ import {
   DEFAULT_SERVER_URL,
   isAuthenticationRequiredError,
   LoreCommandClientError,
-  loreEventParsers,
   parseFileDependencies,
   parseFileLocks,
   parseMetadataEntries,
@@ -18,6 +17,22 @@ import {
   revisionDiffsToChangeFiles,
   withPatchExtension
 } from './lore'
+import { parseAuthIdentities } from './lore/auth'
+import { parseBranchDiff, parseBranchInfo, parseBranchLatest, parseBranches } from './lore/branches'
+import { parseLayers, parseLinkInfo, parseLinks } from './lore/composition'
+import { parseRepositoryConfigValue } from './lore/config'
+import { serverUrlFromRepositoryUrl } from './lore/core'
+import { parseRemoteRepositories } from './lore/remote'
+import { parseRepository } from './lore/repositories'
+import {
+  parseChanges,
+  parseFileHistory,
+  parseRevisionBisect,
+  parseRevisionFind,
+  parseRevisionInfo,
+  parseRevisions
+} from './lore/revisions'
+import { parseWorkingTreeDiffs } from './lore/workspace'
 
 const repositoryPath = 'E:\\Worlds\\RealLore'
 /** Lore 零哈希的十六进制形态；用于模拟“远端未查询”。 */
@@ -200,8 +215,8 @@ describe('Lore event adapter', () => {
       }
     ]
 
-    const repository = loreEventParsers.parseRepository(repositoryPath, events)
-    const changes = loreEventParsers.parseChanges(events)
+    const repository = parseRepository(repositoryPath, events)
+    const changes = parseChanges(events)
 
     expect(repository).toMatchObject({
       id: 'repository-id',
@@ -233,14 +248,14 @@ describe('Lore event adapter', () => {
       }
     ]
 
-    expect(loreEventParsers.parseRepository(repositoryPath, statusEvent(false, false)).remoteState).toBe('local')
+    expect(parseRepository(repositoryPath, statusEvent(false, false)).remoteState).toBe('local')
     expect(
-      loreEventParsers.parseRepository(repositoryPath, statusEvent(false, false), {
+      parseRepository(repositoryPath, statusEvent(false, false), {
         remoteUrl: 'lore://example.com/repository'
       }).remoteState
     ).toBe('offline')
     expect(
-      loreEventParsers.parseRepository(repositoryPath, statusEvent(true, false), {
+      parseRepository(repositoryPath, statusEvent(true, false), {
         remoteUrl: 'lore://example.com/repository'
       }).remoteState
     ).toBe('unauthorized')
@@ -261,7 +276,7 @@ describe('Lore event adapter', () => {
         data: { id: 'main-id', name: 'main', latest: 'remote-tip', location: 'remote' }
       }
     ]
-    const repositoryWithoutEvidence = loreEventParsers.parseRepository(
+    const repositoryWithoutEvidence = parseRepository(
       repositoryPath,
       [
         {
@@ -277,13 +292,13 @@ describe('Lore event adapter', () => {
     )
 
     expect(repositoryWithoutEvidence.currentBranchSyncState).toBe('unknown')
-    expect(loreEventParsers.parseBranches(branchEvents, repositoryWithoutEvidence)).toEqual([
+    expect(parseBranches(branchEvents, repositoryWithoutEvidence)).toEqual([
       expect.objectContaining({ name: 'main', syncState: 'unknown', current: true }),
       expect.objectContaining({ name: 'feature/a', syncState: 'local-only' }),
       expect.objectContaining({ name: 'main', syncState: 'remote', remote: true })
     ])
 
-    const repositoryWithNullMarkers = loreEventParsers.parseRepository(
+    const repositoryWithNullMarkers = parseRepository(
       repositoryPath,
       [
         {
@@ -303,8 +318,8 @@ describe('Lore event adapter', () => {
   })
 
   it('normalizes unknown branch creator sentinels while preserving real creators', () => {
-    const repository = loreEventParsers.parseRepository(repositoryPath, [])
-    const branches = loreEventParsers.parseBranches(
+    const repository = parseRepository(repositoryPath, [])
+    const branches = parseBranches(
       [
         {
           tagName: 'branchListEntry',
@@ -328,7 +343,7 @@ describe('Lore event adapter', () => {
   })
 
   it('uses exact branch IDs to distinguish local-only synced and different pointers', () => {
-    const repository = loreEventParsers.parseRepository(
+    const repository = parseRepository(
       repositoryPath,
       [
         {
@@ -342,7 +357,7 @@ describe('Lore event adapter', () => {
       ],
       { remoteUrl: 'lore://example.com' }
     )
-    const branches = loreEventParsers.parseBranches(
+    const branches = parseBranches(
       [
         {
           tagName: 'branchListEntry',
@@ -382,7 +397,7 @@ describe('Lore event adapter', () => {
   })
 
   it('projects explicit current branch status without applying it to other branches', () => {
-    const repository = loreEventParsers.parseRepository(
+    const repository = parseRepository(
       repositoryPath,
       [
         {
@@ -400,7 +415,7 @@ describe('Lore event adapter', () => {
       ],
       { remoteUrl: 'lore://example.com' }
     )
-    const branches = loreEventParsers.parseBranches(
+    const branches = parseBranches(
       [
         {
           tagName: 'branchListEntry',
@@ -438,17 +453,17 @@ describe('Lore event adapter', () => {
         data: { id: 'main-id', name: 'main', latest: 'main-tip', location: 'local', isCurrent: true }
       }
     ]
-    const onlineRepository = loreEventParsers.parseRepository(repositoryPath, status(true, true), {
+    const onlineRepository = parseRepository(repositoryPath, status(true, true), {
       remoteUrl: 'lore://example.com'
     })
-    const offlineRepository = loreEventParsers.parseRepository(repositoryPath, status(false, false), {
+    const offlineRepository = parseRepository(repositoryPath, status(false, false), {
       remoteUrl: 'lore://example.com'
     })
-    const localRepository = loreEventParsers.parseRepository(repositoryPath, status(false, false))
+    const localRepository = parseRepository(repositoryPath, status(false, false))
 
-    expect(loreEventParsers.parseBranches(currentBranch, onlineRepository)[0]?.syncState).toBe('synced')
-    expect(loreEventParsers.parseBranches(currentBranch, offlineRepository)[0]?.syncState).toBe('unavailable')
-    expect(loreEventParsers.parseBranches(currentBranch, localRepository)[0]?.syncState).toBe('local-only')
+    expect(parseBranches(currentBranch, onlineRepository)[0]?.syncState).toBe('synced')
+    expect(parseBranches(currentBranch, offlineRepository)[0]?.syncState).toBe('unavailable')
+    expect(parseBranches(currentBranch, localRepository)[0]?.syncState).toBe('local-only')
   })
 
   it('maps query and status events to one stable collaborative lock DTO', () => {
@@ -531,7 +546,7 @@ describe('Lore event adapter', () => {
   })
 
   it('keeps a newly added empty file in the change list', () => {
-    const changes = loreEventParsers.parseChanges([
+    const changes = parseChanges([
       {
         tagName: 'repositoryStatusFile',
         data: {
@@ -556,7 +571,7 @@ describe('Lore event adapter', () => {
   })
 
   it('associates metadata following a history entry with the matching revision', () => {
-    const repository = loreEventParsers.parseRepository(repositoryPath, [
+    const repository = parseRepository(repositoryPath, [
       {
         tagName: 'repositoryStatusRevision',
         data: { repository: 'repository-id', branchName: 'main', revision: 'abcdef1234567890' }
@@ -587,7 +602,7 @@ describe('Lore event adapter', () => {
       }
     ]
 
-    expect(loreEventParsers.parseRevisions(events, repository)).toEqual([
+    expect(parseRevisions(events, repository)).toEqual([
       expect.objectContaining({
         id: 'abcdef1234567890',
         shortId: 'abcdef12',
@@ -603,10 +618,8 @@ describe('Lore event adapter', () => {
   it.each([undefined, null, '', '  ', ' revision-id ', 12, ZERO_HASH])(
     'rejects invalid history identities instead of inventing an actionable revision ID: %p',
     (revision) => {
-      const repository = loreEventParsers.parseRepository(repositoryPath, [])
-      expect(() =>
-        loreEventParsers.parseRevisions([{ tagName: 'revisionHistoryEntry', data: { revision } }], repository)
-      ).toThrow(
+      const repository = parseRepository(repositoryPath, [])
+      expect(() => parseRevisions([{ tagName: 'revisionHistoryEntry', data: { revision } }], repository)).toThrow(
         expect.objectContaining({
           code: 'revision_history_invalid_identity',
           command: 'lore_revision_history'
@@ -616,14 +629,14 @@ describe('Lore event adapter', () => {
   )
 
   it('keeps raw history facts independent of the language used while loading', async () => {
-    const repository = loreEventParsers.parseRepository(repositoryPath, [])
+    const repository = parseRepository(repositoryPath, [])
     const events: LoreEvent[] = [
       { tagName: 'revisionHistoryEntry', data: { revision: 'opaque-revision-id', revisionNumber: 12 } },
       { tagName: 'metadata', data: { key: 'timestamp', value: { tagName: 'numeric', data: 1_753_392_600 } } }
     ]
-    const english = loreEventParsers.parseRevisions(events, repository)
+    const english = parseRevisions(events, repository)
     await i18n.changeLanguage('zh-CN')
-    const chinese = loreEventParsers.parseRevisions(events, repository)
+    const chinese = parseRevisions(events, repository)
 
     expect(chinese).toEqual(english)
     expect(english[0]).toMatchObject({
@@ -633,20 +646,17 @@ describe('Lore event adapter', () => {
       title: '',
       author: ''
     })
-    expect(english[0]?.description).toBeUndefined()
-    expect(english[0]?.timestamp).toBeUndefined()
-    expect(english[0]?.relativeTime).toBeUndefined()
   })
 
   it('attaches every active branch pointer to its exact latest revision', () => {
-    const repository = loreEventParsers.parseRepository(repositoryPath, [
+    const repository = parseRepository(repositoryPath, [
       {
         tagName: 'repositoryStatusRevision',
         // 工作区停在 base，但 main 指针仍在 merge-tip；两类标记必须分别附着。
         data: { repository: 'repository-id', branchName: 'main', revision: 'base' }
       }
     ])
-    const branches = loreEventParsers.parseBranches(
+    const branches = parseBranches(
       [
         {
           tagName: 'branchListEntry',
@@ -668,7 +678,7 @@ describe('Lore event adapter', () => {
       repository
     )
 
-    const revisions = loreEventParsers.parseRevisions(
+    const revisions = parseRevisions(
       [
         {
           tagName: 'revisionHistoryEntry',
@@ -697,7 +707,7 @@ describe('Lore event adapter', () => {
 
   it('normalizes branch collaboration info, protection, LATEST history, and diff events', () => {
     expect(
-      loreEventParsers.parseBranchInfo(
+      parseBranchInfo(
         [
           {
             tagName: 'branchInfo',
@@ -737,7 +747,7 @@ describe('Lore event adapter', () => {
     })
 
     expect(
-      loreEventParsers.parseBranchLatest([
+      parseBranchLatest([
         { tagName: 'branchLatestListEntry', data: { branch: 'branch-id', revision: 'latest-3' } },
         { tagName: 'branchLatestListEntry', data: { branch: 'branch-id', revision: 'latest-2' } }
       ])
@@ -747,7 +757,7 @@ describe('Lore event adapter', () => {
     ])
 
     expect(
-      loreEventParsers.parseBranchDiff(
+      parseBranchDiff(
         [
           {
             tagName: 'branchDiffChange',
@@ -780,7 +790,7 @@ describe('Lore event adapter', () => {
 
   it('normalizes Revision Info, Find, and Bisect events without leaking Lore event shapes', () => {
     expect(
-      loreEventParsers.parseRevisionInfo([
+      parseRevisionInfo([
         {
           tagName: 'revisionInfo',
           data: {
@@ -846,11 +856,11 @@ describe('Lore event adapter', () => {
       ],
       metadata: { message: 'Fix startup' }
     })
+    expect(parseRevisionFind([{ tagName: 'revisionFind', data: { signature: 'found-revision' } }])).toBe(
+      'found-revision'
+    )
     expect(
-      loreEventParsers.parseRevisionFind([{ tagName: 'revisionFind', data: { signature: 'found-revision' } }])
-    ).toBe('found-revision')
-    expect(
-      loreEventParsers.parseRevisionBisect([
+      parseRevisionBisect([
         {
           tagName: 'revisionBisect',
           data: { startRevisionNumber: 10, targetRevisionNumber: 20, endRevisionNumber: 30, done: false }
@@ -866,7 +876,7 @@ describe('Lore event adapter', () => {
 
   it('projects stored authentication identities without exposing cached tokens', () => {
     expect(
-      loreEventParsers.parseAuthIdentities([
+      parseAuthIdentities([
         {
           tagName: 'authIdentity',
           data: {
@@ -889,18 +899,18 @@ describe('Lore event adapter', () => {
         displayName: undefined
       }
     ])
-    expect(JSON.stringify(loreEventParsers.parseAuthIdentities([]))).not.toContain('token')
+    expect(JSON.stringify(parseAuthIdentities([]))).not.toContain('token')
   })
 
   it('preserves Lore Branch stack points for Revision checkout ownership', () => {
-    const repository = loreEventParsers.parseRepository(repositoryPath, [
+    const repository = parseRepository(repositoryPath, [
       {
         tagName: 'repositoryStatusRevision',
         data: { repository: 'repository-id', branchName: 'main', revision: 'merge-tip' }
       }
     ])
 
-    const parsed = loreEventParsers.parseBranches(
+    const parsed = parseBranches(
       [
         {
           tagName: 'branchListEntry',
@@ -922,13 +932,13 @@ describe('Lore event adapter', () => {
   })
 
   it('splits a Git-style history identity into display name and avatar email', () => {
-    const repository = loreEventParsers.parseRepository(repositoryPath, [
+    const repository = parseRepository(repositoryPath, [
       {
         tagName: 'repositoryStatusRevision',
         data: { repository: 'repository-id', branchName: 'main' }
       }
     ])
-    const revisions = loreEventParsers.parseRevisions(
+    const revisions = parseRevisions(
       [
         {
           tagName: 'revisionHistoryEntry',
@@ -952,14 +962,14 @@ describe('Lore event adapter', () => {
     })
   })
 
-  it('parses an Auth-resolved revision username through the shared identity rules', () => {
-    const repository = loreEventParsers.parseRepository(repositoryPath, [
+  it('preserves an Auth user ID for background name resolution', () => {
+    const repository = parseRepository(repositoryPath, [
       {
         tagName: 'repositoryStatusRevision',
         data: { repository: 'repository-id', branchName: 'main' }
       }
     ])
-    const revisions = loreEventParsers.parseRevisions(
+    const revisions = parseRevisions(
       [
         {
           tagName: 'revisionHistoryEntry',
@@ -973,26 +983,25 @@ describe('Lore event adapter', () => {
           }
         }
       ],
-      repository,
-      [],
-      new Map([['user-42', 'Arno Chen <arno@example.com>']])
+      repository
     )
 
     expect(revisions[0]).toMatchObject({
-      author: 'Arno Chen',
-      authorEmail: 'arno@example.com',
-      initials: 'A'
+      authorIdentity: 'user-42',
+      author: 'user-42',
+      authorEmail: undefined,
+      initials: 'U'
     })
   })
 
   it('does not scale Lore millisecond timestamps as seconds', () => {
-    const repository = loreEventParsers.parseRepository(repositoryPath, [
+    const repository = parseRepository(repositoryPath, [
       {
         tagName: 'repositoryStatusRevision',
         data: { repository: 'repository-id', branchName: 'main' }
       }
     ])
-    const revisions = loreEventParsers.parseRevisions(
+    const revisions = parseRevisions(
       [
         {
           tagName: 'revisionHistoryEntry',
@@ -1014,12 +1023,11 @@ describe('Lore event adapter', () => {
     )
 
     expect(revisions[0]?.committedAt).toBe(1_753_392_600_000)
-    expect(revisions[0]?.timestamp).toBeUndefined()
   })
 
   it('preserves a missing historical author instead of using the current identity or a translated label', () => {
     const repository = {
-      ...loreEventParsers.parseRepository(repositoryPath, [
+      ...parseRepository(repositoryPath, [
         {
           tagName: 'repositoryStatusRevision',
           data: { repository: 'repository-id', branchName: 'main' }
@@ -1029,7 +1037,7 @@ describe('Lore event adapter', () => {
     }
 
     expect(
-      loreEventParsers.parseRevisions(
+      parseRevisions(
         [
           {
             tagName: 'revisionHistoryEntry',
@@ -1047,7 +1055,7 @@ describe('Lore event adapter', () => {
 
   it('removes the Windows extended path prefix from displayed repository paths', () => {
     expect(
-      loreEventParsers.parseRepository('\\\\?\\E:\\Game\\godot\\projects\\godot-multi-player', [
+      parseRepository('\\\\?\\E:\\Game\\godot\\projects\\godot-multi-player', [
         {
           tagName: 'repositoryStatusRevision',
           data: { repository: 'repository-id', branchName: 'main' }
@@ -1072,8 +1080,8 @@ describe('Lore event adapter', () => {
         }
       }
     ]
-    const repository = loreEventParsers.parseRepository(repositoryPath, events)
-    const changes = loreEventParsers.parseChanges(events)
+    const repository = parseRepository(repositoryPath, events)
+    const changes = parseChanges(events)
 
     expect(repository).toMatchObject({
       conflictCount: 1,
@@ -1096,9 +1104,9 @@ describe('Lore event adapter', () => {
       }
     ]
 
-    const remoteUrl = loreEventParsers.parseRepositoryConfigValue(events, 'remote_url')
+    const remoteUrl = parseRepositoryConfigValue(events, 'remote_url')
     expect(remoteUrl).toBe('lore://192.168.11.20:41337/world')
-    expect(loreEventParsers.serverUrlFromRepositoryUrl(remoteUrl)).toBe('lore://192.168.11.20:41337')
+    expect(serverUrlFromRepositoryUrl(remoteUrl)).toBe('lore://192.168.11.20:41337')
   })
 
   it('creates the remote repository directory from server list events', () => {
@@ -1110,7 +1118,7 @@ describe('Lore event adapter', () => {
       { tagName: 'complete', data: { status: 0 } }
     ]
 
-    expect(loreEventParsers.parseRemoteRepositories(events)).toEqual([{ id: '7fcda7b9', name: 'world-building' }])
+    expect(parseRemoteRepositories(events)).toEqual([{ id: '7fcda7b9', name: 'world-building' }])
   })
 
   it('sorts remote repositories by name and identifier for a stable directory order', () => {
@@ -1120,7 +1128,7 @@ describe('Lore event adapter', () => {
       { tagName: 'repositoryListEntry', data: { id: 'id-alpha-1', name: 'Alpha' } }
     ]
 
-    expect(loreEventParsers.parseRemoteRepositories(events)).toEqual([
+    expect(parseRemoteRepositories(events)).toEqual([
       { id: 'id-alpha-1', name: 'Alpha' },
       { id: 'id-alpha-2', name: 'alpha' },
       { id: 'id-zulu', name: 'Zulu' }
@@ -1128,7 +1136,7 @@ describe('Lore event adapter', () => {
   })
 
   it('preserves archived state from Lore branch list events', () => {
-    const repository = loreEventParsers.parseRepository(repositoryPath, [
+    const repository = parseRepository(repositoryPath, [
       {
         tagName: 'repositoryStatusRevision',
         data: { repository: 'repository-id', branchName: 'main' }
@@ -1136,7 +1144,7 @@ describe('Lore event adapter', () => {
     ])
 
     expect(
-      loreEventParsers.parseBranches(
+      parseBranches(
         [
           {
             tagName: 'branchListEntry',
@@ -1210,7 +1218,7 @@ describe('Lore event adapter', () => {
       }
     ]
 
-    expect(loreEventParsers.parseLayers(events, stagedEvents)).toEqual([
+    expect(parseLayers(events, stagedEvents)).toEqual([
       expect.objectContaining({
         id: 'repository-shared:Content/Shared',
         targetPath: 'Content/Shared',
@@ -1218,7 +1226,7 @@ describe('Lore event adapter', () => {
         stagedFileCount: 3
       })
     ])
-    expect(loreEventParsers.parseLinks(events, stagedEvents)).toEqual([
+    expect(parseLinks(events, stagedEvents)).toEqual([
       expect.objectContaining({
         id: 'repository-tools:Tools',
         linkPath: 'Tools',
@@ -1251,7 +1259,7 @@ describe('Lore event adapter', () => {
       }
     ]
 
-    expect(loreEventParsers.parseLinkInfo(events)).toEqual({
+    expect(parseLinkInfo(events)).toEqual({
       linkPath: 'Tools',
       repository: 'repository-tools',
       sourcePath: 'Editor',
@@ -1286,14 +1294,14 @@ describe('Lore event adapter', () => {
       }
     ]
 
-    const details = loreEventParsers.parseLinkInfo(events)
+    const details = parseLinkInfo(events)
     expect(details?.remoteRevision).toBe('remote-latest-hash')
     expect(details?.stagedState).toBeNull()
     expect(details?.disableAutoFollow).toBe(true)
   })
 
   it('returns null when the link info event is missing', () => {
-    expect(loreEventParsers.parseLinkInfo([{ tagName: 'complete', data: { status: 0 } }])).toBeNull()
+    expect(parseLinkInfo([{ tagName: 'complete', data: { status: 0 } }])).toBeNull()
   })
 
   it('preserves irreversible remote publication stages and provides safe retry guidance', () => {
@@ -1368,7 +1376,7 @@ describe('Lore event adapter', () => {
       }
     ]
 
-    expect(loreEventParsers.parseWorkingTreeDiffs(events)).toEqual([
+    expect(parseWorkingTreeDiffs(events)).toEqual([
       {
         path: 'Source/App.tsx',
         action: 'keep',
@@ -1403,7 +1411,7 @@ describe('Lore event adapter', () => {
       }
     ]
 
-    expect(loreEventParsers.parseWorkingTreeDiffs(events)).toEqual([
+    expect(parseWorkingTreeDiffs(events)).toEqual([
       {
         path: 'Content/World/New.uasset',
         action: 'move',
@@ -1449,7 +1457,7 @@ describe('Lore event adapter', () => {
       }
     ]
 
-    expect(loreEventParsers.parseFileHistory(events)).toEqual([
+    expect(parseFileHistory(events)).toEqual([
       {
         path: 'Content/World.umap',
         fromPath: 'Content/OldWorld.umap',

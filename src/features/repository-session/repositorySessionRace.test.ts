@@ -114,18 +114,16 @@ function revision(id: string): Revision {
     id,
     shortId: id,
     title: id,
-    description: '',
+    revisionNumber: 1,
     author: 'Author',
     initials: 'A',
-    timestamp: '',
-    relativeTime: '',
+    committedAt: null,
     branchPointers: [],
     parentCount: 0,
     parentIds: [],
     filesChanged: 0,
     additions: 0,
-    deletions: 0,
-    size: ''
+    deletions: 0
   }
 }
 

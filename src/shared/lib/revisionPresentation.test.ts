@@ -61,25 +61,19 @@ describe('revision presentation', () => {
     expect(en.dateTime).toBeUndefined()
   })
 
-  it('preserves explicit legacy demo presentation and historical author facts', () => {
-    const legacy: Revision = {
+  it('preserves commit titles and historical author facts across languages', () => {
+    const titled: Revision = {
       ...revision,
-      committedAt: undefined,
-      revisionNumber: undefined,
-      title: 'Demo commit',
-      description: 'Demo description',
+      title: 'Lighting pass',
       author: 'Art Team',
-      initials: 'A',
-      timestamp: '2025-07-25 13:12',
-      relativeTime: 'demo relative time'
+      initials: 'A'
     }
-    expect(revisionPresentation(legacy, chinese)).toMatchObject({
-      title: 'Demo commit',
-      description: 'Demo description',
-      author: 'Art Team',
-      initials: 'A',
-      timestamp: '2025-07-25 13:12',
-      relativeTime: 'demo relative time'
-    })
+    for (const translate of [chinese, english]) {
+      expect(revisionPresentation(titled, translate)).toMatchObject({
+        title: 'Lighting pass',
+        author: 'Art Team',
+        initials: 'A'
+      })
+    }
   })
 })

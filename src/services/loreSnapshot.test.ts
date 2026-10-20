@@ -56,16 +56,16 @@ const {
   listRemoteRepositories,
   listRepositoryInstances,
   loadSharedStoreRegistry,
-  loreEventParsers,
   publishRepository,
   runConflictAction,
   stageMove,
   switchBranch,
   writeConflictResolution
 } = await import('./lore')
+const { parseRepository } = await import('./lore/repositories')
 
 async function hydrateAuthors(repository: Repository, identities: readonly string[]): Promise<Map<string, string>> {
-  const resolver = new RepositoryAuthorNameResolver(repository)
+  const resolver = new RepositoryAuthorNameResolver(repository, 'snapshot-test-auth-scope')
   let resolved = new Map<string, string>()
   try {
     await resolver.hydrate(identities, (names) => {
@@ -388,7 +388,7 @@ describe('repository snapshot branch loading', () => {
         if (!fallbackInvoke) throw new Error(`The test does not handle command: ${command}`)
         return fallbackInvoke(command, args)
       })
-      const repository = loreEventParsers.parseRepository('E:\\Worlds\\RealLore', repositoryStatusEvents)
+      const repository = parseRepository('E:\\Worlds\\RealLore', repositoryStatusEvents)
       const pending =
         kind === 'snapshot'
           ? loadRepositorySnapshot(repository.path).then((snapshot) => snapshot.revisions)
@@ -421,7 +421,10 @@ describe('repository snapshot branch loading', () => {
     const fallbackInvoke = invokeMock.getMockImplementation()
     invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
       if (command === 'lore_revision_author_cache_get') {
-        expect(args).toEqual({ repositoryId: 'repository-id', userIds: ['user-42'] })
+        expect(args).toEqual({
+          repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
+          userIds: ['user-42']
+        })
         return [{ userId: 'user-42', displayName: 'Cached Arno' }]
       }
       if (command === 'lore_auth_repository_local_user_info') {
@@ -674,7 +677,7 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('resolves revision user IDs in one repository-scoped Auth request and preserves unresolved identities', async () => {
-    const repository = loreEventParsers.parseRepository('E:\\Worlds\\RealLore', [
+    const repository = parseRepository('E:\\Worlds\\RealLore', [
       {
         tagName: 'repositoryStatusRevision',
         data: {
@@ -732,12 +735,15 @@ describe('repository snapshot branch loading', () => {
         }
       }
       if (command === 'lore_revision_author_cache_get') {
-        expect(args).toEqual({ repositoryId: 'repository-id', userIds: ['user-42', 'Artist Team'] })
+        expect(args).toEqual({
+          repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
+          userIds: ['user-42', 'Artist Team']
+        })
         return []
       }
       if (command === 'lore_revision_author_cache_store') {
         expect(args).toEqual({
-          repositoryId: 'repository-id',
+          repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
           authors: [{ userId: 'user-42', displayName: 'Arno Chen <arno@example.com>' }]
         })
         return null
@@ -760,7 +766,7 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('keeps revision identities when remote author resolution is unavailable', async () => {
-    const repository = loreEventParsers.parseRepository('E:\\Worlds\\RealLore', [
+    const repository = parseRepository('E:\\Worlds\\RealLore', [
       {
         tagName: 'repositoryStatusRevision',
         data: {
@@ -803,7 +809,7 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('uses only the bound local Auth profile while the repository is offline', async () => {
-    const repository = loreEventParsers.parseRepository('E:\\Worlds\\RealLore', [
+    const repository = parseRepository('E:\\Worlds\\RealLore', [
       {
         tagName: 'repositoryStatusRevision',
         data: { repository: 'repository-id', branchName: 'main', revision: 'tip' }
@@ -835,7 +841,7 @@ describe('repository snapshot branch loading', () => {
       }
       if (command === 'lore_revision_author_cache_store') {
         expect(args).toEqual({
-          repositoryId: 'repository-id',
+          repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
           authors: [{ userId: 'user-42', displayName: 'Arno Chen' }]
         })
         return null
@@ -850,7 +856,7 @@ describe('repository snapshot branch loading', () => {
   })
 
   it('uses the persistent author cache without a bound account while the repository is offline', async () => {
-    const repository = loreEventParsers.parseRepository('E:\\Worlds\\RealLore', [
+    const repository = parseRepository('E:\\Worlds\\RealLore', [
       {
         tagName: 'repositoryStatusRevision',
         data: { repository: 'repository-id', branchName: 'main', revision: 'tip' }
@@ -871,7 +877,10 @@ describe('repository snapshot branch loading', () => {
         }
       }
       if (command === 'lore_revision_author_cache_get') {
-        expect(args).toEqual({ repositoryId: 'repository-id', userIds: ['user-42'] })
+        expect(args).toEqual({
+          repositoryId: expect.stringMatching(/^author-scope-v1:[a-f0-9]{64}$/),
+          userIds: ['user-42']
+        })
         return [{ userId: 'user-42', displayName: 'Cached Author <cached@example.com>' }]
       }
       if (command === 'lore_auth_user_info') throw new Error('Offline history must not query remote Auth')

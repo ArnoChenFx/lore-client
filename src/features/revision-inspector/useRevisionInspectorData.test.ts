@@ -11,18 +11,16 @@ const revision: Revision = {
   id: 'revision-2',
   shortId: 'revision',
   title: 'Current revision',
-  description: 'Projection fixture',
+  revisionNumber: 1,
   author: 'Author',
   initials: 'AU',
-  timestamp: '2026-07-26T00:00:00.000Z',
-  relativeTime: 'now',
+  committedAt: Date.parse('2026-07-26T00:00:00.000Z'),
   branchPointers: [],
   parentCount: 1,
   parentIds: ['revision-1'],
   filesChanged: 7,
   additions: 10,
-  deletions: 4,
-  size: '1 KB'
+  deletions: 4
 }
 
 const change: ChangeFile = {

@@ -76,7 +76,6 @@ export {
   verifyRepositoryFragment,
   verifyRepositoryPath
 } from './diagnostics'
-export { loreEventParsers } from './eventParsers'
 export {
   detectExternalTools,
   openExternalDiff,

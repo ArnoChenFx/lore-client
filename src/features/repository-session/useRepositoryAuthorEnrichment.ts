@@ -39,7 +39,7 @@ export class RepositoryAuthorEnrichment {
     private readonly requests: RepositorySessionRequests,
     private readonly applyNames: ApplyAuthorNames,
     private readonly createResolver: CreateAuthorResolver = (repository, cacheScope) =>
-      new RepositoryAuthorNameResolver(repository, undefined, cacheScope)
+      new RepositoryAuthorNameResolver(repository, cacheScope)
   ) {}
 
   reconcile(

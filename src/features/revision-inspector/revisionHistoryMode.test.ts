@@ -25,18 +25,16 @@ function createRevision(id: string, parentIds: string[]): Revision {
     id,
     shortId: id,
     title: id,
-    description: '',
+    revisionNumber: 1,
     author: '测试作者',
     initials: '测',
-    timestamp: '2026-07-26 10:00',
-    relativeTime: '刚刚',
+    committedAt: Date.parse('2026-07-26T10:00Z'),
     branchPointers: [],
     parentCount: parentIds.length,
     parentIds,
     filesChanged: 0,
     additions: 0,
-    deletions: 0,
-    size: '0 B'
+    deletions: 0
   }
 }
 

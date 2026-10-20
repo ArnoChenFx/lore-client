@@ -158,11 +158,7 @@ export async function archiveBranch(
   return runOperation('lore_branch_archive', { repositoryPath, branch, includeLayers })
 }
 
-export function parseBranches(
-  events: LoreEvent[],
-  repository: Repository,
-  resolvedCreatorNames: ReadonlyMap<string, string> = new Map()
-): Branch[] {
+export function parseBranches(events: LoreEvent[], repository: Repository): Branch[] {
   const branchEntries = events.filter((event) => event.tagName === 'branchListEntry')
   const remoteLatestById = new Map<string, string>()
   for (const event of branchEntries) {
@@ -209,7 +205,7 @@ export function parseBranches(
        * Lore 会用 `unknown` / `<unknown>` 表示缺失的创建者。稳定 DTO 保持字段缺失，
        * 由组件在渲染期按当前语言显示“未知创建者”，避免泄露协议哨兵或冻结翻译。
        */
-      author: creator ? (resolvedCreatorNames.get(creator) ?? creator) : undefined,
+      author: creator || undefined,
       creatorIdentity: creator || undefined
     }
   })

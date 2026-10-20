@@ -429,12 +429,7 @@ export function parseFileHistory(events: LoreEvent[]): FileHistoryEntry[] {
     .filter((entry) => entry.path.length > 0 && entry.revision.length > 0)
 }
 
-export function parseRevisions(
-  events: LoreEvent[],
-  repository: Repository,
-  branches: Branch[] = [],
-  resolvedAuthorNames: ReadonlyMap<string, string> = new Map()
-): Revision[] {
+export function parseRevisions(events: LoreEvent[], repository: Repository, branches: Branch[] = []): Revision[] {
   type PendingRevision = {
     entry: Record<string, unknown>
     metadata: Map<string, unknown>
@@ -475,13 +470,8 @@ export function parseRevisions(
      * 形成后被修改，因此绝不能用来回填旧 Revision 的作者。
      */
     const historicalIdentity = readString(metadata.get('committed-by') ?? metadata.get('created-by'))
-    /*
-     * Auth 只会为真实 userId 返回名称；未返回的候选值必须继续使用
-     * Revision 中固化的 identity。解析后统一走 `Name <email>` / 纯 email /
-     * 自由文本规则，确保 username 携带邮箱时也能获得 Gravatar。
-     */
-    const displayIdentity = resolvedAuthorNames.get(historicalIdentity) ?? historicalIdentity
-    const { name, email } = parseCommitIdentity(displayIdentity)
+    // Auth 名称由会话后台补全；核心历史只解析提交时存下的自由文本、姓名或邮箱。
+    const { name, email } = parseCommitIdentity(historicalIdentity)
     const author = name || email
     const message = readString(metadata.get('message'))
     const parents = Array.isArray(entry.parent) ? entry.parent : []

@@ -74,18 +74,16 @@ describe('revision change default selection', () => {
       id: 'revision-2',
       shortId: 'revision',
       title: 'Empty text diff',
-      description: '',
+      revisionNumber: 1,
       author: 'Author',
       initials: 'AU',
-      timestamp: '2026-07-30T00:00:00.000Z',
-      relativeTime: 'now',
+      committedAt: Date.parse('2026-07-30T00:00:00.000Z'),
       branchPointers: [],
       parentCount: 1,
       parentIds: ['revision-1'],
       filesChanged: 1,
       additions: 0,
-      deletions: 0,
-      size: '1 KB'
+      deletions: 0
     }
     const html = renderToStaticMarkup(
       createElement(RevisionChangesWorkspace, {
@@ -117,18 +115,16 @@ describe('revision change default selection', () => {
       id: 'revision-2',
       shortId: 'revision',
       title: 'Loading diff',
-      description: '',
+      revisionNumber: 1,
       author: 'Author',
       initials: 'AU',
-      timestamp: '2026-07-30T00:00:00.000Z',
-      relativeTime: 'now',
+      committedAt: Date.parse('2026-07-30T00:00:00.000Z'),
       branchPointers: [],
       parentCount: 1,
       parentIds: ['revision-1'],
       filesChanged: 1,
       additions: 0,
-      deletions: 0,
-      size: '1 KB'
+      deletions: 0
     }
     const html = renderToStaticMarkup(
       createElement(RevisionChangesWorkspace, {
