@@ -57,7 +57,11 @@ pub struct AssetMetadataFact {
 
 /// 不含可执行内容的结构化预览；`type` 是前端判别字段。
 #[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum StructuredAssetPreview {
     Archive {
         format: String,
@@ -2433,6 +2437,54 @@ fn decode_exr_single_channel(
 mod tests {
     use super::*;
     use std::io::Write as _;
+
+    #[test]
+    fn structured_archive_ipc_uses_camel_case_fields() {
+        let mut bytes = b"GDPC".to_vec();
+        for value in [2u32, 4, 3, 0, 1] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 64]);
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+
+        let preview = parse_godot_pck(&bytes).expect("The encrypted directory header is valid");
+        let json = serde_json::to_value(preview).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "type": "archive",
+                "format": "Godot PCK 2",
+                "totalEntries": 2,
+                "truncated": true,
+                "entries": [],
+                "facts": [],
+                "warningCodes": ["godotEncryptedDirectory"]
+            }),
+            "Archive IPC must use the TypeScript contract without snake_case aliases"
+        );
+    }
+
+    #[test]
+    fn structured_asset_metadata_ipc_uses_camel_case_fields() {
+        let mut bytes = b"RSRC".to_vec();
+        for value in [0u32, 0, 4, 3, 5, 0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let preview = parse_godot_resource(&bytes).expect("The Godot resource header is valid");
+        let json = serde_json::to_value(preview).unwrap();
+        assert_eq!(json["type"], "assetMetadata");
+        assert_eq!(
+            json["warningCodes"],
+            serde_json::json!(["godotResourceHeaderOnly"])
+        );
+        assert!(json.get("warning_codes").is_none());
+        assert!(json.get("total_entries").is_none());
+        assert_eq!(
+            json["facts"][0],
+            serde_json::json!({"key": "engineVersion", "value": "4.3"})
+        );
+    }
 
     /// 记录随机读取器实际消费的字节数，确保测试不会只验证“结果正确”而漏掉整文件读取回归。
     struct CountingReader {
