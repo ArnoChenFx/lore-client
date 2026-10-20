@@ -12,12 +12,7 @@ const invokeMock = vi.fn()
 const tauriActual = { ...(await import('@tauri-apps/api/core')) }
 const reactActual = { ...(await import('react')) }
 vi.mock('@tauri-apps/api/core', () => ({ ...tauriActual, invoke: invokeMock, isTauri: () => true }))
-// This controller only needs local state and callbacks; IPC and mutation lifecycle stay real.
-vi.mock('react', () => ({
-  ...reactActual,
-  useState: <T>(initial: T | (() => T)) => [typeof initial === 'function' ? (initial as () => T)() : initial, vi.fn()],
-  useCallback: <T>(callback: T) => callback
-}))
+const { renderToStaticMarkup } = await import('react-dom/server')
 const { loadRepositorySnapshot, publishRepository, setRepositoryAuthAccountBinding, stagePaths } =
   await import('../../services/lore')
 const { useLocalChangeActions } = await import('../local-changes')
@@ -26,7 +21,6 @@ const { refreshRepositoryAuthenticationState } = await import('./remoteAuthentic
 
 afterAll(() => {
   vi.mock('@tauri-apps/api/core', () => tauriActual)
-  vi.mock('react', () => reactActual)
 })
 
 function snapshot(path: string): RepositorySnapshot {
@@ -99,24 +93,31 @@ function lifecycle(activeSnapshot: RepositorySnapshot) {
 function stageController(path: string) {
   const activeSnapshot = snapshot(path)
   const mutation = lifecycle(activeSnapshot)
-  const actions = useLocalChangeActions({
-    applicationMode: 'tauri',
-    activeSnapshot,
-    activeRepository: activeSnapshot.repository,
-    selectedRevision: null,
-    revisionDiffSource: null,
-    diffPreferences: {
-      contextLines: 3,
-      diffStyle: 'unified',
-      expandFullFile: false,
-      ignoreWhitespaceEol: false,
-      ignoreWhitespaceInline: false
-    },
-    defaultIdentity: '',
-    notify: vi.fn(),
-    runRepositoryMutation: mutation.run,
-    upsertSnapshot: vi.fn()
-  })
+  let actions!: ReturnType<typeof useLocalChangeActions>
+  // Exercise the real hook dispatcher so a previously cached controller is safe in bare Bun runs.
+  renderToStaticMarkup(
+    reactActual.createElement(function StageController() {
+      actions = useLocalChangeActions({
+        applicationMode: 'tauri',
+        activeSnapshot,
+        activeRepository: activeSnapshot.repository,
+        selectedRevision: null,
+        revisionDiffSource: null,
+        diffPreferences: {
+          contextLines: 3,
+          diffStyle: 'unified',
+          expandFullFile: false,
+          ignoreWhitespaceEol: false,
+          ignoreWhitespaceInline: false
+        },
+        defaultIdentity: '',
+        notify: vi.fn(),
+        runRepositoryMutation: mutation.run,
+        upsertSnapshot: vi.fn()
+      })
+      return null
+    })
+  )
   return { ...mutation, actions }
 }
 
