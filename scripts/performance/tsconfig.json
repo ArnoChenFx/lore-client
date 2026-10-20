@@ -3,6 +3,6 @@
   "compilerOptions": {
     "tsBuildInfoFile": "../../node_modules/.tmp/tsconfig.performance.tsbuildinfo"
   },
-  "include": ["local-changes.tsx"],
+  "include": ["local-changes.tsx", "change-list-window.tsx"],
   "exclude": []
 }
