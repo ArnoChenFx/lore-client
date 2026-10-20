@@ -397,6 +397,7 @@ function App() {
     snapshots,
     activeRepositoryId,
     unavailableRepositoryPaths,
+    requests,
     replaceRepositorySession,
     activateSnapshot,
     updatePreferences,

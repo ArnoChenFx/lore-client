@@ -1,18 +1,39 @@
-import { describe, expect, it, vi } from 'bun:test'
+import { afterAll, describe, expect, it, vi } from 'bun:test'
 
 import type { RemoteRepository, RepositorySnapshot, Revision } from '../../types'
 
 interface HookState {
   cursor: number
   values: unknown[]
+  effects?: (() => void)[]
 }
 let currentHooks: HookState
-const reactActual = await import('react')
+const reactActual = { ...(await import('react')) }
+afterAll(() => vi.mock('react', () => reactActual))
 vi.mock('react', () => ({
   ...reactActual,
   useCallback: <T>(callback: T) => callback,
   useMemo: <T>(factory: () => T) => factory(),
-  useEffect: () => undefined,
+  useEffect: (effect: () => void | (() => void), dependencies?: readonly unknown[]) => {
+    const hooks = currentHooks
+    const index = hooks.cursor++
+    const previous = hooks.values[index] as { dependencies?: readonly unknown[]; cleanup?: () => void } | undefined
+    if (!hooks.effects) {
+      hooks.values[index] = { dependencies }
+      return
+    }
+    if (
+      dependencies &&
+      previous?.dependencies &&
+      dependencies.length === previous.dependencies.length &&
+      dependencies.every((value, index) => Object.is(value, previous.dependencies![index]))
+    )
+      return
+    hooks.effects.push(() => {
+      previous?.cleanup?.()
+      hooks.values[index] = { dependencies, cleanup: effect() }
+    })
+  },
   useRef: <T>(initial: T) => {
     const hooks = currentHooks
     const index = hooks.cursor++
@@ -37,15 +58,20 @@ vi.mock('react', () => ({
 const { useRepositorySession } = await import('./useRepositorySession')
 const { useRepositoryRefresh } = await import('./useRepositoryRefresh')
 const { useRepositoryEntryController } = await import('./useRepositoryEntryController')
+const { useRepositorySessionLifecycle } = await import('./useRepositorySessionLifecycle')
 
 /** Run the real event callbacks; rendering is explicit to exercise batched events. */
-function harness<T>(hook: () => T) {
-  const hooks: HookState = { cursor: 0, values: [] }
-  return () => {
+function harness<T>(hook: () => T, withEffects = false) {
+  const hooks: HookState = { cursor: 0, values: [], effects: withEffects ? [] : undefined }
+  const render = () => {
     currentHooks = hooks
     hooks.cursor = 0
     return hook()
   }
+  render.flushEffects = () => {
+    for (const effect of hooks.effects?.splice(0) ?? []) effect()
+  }
+  return render
 }
 
 function deferred<T>() {
@@ -263,6 +289,124 @@ describe('repository publication races', () => {
     expect(render().snapshots).toHaveLength(2)
     session.removeRepositorySnapshot(first.repository.path)
     expect(render().snapshots).toEqual([second])
+  })
+})
+
+function restoreFixture() {
+  const renderSession = harness(() => useRepositorySession([]))
+  const session = renderSession()
+  const delayedRestore = deferred<RepositorySnapshot>()
+  const loadPreferences = async () => ({ repositoryPaths: ['/saved/A'], activeRepositoryPath: '/saved/A' })
+  const loadSnapshot = vi.fn(() => delayedRestore.promise)
+  let busyAction: string | null = null
+  const setBusyAction = (next: string | null | ((current: string | null) => string | null)) => {
+    busyAction = typeof next === 'function' ? next(busyAction) : next
+  }
+  const updatePreferences = vi.fn()
+  let current = session
+  const renderLifecycle = harness(() => {
+    return useRepositorySessionLifecycle({
+      applicationMode: 'tauri',
+      snapshots: current.snapshots,
+      activeRepositoryId: current.activeRepositoryId,
+      unavailableRepositoryPaths: current.unavailableRepositoryPaths,
+      requests: session.requests,
+      replaceRepositorySession: session.replaceRepositorySession,
+      activateSnapshot: session.activateRepositorySnapshot,
+      setBusyAction,
+      updatePreferences,
+      notify: vi.fn(),
+      loadPreferences,
+      loadSnapshot
+    })
+  }, true)
+  // Read the session before rendering the lifecycle so each Hook has its own slots.
+  const render = () => {
+    current = renderSession()
+    renderLifecycle()
+    renderLifecycle.flushEffects()
+  }
+  render()
+  return {
+    session,
+    renderSession,
+    render,
+    delayedRestore,
+    loadSnapshot,
+    setBusyAction,
+    busyAction: () => busyAction,
+    updatePreferences
+  }
+}
+
+/** Flush the known restore promise chain without wall-clock timers. */
+async function flushRestore() {
+  for (let index = 0; index < 8; index += 1) await Promise.resolve()
+}
+
+describe('startup restore ownership', () => {
+  it('restores and persists saved tabs when no user interaction supersedes startup', async () => {
+    const fixture = restoreFixture()
+    await flushRestore()
+    const saved = snapshot('/saved/A')
+    fixture.delayedRestore.resolve(saved)
+    await flushRestore()
+    expect(fixture.renderSession().snapshots).toEqual([saved])
+    expect(fixture.busyAction()).toBeNull()
+    fixture.render()
+    expect(fixture.updatePreferences).toHaveBeenLastCalledWith({
+      repositoryPaths: ['/saved/A'],
+      activeRepositoryPath: '/saved/A'
+    })
+  })
+
+  it.each([false, true])('does not replace a manual open (already completed: %s)', async (completed) => {
+    const fixture = restoreFixture()
+    await flushRestore()
+    expect(fixture.loadSnapshot).toHaveBeenCalledWith('/saved/A')
+    const opened = snapshot('/manual/B')
+    const request = fixture.session.requests.beginOpen(opened.repository.path)!
+    fixture.setBusyAction('openingRepository')
+    if (completed) fixture.session.applySnapshot(request, opened)
+    fixture.delayedRestore.resolve(snapshot('/saved/A'))
+    await flushRestore()
+    expect(fixture.session.requests.isCurrent(request)).toBe(true)
+    expect(fixture.busyAction()).toBe('openingRepository')
+    expect(fixture.renderSession().snapshots).toEqual(completed ? [opened] : [])
+    if (!completed) expect(fixture.session.applySnapshot(request, opened)).toBe(true)
+    fixture.session.activateRepositorySnapshot(opened)
+    fixture.render()
+    expect(fixture.updatePreferences).toHaveBeenLastCalledWith({
+      repositoryPaths: ['/manual/B'],
+      activeRepositoryPath: '/manual/B'
+    })
+  })
+
+  it('does not reopen saved tabs after a user closes all tabs', async () => {
+    const fixture = restoreFixture()
+    await flushRestore()
+    fixture.session.replaceRepositorySession([], [])
+    fixture.delayedRestore.resolve(snapshot('/saved/A'))
+    await flushRestore()
+    expect(fixture.renderSession().snapshots).toEqual([])
+    expect(fixture.busyAction()).toBeNull()
+    fixture.render()
+    expect(fixture.updatePreferences).toHaveBeenLastCalledWith({
+      repositoryPaths: [],
+      activeRepositoryPath: null
+    })
+  })
+
+  it('skips a restore invalidated before its startup microtask and still enables persistence', async () => {
+    const fixture = restoreFixture()
+    fixture.session.replaceRepositorySession([], [])
+    await flushRestore()
+    expect(fixture.loadSnapshot).not.toHaveBeenCalled()
+    fixture.render()
+    expect(fixture.updatePreferences).toHaveBeenCalledWith({
+      repositoryPaths: [],
+      activeRepositoryPath: null
+    })
   })
 })
 

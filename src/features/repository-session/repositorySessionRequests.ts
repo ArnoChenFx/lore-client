@@ -34,12 +34,14 @@ export class RepositorySessionRequests {
   private readonly sessions = new Map<string, SessionRequests>()
   private nextSession = 0
   private nextRequest = 0
+  private interactionVersion = 0
 
   constructor(paths: readonly string[]) {
     this.retain(paths)
   }
 
   retain(paths: readonly string[]) {
+    this.interactionVersion += 1
     const retained = new Set(paths.map(repositoryPathKey))
     for (const path of this.sessions.keys()) {
       if (!retained.has(path)) this.sessions.delete(path)
@@ -50,14 +52,25 @@ export class RepositorySessionRequests {
   }
 
   close(path: string) {
+    this.interactionVersion += 1
     this.sessions.delete(repositoryPathKey(path))
   }
 
   beginOpen(path: string): RepositorySessionRequest | null {
     const key = repositoryPathKey(path)
     if (this.sessions.get(key)?.mutating) return null
+    this.interactionVersion += 1
     this.createSession(key)
     return this.begin(key, 'open')
+  }
+
+  /** Startup restoration may replace the session only until the user changes it. */
+  captureRestoreIntent(): number {
+    return this.interactionVersion
+  }
+
+  isRestoreIntentCurrent(version: number): boolean {
+    return this.interactionVersion === version
   }
 
   beginRead(path: string, kind: 'snapshot' | 'history'): RepositorySessionRequest | null {
