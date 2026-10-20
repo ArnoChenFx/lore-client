@@ -14,7 +14,7 @@ import type {
   RevisionHistoryQuery,
   RevisionRevealRequest
 } from '../../../types'
-import type { AppNotify } from '../../repository-session'
+import type { AppNotify, RepositorySessionRequest, RepositorySessionRequests } from '../../repository-session'
 import { revisionHistoryQueryForLaneMode } from '../revisionHistoryMode'
 import { HistoryPanel } from './HistoryPanel'
 
@@ -24,7 +24,9 @@ interface HistoryPanelContainerProps {
   selectedId: string
   revealRequest: RevisionRevealRequest | null
   onSelectedIdChange: (revisionId: string) => void
-  onSnapshotChange: (snapshot: RepositorySnapshot) => void
+  requests: RepositorySessionRequests
+  onHistoryChange: (request: RepositorySessionRequest, revisions: Revision[]) => boolean
+  isActiveRepository: (path: string) => boolean
   onCheckout: (revision: Revision) => void
   onContextMenu: (revision: Revision, point: ContextMenuPoint) => void
   onTagSelect: (tag: LoreTag) => void
@@ -49,7 +51,9 @@ export function HistoryPanelContainer({
   selectedId,
   revealRequest,
   onSelectedIdChange,
-  onSnapshotChange,
+  requests,
+  onHistoryChange,
+  isActiveRepository,
   onCheckout,
   onContextMenu,
   onTagSelect,
@@ -60,6 +64,13 @@ export function HistoryPanelContainer({
   const [historyQuery, setHistoryQuery] = useState<RevisionHistoryQuery>(DEFAULT_HISTORY_QUERY)
   const [historyLoading, setHistoryLoading] = useState(false)
   const previousLaneMode = useRef(preferences.revisionHistoryLaneMode)
+  const queryGeneration = useRef(0)
+  useEffect(
+    () => () => {
+      queryGeneration.current += 1
+    },
+    []
+  )
 
   /** 只重读历史列表，保留工作区状态、Inspector 标签和其他仓库会话。 */
   const applyHistoryQuery = useCallback(
@@ -73,29 +84,33 @@ export function HistoryPanelContainer({
         snapshot.repository,
         preferences.revisionHistoryLaneMode
       )
+      const request = requests.beginRead(snapshot.repository.path, 'history')
+      if (!request) return
+      const generation = ++queryGeneration.current
+      const isCurrent = () => generation === queryGeneration.current && requests.isCurrent(request)
       try {
         setHistoryLoading(true)
         const revisions = await loadRevisionHistory(snapshot.repository, snapshot.branches, effectiveQuery)
-        onSnapshotChange({
-          ...snapshot,
-          revisions,
-          loadedAt: new Date().toISOString()
-        })
+        if (!isCurrent() || !onHistoryChange(request, revisions) || !isActiveRepository(request.path)) return
         setHistoryQuery(query)
         if (!revisions.some((revision) => revision.id === selectedId)) {
           onSelectedIdChange(revisions[0]?.id ?? '')
         }
       } catch (error) {
-        notify(t('unableToLoadRevisionHistory'), readErrorMessage(error), 'warning')
+        if (isCurrent() && isActiveRepository(request.path)) {
+          notify(t('unableToLoadRevisionHistory'), readErrorMessage(error), 'warning')
+        }
       } finally {
-        setHistoryLoading(false)
+        if (generation === queryGeneration.current) setHistoryLoading(false)
       }
     },
     [
       applicationMode,
       notify,
       onSelectedIdChange,
-      onSnapshotChange,
+      requests,
+      onHistoryChange,
+      isActiveRepository,
       preferences.revisionHistoryLaneMode,
       selectedId,
       snapshot

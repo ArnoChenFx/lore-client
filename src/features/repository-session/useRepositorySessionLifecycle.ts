@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 
 import { t } from '../../i18n'
 import { loadRepositorySnapshot } from '../../services/lore'
@@ -6,6 +6,7 @@ import { initializeClientPreferences } from '../../services/preferences'
 import { readErrorMessage } from '../../shared/lib'
 import type { ApplicationMode, ClientPreferences, RepositorySnapshot } from '../../types'
 import type { AppNotify } from './controllerTypes'
+import type { RepositorySessionRequests } from './repositorySessionRequests'
 import { repositorySessionKey } from './useRepositorySession'
 
 interface UseRepositorySessionLifecycleOptions {
@@ -13,11 +14,14 @@ interface UseRepositorySessionLifecycleOptions {
   snapshots: RepositorySnapshot[]
   activeRepositoryId: string
   unavailableRepositoryPaths: string[]
+  requests: RepositorySessionRequests
   replaceRepositorySession: (snapshots: RepositorySnapshot[], unavailablePaths: string[]) => void
   activateSnapshot: (snapshot: RepositorySnapshot) => void
   updatePreferences: (patch: Partial<ClientPreferences>) => void
-  setBusyAction: (action: string | null) => void
+  setBusyAction: Dispatch<SetStateAction<string | null>>
   notify: AppNotify
+  loadPreferences?: RestoreRepositorySessionOptions['loadPreferences']
+  loadSnapshot?: RestoreRepositorySessionOptions['loadSnapshot']
 }
 
 type StoredRepositorySessionPreferences = Pick<ClientPreferences, 'repositoryPaths' | 'activeRepositoryPath'>
@@ -34,6 +38,8 @@ export interface RestoredRepositorySession {
   failedPaths: string[]
 }
 
+const loadSnapshotForRestore = (repositoryPath: string) => loadRepositorySnapshot(repositoryPath, false)
+
 /** 按保存路径恢复首选仓库；路径失效时稳定回退到第一个成功快照。 */
 export function restoredActiveSnapshot(
   snapshots: RepositorySnapshot[],
@@ -45,8 +51,7 @@ export function restoredActiveSnapshot(
 /**
  * 生成会话持久化路径。
  *
- * 读取失败的旧路径必须保留，避免一次离线启动永久丢失项目标签；已恢复路径按大小写
- * 不敏感规则去重，兼容 Windows 文件系统。
+ * 读取失败的旧路径必须保留，避免一次离线启动永久丢失项目标签；路径保留原生返回的大小写。
  */
 export function repositoryPathsForPersistence(
   snapshots: RepositorySnapshot[],
@@ -54,9 +59,7 @@ export function repositoryPathsForPersistence(
 ): string[] {
   return [
     ...snapshots.map((snapshot) => snapshot.repository.path),
-    ...unavailableRepositoryPaths.filter(
-      (path) => !snapshots.some((snapshot) => snapshot.repository.path.toLocaleLowerCase() === path.toLocaleLowerCase())
-    )
+    ...unavailableRepositoryPaths.filter((path) => !snapshots.some((snapshot) => snapshot.repository.path === path))
   ]
 }
 
@@ -102,11 +105,14 @@ export function useRepositorySessionLifecycle({
   snapshots,
   activeRepositoryId,
   unavailableRepositoryPaths,
+  requests,
   replaceRepositorySession,
   activateSnapshot,
   updatePreferences,
   setBusyAction,
-  notify
+  notify,
+  loadPreferences = initializeClientPreferences,
+  loadSnapshot = loadSnapshotForRestore
 }: UseRepositorySessionLifecycleOptions) {
   const [sessionReady, setSessionReady] = useState(applicationMode === 'browser-demo')
   const restoreGeneration = useRef(0)
@@ -131,19 +137,31 @@ export function useRepositorySessionLifecycle({
     if (applicationMode !== 'tauri') return
 
     const generation = ++restoreGeneration.current
+    const restoreIntent = requests.captureRestoreIntent()
     let disposed = false
-    const isCurrent = () => !disposed && restoreGeneration.current === generation
+    const isMounted = () => !disposed && restoreGeneration.current === generation
+    const isCurrent = () => isMounted() && requests.isRestoreIntentCurrent(restoreIntent)
+    const finishRestore = () => {
+      if (!isMounted()) return
+      setSessionReady(true)
+      // A manual open can own the busy label while the obsolete restore finishes.
+      lifecycleOptions.current.setBusyAction((current) => (current === 'restoringRepositories' ? null : current))
+    }
 
     /*
      * 延迟到微任务再开始，令 StrictMode 第一次 setup 的同步 cleanup 能先使本代际失效；
      * 第二次 setup 才会真正发出偏好与仓库 IPC，避免为了开发期检查重复恢复整批仓库。
      */
     queueMicrotask(() => {
-      if (!isCurrent()) return
+      if (!isMounted()) return
+      if (!isCurrent()) {
+        finishRestore()
+        return
+      }
       lifecycleOptions.current.setBusyAction('restoringRepositories')
       void restoreRepositorySession({
-        loadPreferences: initializeClientPreferences,
-        loadSnapshot: (repositoryPath) => loadRepositorySnapshot(repositoryPath, false),
+        loadPreferences,
+        loadSnapshot,
         isCurrent
       })
         .then((result) => {
@@ -165,17 +183,13 @@ export function useRepositorySessionLifecycle({
             lifecycleOptions.current.notify(t('failedToLoadClientPreferences'), readErrorMessage(error), 'warning')
           }
         })
-        .finally(() => {
-          if (!isCurrent()) return
-          setSessionReady(true)
-          lifecycleOptions.current.setBusyAction(null)
-        })
+        .finally(finishRestore)
     })
 
     return () => {
       disposed = true
     }
-  }, [applicationMode])
+  }, [applicationMode, loadPreferences, loadSnapshot, requests])
 
   useEffect(() => {
     if (applicationMode !== 'tauri' || !sessionReady) return

@@ -27,6 +27,7 @@ interface RepositoryMutationLifecycle {
   nextView?: NavigationView
   loadSnapshot: (repositoryPath: string) => Promise<RepositorySnapshot>
   applySnapshot: (snapshot: RepositorySnapshot) => void
+  ownsActiveView?: () => boolean
   selectView: (view: NavigationView) => void
   focusConflictFile: (file: ChangeFile) => void
   conflictTitle: (snapshot: RepositorySnapshot) => string
@@ -50,6 +51,7 @@ export async function runRepositoryMutationLifecycle({
   nextView,
   loadSnapshot,
   applySnapshot,
+  ownsActiveView = () => true,
   selectView,
   focusConflictFile,
   conflictTitle,
@@ -69,7 +71,7 @@ export async function runRepositoryMutationLifecycle({
       : await loadSnapshot(activeSnapshot.repository.path)
     applySnapshot(snapshot)
     const outcome = classifyRepositoryMutationOutcome(activeSnapshot, snapshot, nextView)
-    if (outcome.nextView) selectView(outcome.nextView)
+    if (outcome.nextView && ownsActiveView()) selectView(outcome.nextView)
 
     if (outcome.kind === 'conflictStarted') {
       /*
@@ -78,7 +80,7 @@ export async function runRepositoryMutationLifecycle({
        */
       const firstConflict = snapshot.changes.find((file) => file.conflict && file.conflictUnresolved)
       const fallbackConflict = firstConflict ?? snapshot.changes.find((file) => file.conflict)
-      if (fallbackConflict) focusConflictFile(fallbackConflict)
+      if (fallbackConflict && ownsActiveView()) focusConflictFile(fallbackConflict)
 
       const conflictCount =
         snapshot.repository.unresolvedConflictCount ||

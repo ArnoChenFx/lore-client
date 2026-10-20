@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { connectRepositoryNotifications, loadRepositorySnapshot } from '../../services/lore'
 import { LatestTaskQueue } from '../../shared/lib'
 import type { LoreRepositoryNotification, RepositoryRemoteState, RepositorySnapshot } from '../../types'
+import type { RepositorySessionRequest, RepositorySessionRequests } from './repositorySessionRequests'
 
 const REFRESH_NOTIFICATION_TAGS = new Set([
   'notificationBranchCreated',
@@ -76,8 +77,10 @@ interface UseRepositoryRefreshOptions {
   networkEnabled?: boolean
   repositoryPath: string
   remoteState: RepositoryRemoteState
-  upsertSnapshot: (snapshot: RepositorySnapshot) => void
+  requests: RepositorySessionRequests
+  applySnapshot: (request: RepositorySessionRequest, snapshot: RepositorySnapshot) => boolean
   onRefreshError: (error: unknown) => void
+  loadSnapshot?: typeof loadRepositorySnapshot
 }
 
 /**
@@ -91,11 +94,13 @@ export function useRepositoryRefresh({
   networkEnabled = true,
   repositoryPath,
   remoteState,
-  upsertSnapshot,
-  onRefreshError
+  requests,
+  applySnapshot,
+  onRefreshError,
+  loadSnapshot = loadRepositorySnapshot
 }: UseRepositoryRefreshOptions) {
   const mutationInFlight = useRef(false)
-  const snapshotRefreshPaths = useRef(new Set<string>())
+  const snapshotRefreshPaths = useRef(new Map<string, RepositorySessionRequest>())
   const notificationRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const notificationConnectionQueue = useRef(new RepositoryNotificationConnectionQueue())
   const [refreshingRepositoryPaths, setRefreshingRepositoryPaths] = useState<Set<string>>(() => new Set())
@@ -118,33 +123,37 @@ export function useRepositoryRefresh({
 
   const loadAndUpsertSnapshot = useCallback(
     async (path: string, scan: boolean, reportError: boolean): Promise<RepositorySnapshot | null> => {
-      if (!enabled || !path || mutationInFlight.current || snapshotRefreshPaths.current.has(path)) {
+      const pending = snapshotRefreshPaths.current.get(path)
+      if (!enabled || !path || mutationInFlight.current || (pending && requests.isCurrent(pending))) {
         return null
       }
+      const request = requests.beginRead(path, 'snapshot')
+      if (!request) return null
 
-      snapshotRefreshPaths.current.add(path)
+      snapshotRefreshPaths.current.set(path, request)
       setRefreshingRepositoryPaths((current) => {
         const next = new Set(current)
         next.add(path)
         return next
       })
       try {
-        const snapshot = await loadRepositorySnapshot(path, scan)
-        upsertSnapshot(snapshot)
-        return snapshot
+        const snapshot = await loadSnapshot(path, scan)
+        return applySnapshot(request, snapshot) ? snapshot : null
       } catch (error) {
-        if (reportError) onRefreshError(error)
+        if (reportError && requests.isCurrent(request)) onRefreshError(error)
         return null
       } finally {
-        snapshotRefreshPaths.current.delete(path)
-        setRefreshingRepositoryPaths((current) => {
-          const next = new Set(current)
-          next.delete(path)
-          return next
-        })
+        if (snapshotRefreshPaths.current.get(path) === request) {
+          snapshotRefreshPaths.current.delete(path)
+          setRefreshingRepositoryPaths((current) => {
+            const next = new Set(current)
+            next.delete(path)
+            return next
+          })
+        }
       }
     },
-    [enabled, onRefreshError, upsertSnapshot]
+    [applySnapshot, enabled, loadSnapshot, onRefreshError, requests]
   )
 
   const refreshActiveRepositorySnapshot = useCallback(async () => {
