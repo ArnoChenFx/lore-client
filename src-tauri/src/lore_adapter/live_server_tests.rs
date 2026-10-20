@@ -92,7 +92,6 @@ impl LiveStack {
             self.server_url.clone(),
             "main".to_owned(),
             Some(user_id.to_owned()),
-            Some(true),
         ))
         .expect("publish should return a result")
     }
@@ -854,7 +853,7 @@ fn live_conflicting_edits_resolve_through_external_merge_and_push() {
 }
 
 fn status_file_paths(repository: &Path) -> Vec<String> {
-    tauri::async_runtime::block_on(lore_repository_status(text(repository), true))
+    tauri::async_runtime::block_on(lore_repository_status(text(repository)))
         .expect("status should return a result")
         .events
         .iter()

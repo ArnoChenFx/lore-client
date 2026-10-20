@@ -127,11 +127,9 @@ export async function publishRepository(
     branch,
     /*
      * Lore 0.x 通过全局 identity 在 Token Store 中定位 JWT。提交身份与认证账户
-     * 属于两套客户端语义。useAuthAccount 需要与 userId 分开传递，才能区分“旧调用
-     * 方未指定，允许 Rust 回退仓库绑定”和“用户在发布表单明确留空，强制匿名”。
+     * 属于两套客户端语义。此处始终传递本次明确选择的账户，null 表示匿名发布。
      */
-    userId: userId?.trim() || null,
-    useAuthAccount: Boolean(userId?.trim())
+    userId: userId?.trim() || null
   })
   if (result.failureStage || !result.pushed) {
     throw new LoreRepositoryPublishError(result)
@@ -236,10 +234,9 @@ export async function setSharedStoreUseAutomatically(enabled: boolean): Promise<
  * 顺序调用可以避免首次打开大型仓库时并发争用 Store；后续刷新仍会复用
  * Rust 适配层设置的短期 Store keep-alive。
  */
-export async function loadRepositorySnapshot(repositoryPath: string, scan = false): Promise<RepositorySnapshot> {
+export async function loadRepositorySnapshot(repositoryPath: string): Promise<RepositorySnapshot> {
   const status = await runOperation('lore_repository_status', {
-    repositoryPath,
-    scan
+    repositoryPath
   })
   const changes = parseChanges(status.events)
   /*

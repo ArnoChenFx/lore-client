@@ -479,9 +479,12 @@ describe('repository snapshot branch loading', () => {
     ])
   })
 
-  it('includes archived local branches in a complete snapshot request', async () => {
+  it('requests complete status and archived local branches without a scan mode', async () => {
     await loadRepositorySnapshot('E:\\Worlds\\RealLore')
 
+    expect(invokeMock).toHaveBeenCalledWith('lore_repository_status', {
+      repositoryPath: 'E:\\Worlds\\RealLore'
+    })
     expect(invokeMock).toHaveBeenCalledWith('lore_branch_list', {
       repositoryPath: 'E:\\Worlds\\RealLore',
       includeArchived: true
@@ -1035,7 +1038,7 @@ describe('repository snapshot branch loading', () => {
     expect(resolved).toEqual([])
   })
 
-  it('passes the bound authentication account when publishing a local repository', async () => {
+  it('passes the explicitly selected authentication account when publishing a local repository', async () => {
     invokeMock.mockResolvedValueOnce({
       repositoryUrl: 'lore://192.168.11.20:41337/test-new-repo',
       remoteCreated: true,
@@ -1072,12 +1075,11 @@ describe('repository snapshot branch loading', () => {
       defaultIdentity: null,
       serverUrl: 'lore://192.168.11.20:41337',
       branch: 'main',
-      userId: 'authenticated-user-id',
-      useAuthAccount: true
+      userId: 'authenticated-user-id'
     })
   })
 
-  it('explicitly disables repository binding fallback for anonymous publishing', async () => {
+  it('passes a null authentication account for anonymous publishing', async () => {
     invokeMock.mockResolvedValueOnce({
       repositoryUrl: 'lore://192.168.11.20:41337/public-repo',
       remoteCreated: true,
@@ -1113,8 +1115,7 @@ describe('repository snapshot branch loading', () => {
       defaultIdentity: null,
       serverUrl: 'lore://192.168.11.20:41337',
       branch: 'main',
-      userId: null,
-      useAuthAccount: false
+      userId: null
     })
   })
 

@@ -59,7 +59,6 @@ pub async fn lore_repository_publish(
     server_url: String,
     branch: String,
     user_id: Option<String>,
-    use_auth_account: Option<bool>,
 ) -> Result<LoreRepositoryPublishResult, LoreCommandError> {
     let user_id = validate_optional_auth_identity(user_id)?;
     run_lore_task(move || {
@@ -72,7 +71,6 @@ pub async fn lore_repository_publish(
             &server_url,
             &branch,
             user_id.as_deref(),
-            use_auth_account.unwrap_or(true),
         )
     })
     .await
@@ -124,9 +122,9 @@ pub async fn lore_repository_list(
 
 /**
  * 认证失败会以结构化 `NotAuthenticated`（FFI 码 16）终止，同步入口返回值与
- * `Complete.status` 携带具体码而不是笼统的 -1；更早的版本只在 Complete 事件的
- * 错误消息里返回 gRPC 标准描述。这里优先消费结构化码，旧文本匹配仅作为兼容
- * 兜底。服务器目录与远端 Create 共用这个边界，把它收敛为稳定 `auth_required`，
+ * `Complete.status` 携带具体码；连接失败或内部错误可能只在事件消息中包含
+ * 认证失败原因，因此也需检查带明确认证证据的文本。服务器目录与远端 Create
+ * 共用这个边界，把它收敛为稳定 `auth_required`，
  * 让前端安全地启动交互登录并重试。
  */
 pub(super) fn operation_requires_authentication(result: &LoreOperationResult) -> bool {
@@ -1169,11 +1167,8 @@ fn run_read_only_repository_status(
 #[tauri::command]
 pub async fn lore_repository_status(
     repository_path: String,
-    scan: bool,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     run_lore_task(move || {
-        // 保留 `scan` 形参名称维持 Tauri IPC 契约；完整快照现在无条件执行只读扫描。
-        let _scan_requested = scan;
         let globals = global_args(&repository_path)?;
         /*
          * 必须与 Lore 顶层调用使用同一套路径清理。Windows `canonicalize` 产生的
@@ -1198,9 +1193,9 @@ pub async fn lore_repository_status(
              * Lore 自身的 Filter、Layer、Link 与内容比较规则，但只读 RepositoryContext
              * 没有写令牌，Status 结束时无法持久化临时 dirty state。
              *
-             * IPC 暂时保留旧 `scan` 参数以兼容前端和外部调用方，但仓库快照的契约
-             * 是完整快照，因此读路径始终扫描。若将来需要仅刷新远端元数据，应新增
-             * 不包含 `changes` 的独立 DTO，不能用残缺 Status 冒充完整快照。
+             * 仓库快照的契约是完整快照，因此读路径始终扫描。若将来需要仅刷新
+             * 远端元数据，应新增不包含 `changes` 的独立 DTO，不能用残缺 Status
+             * 冒充完整快照。
              */
             run_read_only_repository_status(validated_repository_path, globals, callback)
         })?;

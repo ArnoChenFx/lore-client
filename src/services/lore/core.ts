@@ -127,10 +127,7 @@ export function getApplicationMode(): 'tauri' | 'browser-demo' {
 export async function getLoreRuntimeInfo(): Promise<LoreRuntimeInfo> {
   if (!isTauri()) {
     return {
-      application: 'Lore Client',
-      available: false,
       integrationMode: 'browser-demo',
-      loreCoreStatus: 'preview-only',
       libraryVersion: '0.8.6',
       sourceRevision: 'demo'
     }

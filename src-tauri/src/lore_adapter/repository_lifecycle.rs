@@ -129,7 +129,6 @@ pub(super) fn publish_repository(
     server_url: &str,
     branch: &str,
     user_id: Option<&str>,
-    use_auth_account: bool,
 ) -> Result<LoreRepositoryPublishResult, LoreCommandError> {
     let repository_path = validate_repository_path(repository_path)?;
     let repository_name = validate_repository_name(repository_name)?;
@@ -144,13 +143,10 @@ pub(super) fn publish_repository(
         .or(normalize_identity(default_identity.unwrap_or_default())?);
     /*
      * Lore 0.x 的 GlobalArgs.identity 在联网操作中是 Token Store 的 userId，
-     * 不能复用仓库提交身份。显式参数用于首次发布；Rust 内存绑定作为旧调用方兼容回退。
+     * 不能复用仓库提交身份。本次发布只使用显式账户；未选择账户时保持匿名，
+     * 不读取仓库绑定，以免覆盖用户在发布表单中的选择。
      */
-    let auth_identity = resolve_publish_auth_identity(
-        user_id,
-        bound_auth_identity(&repository_path)?.as_deref(),
-        use_auth_account,
-    );
+    let auth_identity = user_id.unwrap_or_default().to_owned();
 
     /*
      * Create 之前先按稳定 Repository ID 查询服务器。发布的前置阶段可能已在上次尝试
@@ -342,25 +338,6 @@ pub(super) fn publish_repository(
         failure_code: None,
         failure_message: None,
     })
-}
-
-/// 解析一次发布实际使用的 Token Store 身份。
-///
-/// 新前端会显式传入 `use_auth_account = false` 表示用户选择“不使用账户”，此时即使
-/// 仓库已有持久绑定也必须返回空身份。未升级的调用方缺少该字段时由命令边界传入
-/// `true`，继续兼容原有“显式 userId > 仓库绑定 > 匿名”的解析顺序。
-pub(super) fn resolve_publish_auth_identity(
-    user_id: Option<&str>,
-    bound_user_id: Option<&str>,
-    use_auth_account: bool,
-) -> String {
-    if !use_auth_account {
-        return String::new();
-    }
-    user_id
-        .or(bound_user_id)
-        .map(str::to_owned)
-        .unwrap_or_default()
 }
 
 /// 从只读服务器目录中查找与本地稳定 ID 相同的远端仓库名称。

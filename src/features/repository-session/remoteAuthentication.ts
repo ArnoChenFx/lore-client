@@ -29,7 +29,7 @@ export interface AuthenticationRefreshResult {
 
 interface AuthenticationRefreshDependencies {
   refreshContexts: (repositoryPaths: string[]) => Promise<void>
-  loadSnapshot: (repositoryPath: string, includeChanges: boolean) => Promise<RepositorySnapshot>
+  loadSnapshot: (repositoryPath: string) => Promise<RepositorySnapshot>
 }
 
 interface UseRemoteAuthenticationRecoveryOptions {
@@ -179,7 +179,7 @@ export async function refreshRepositoryAuthenticationState(
     // 继续读取真实 Status，由各仓库的新快照明确呈现仍未恢复的状态。
   }
   const results = await Promise.allSettled(
-    snapshots.map((snapshot) => dependencies.loadSnapshot(snapshot.repository.path, false))
+    snapshots.map((snapshot) => dependencies.loadSnapshot(snapshot.repository.path))
   )
   const refreshedSnapshots: RepositorySnapshot[] = []
   let failedCount = 0

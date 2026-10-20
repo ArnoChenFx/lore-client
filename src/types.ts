@@ -605,10 +605,7 @@ export interface ApplicationLogInfo {
 }
 
 export interface LoreRuntimeInfo {
-  application: string
-  available: boolean
   integrationMode: string
-  loreCoreStatus: string
   libraryVersion: string
   sourceRevision: string
 }

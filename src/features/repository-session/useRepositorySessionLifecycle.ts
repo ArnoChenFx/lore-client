@@ -38,8 +38,6 @@ export interface RestoredRepositorySession {
   failedPaths: string[]
 }
 
-const loadSnapshotForRestore = (repositoryPath: string) => loadRepositorySnapshot(repositoryPath, false)
-
 /** 按保存路径恢复首选仓库；路径失效时稳定回退到第一个成功快照。 */
 export function restoredActiveSnapshot(
   snapshots: RepositorySnapshot[],
@@ -112,7 +110,7 @@ export function useRepositorySessionLifecycle({
   setBusyAction,
   notify,
   loadPreferences = initializeClientPreferences,
-  loadSnapshot = loadSnapshotForRestore
+  loadSnapshot = loadRepositorySnapshot
 }: UseRepositorySessionLifecycleOptions) {
   const [sessionReady, setSessionReady] = useState(applicationMode === 'browser-demo')
   const restoreGeneration = useRef(0)

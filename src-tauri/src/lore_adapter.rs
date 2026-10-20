@@ -327,10 +327,7 @@ pub const LORE_SOURCE_REVISION: &str = env!("LORE_SOURCE_REVISION");
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoreRuntimeInfo {
-    pub application: &'static str,
-    pub available: bool,
     pub integration_mode: &'static str,
-    pub lore_core_status: &'static str,
     pub library_version: String,
     pub source_revision: &'static str,
 }
