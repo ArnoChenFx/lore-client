@@ -10,7 +10,7 @@ This guide is the shortest path from a fresh checkout to a validated contributio
 
 Install:
 
-- Bun 1.4.3 (the version used by CI).
+- The latest stable Bun release (CI uses `bun-version: latest`).
 - The stable Rust toolchain with Cargo.
 - Git LFS 3.x.
 - The platform dependencies required by Tauri: WebView2 and Windows build tools on Windows, WebKitGTK 4.1 development packages on Linux, or Xcode Command Line Tools on macOS.
@@ -63,7 +63,7 @@ bun tauri build --debug --no-bundle
 
 Do not commit generated dependencies, build output, Rust targets, temporary browser profiles, or generated analysis directories.
 
-The `bun run test` script enables Bun's `--isolate` mode so module mocks and global state do not leak across test files. Bun 1.4.3 does not expose this setting in `bunfig.toml`; use the script in local development and CI.
+The `bun run test` script enables Bun's `--isolate` mode so module mocks and global state do not leak across test files. Use this script in local development and CI to apply the same isolation settings.
 
 ## Common development tasks
 

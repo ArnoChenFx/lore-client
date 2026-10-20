@@ -1,6 +1,6 @@
 # Bun 测试运行器配置（项目交付命令为 `bun run test`）。
 [test]
-# Bun 1.4.3 的 bunfig 不支持 test.isolate；由 package.json 的 --isolate 隔离模块替身。
+# 由 package.json 的 --isolate 隔离模块替身，本地与 CI 均使用相同测试入口。
 # 每个测试文件执行前先完成 i18n 初始化，保证组件测试与生产环境使用同一语言实例。
 preload = ["./src/test/setup.ts"]
 # vendored anti-slop 插件的自测文件不属于本项目测试集。

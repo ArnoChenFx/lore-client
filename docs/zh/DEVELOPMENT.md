@@ -10,7 +10,7 @@
 
 请安装：
 
-- Bun 1.4.3（与 CI 使用的版本一致）。
+- Bun 最新稳定版（CI 使用 `bun-version: latest`）。
 - Rust stable 工具链与 Cargo。
 - Git LFS 3.x。
 - Tauri 所需的平台依赖：Windows 使用 WebView2 与 Windows 构建工具，Linux 使用 WebKitGTK 4.1 开发包，macOS 使用 Xcode Command Line Tools。
@@ -63,7 +63,7 @@ bun tauri build --debug --no-bundle
 
 不得提交生成的依赖、构建产物、Rust target、临时浏览器配置或生成的分析目录。
 
-`bun run test` 使用 Bun 的 `--isolate` 模式，隔离各测试文件的模块替身与全局状态。Bun 1.4.3 的 `bunfig.toml` 不支持此设置，本地开发与 CI 均使用该脚本。
+`bun run test` 使用 Bun 的 `--isolate` 模式，隔离各测试文件的模块替身与全局状态。本地开发与 CI 均使用该脚本，以应用相同的隔离设置。
 
 ## 常见开发任务
 
