@@ -10,6 +10,7 @@ use super::*;
 /// 结果，再通过危险确认调用本入口，Rust 边界仍会重新校验路径。
 #[tauri::command]
 pub async fn lore_repository_verify(
+    operation_context: OperationContext,
     repository_path: String,
     path: Option<String>,
     heal: Option<bool>,
@@ -23,7 +24,7 @@ pub async fn lore_repository_verify(
             .replace('\\', "/")
     };
     let heal = heal.unwrap_or(false);
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation(
             if heal {
@@ -49,6 +50,7 @@ pub async fn lore_repository_verify(
 /// 验证一个明确 Fragment；hash/context 仍由 Lore 解析，长度和控制字符先在 IPC 边界拒绝。
 #[tauri::command]
 pub async fn lore_repository_verify_fragment(
+    operation_context: OperationContext,
     repository_path: String,
     hash: String,
     context: Option<String>,
@@ -67,7 +69,7 @@ pub async fn lore_repository_verify_fragment(
             "Fragment hash or context is empty, too long, or contains control characters",
         ));
     }
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("repository.verify-fragment", move |callback| {
             lore::runtime().block_on(lore::repository::verify_fragment(
@@ -87,6 +89,7 @@ pub async fn lore_repository_verify_fragment(
 /// 输出受深度限制的 Repository State 诊断事件，不读取或返回文件内容。
 #[tauri::command]
 pub async fn lore_repository_dump(
+    operation_context: OperationContext,
     repository_path: String,
     revision: Option<String>,
     path: Option<String>,
@@ -105,7 +108,7 @@ pub async fn lore_repository_dump(
             .replace('\\', "/")
     };
     let max_depth = max_depth.unwrap_or(4).clamp(1, 32);
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("repository.dump", move |callback| {
             lore::runtime().block_on(lore::repository::dump(
@@ -125,9 +128,10 @@ pub async fn lore_repository_dump(
 /// 列出 Lore 记录的全部本地 Instance；路径是否陈旧由 Core 自己判定。
 #[tauri::command]
 pub async fn lore_repository_instance_list(
+    operation_context: OperationContext,
     repository_path: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("repository.instance-list", move |callback| {
             lore::runtime().block_on(lore::repository::instance_list(
@@ -143,9 +147,10 @@ pub async fn lore_repository_instance_list(
 /// 清理已不存在路径对应的 Instance；前端必须先 List 并对精确陈旧集合进行确认。
 #[tauri::command]
 pub async fn lore_repository_instance_prune(
+    operation_context: OperationContext,
     repository_path: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("repository.instance-prune", move |callback| {
             lore::runtime().block_on(lore::repository::instance_prune(
@@ -161,9 +166,10 @@ pub async fn lore_repository_instance_prune(
 /// 把当前 Instance 的记录路径更新为当前工作目录，不允许前端指定任意替代路径。
 #[tauri::command]
 pub async fn lore_repository_instance_update_path(
+    operation_context: OperationContext,
     repository_path: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("repository.instance-update-path", move |callback| {
             lore::runtime().block_on(lore::repository::repository_update_path(
@@ -179,13 +185,14 @@ pub async fn lore_repository_instance_update_path(
 /// 读取 Clone 前的远端 Repository 说明、默认 Branch、创建者与创建时间。
 #[tauri::command]
 pub async fn lore_repository_info_remote(
+    operation_context: OperationContext,
     server_url: String,
     repository_name: String,
     user_id: Option<String>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let repository_url = build_repository_url(&server_url, &repository_name)?;
     let user_id = validate_optional_auth_identity(user_id)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = LoreGlobalArgs {
             identity: user_id.unwrap_or_default().into(),
             ..Default::default()
@@ -206,9 +213,10 @@ pub async fn lore_repository_info_remote(
 /// 回收本地 Store 中未被引用的数据。
 #[tauri::command]
 pub async fn lore_repository_gc(
+    operation_context: OperationContext,
     repository_path: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("repository.gc", move |callback| {
             lore::runtime().block_on(lore::repository::gc(

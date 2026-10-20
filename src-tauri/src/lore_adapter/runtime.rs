@@ -31,19 +31,40 @@ pub(super) fn resolve_commit_identity(
 
 /// 将可能较重的 Lore 调用移出 Tauri IPC 执行线程。
 pub(super) async fn run_lore_task<T>(
+    operation_context: OperationContext,
     task: impl FnOnce() -> Result<T, LoreCommandError> + Send + 'static,
 ) -> Result<T, LoreCommandError>
 where
     T: Send + 'static,
 {
-    tauri::async_runtime::spawn_blocking(task)
-        .await
-        .map_err(|error| {
-            LoreCommandError::new(
-                "lore_task_join_failed",
-                format!("The Lore background task did not complete: {error}"),
-            )
-        })?
+    operation_context.validate()?;
+    let join_context = operation_context.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let context = operation_context.validate_workspace()?;
+        let _scope = OperationContextScope::enter(context.clone());
+        let result = task();
+        if let Err(error) = &result {
+            log::debug!(
+                "Lore request failed requestId={:?} workspaceKey={:?} code={:?}",
+                context.request_id,
+                context.workspace_key,
+                error.code
+            );
+        }
+        result
+    })
+    .await
+    .map_err(|error| {
+        log::error!(
+            "Lore request join failed requestId={:?} workspaceKey={:?}",
+            join_context.request_id,
+            join_context.workspace_key
+        );
+        LoreCommandError::new(
+            "lore_task_join_failed",
+            format!("The Lore background task did not complete: {error}"),
+        )
+    })?
 }
 
 /**
@@ -54,12 +75,14 @@ where
  * 保证不同面板或未来调用方也不能把多个数百 MiB 解码峰值叠加起来。
  */
 pub(super) async fn run_heavy_lore_task<T>(
+    operation_context: OperationContext,
     lane: &'static HeavyReadLane,
     task: impl FnOnce() -> Result<T, LoreCommandError> + Send + 'static,
 ) -> Result<T, LoreCommandError>
 where
     T: Send + 'static,
 {
+    operation_context.validate()?;
     let ticket = lane.reserve();
     let _permit = HEAVY_READ_LOCK
         .get_or_init(|| tauri::async_runtime::Mutex::new(()))
@@ -77,7 +100,7 @@ where
         ));
     }
 
-    run_lore_task(task).await
+    run_lore_task(operation_context, task).await
 }
 
 /**
@@ -88,15 +111,17 @@ where
  * 等待 Lore 内部资源。
  */
 pub(super) async fn run_notification_lore_task<T>(
+    operation_context: OperationContext,
     task: impl FnOnce() -> Result<T, LoreCommandError> + Send + 'static,
 ) -> Result<T, LoreCommandError>
 where
     T: Send + 'static,
 {
+    operation_context.validate()?;
     let notification_lock =
         NOTIFICATION_LIFECYCLE_LOCK.get_or_init(|| tauri::async_runtime::Mutex::new(()));
     let _notification_guard = notification_lock.lock().await;
-    run_lore_task(task).await
+    run_lore_task(operation_context, task).await
 }
 
 /** 为一种重读维护单调意图序号，使异步门只放行该通道最新的等待请求。 */

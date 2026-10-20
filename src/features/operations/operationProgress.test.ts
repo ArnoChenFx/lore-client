@@ -18,6 +18,8 @@ function progress(overrides: Partial<OperationProgress> = {}): OperationProgress
 
 function record(overrides: Partial<LoreOperationStreamRecord> = {}): LoreOperationStreamRecord {
   return {
+    requestId: overrides.operationId ?? 'operation-1',
+    workspaceKey: '/workspace/project',
     operationId: 'operation-1',
     operation: 'file.stage',
     phase: 'streaming',
@@ -159,6 +161,8 @@ describe('mergeLoreOperationStream with normalized progress', () => {
     let records = mergeLoreOperationStream(
       [],
       {
+        requestId: 'operation-7',
+        workspaceKey: '/workspace/project',
         operationId: 'operation-7',
         operation: 'revision.commit',
         phase: 'streaming',
@@ -173,6 +177,8 @@ describe('mergeLoreOperationStream with normalized progress', () => {
     records = mergeLoreOperationStream(
       records,
       {
+        requestId: 'operation-7',
+        workspaceKey: '/workspace/project',
         operationId: 'operation-7',
         operation: 'revision.commit',
         phase: 'streaming',
@@ -195,6 +201,8 @@ describe('mergeLoreOperationStream with normalized progress', () => {
     records = mergeLoreOperationStream(
       records,
       {
+        requestId: 'operation-7',
+        workspaceKey: '/workspace/project',
         operationId: 'operation-7',
         operation: 'revision.commit',
         phase: 'succeeded',

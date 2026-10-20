@@ -237,6 +237,8 @@ describe('repository tools controller helpers', () => {
 
   it('recognizes only the stable publishing authentication failure', () => {
     const createResult = {
+      requestId: 'repository-publish',
+      workspaceKey: '/workspace/project',
       status: 1,
       operation: 'repository.create.remote',
       durationMs: 0,

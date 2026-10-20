@@ -10,7 +10,8 @@ import type {
   LoreOperationResult,
   LoreOperationStreamEvent,
   LoreRepositoryNotification,
-  LoreRuntimeInfo
+  LoreRuntimeInfo,
+  OperationContext
 } from '../../types'
 import { invokeLogged } from '../logging'
 import { isRecord } from './utils'
@@ -136,9 +137,13 @@ export async function getLoreRuntimeInfo(): Promise<LoreRuntimeInfo> {
   return invokeLogged<LoreRuntimeInfo>('lore_runtime_info')
 }
 
-export async function runOperation(command: string, args: Record<string, unknown>): Promise<LoreOperationResult> {
+export async function runOperation(
+  command: string,
+  args: Record<string, unknown>,
+  context?: OperationContext
+): Promise<LoreOperationResult> {
   try {
-    const result = await invokeLogged<LoreOperationResult>(command, args)
+    const result = await invokeLogged<LoreOperationResult>(command, args, context)
     if (result.status !== 0) {
       throw new LoreOperationError(result)
     }
@@ -155,9 +160,13 @@ export async function runOperation(command: string, args: Record<string, unknown
 }
 
 /** 把直接返回 DTO 的 Tauri 命令错误统一恢复为标准 Error。 */
-export async function invokeCommand<T>(command: string, args: Record<string, unknown>): Promise<T> {
+export async function invokeCommand<T>(
+  command: string,
+  args: Record<string, unknown>,
+  context?: OperationContext
+): Promise<T> {
   try {
-    return await invokeLogged<T>(command, args)
+    return await invokeLogged<T>(command, args, context)
   } catch (error) {
     if (error instanceof Error) {
       throw error

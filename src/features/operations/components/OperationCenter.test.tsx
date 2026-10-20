@@ -22,6 +22,8 @@ describe('operation center stream localization', () => {
         operations={[]}
         streams={[
           {
+            requestId: 'operation-1',
+            workspaceKey: '/workspace/project',
             operationId: 'operation-1',
             operation: 'revision_tree.list_children',
             phase: 'succeeded',

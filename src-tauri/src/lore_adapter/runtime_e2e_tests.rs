@@ -44,11 +44,13 @@ fn local_repository_with_two_revisions(root: &Path) -> (String, String, String) 
     for content in ["one\n", "two\n"] {
         std::fs::write(repository.join("doc.txt"), content).unwrap();
         tauri::async_runtime::block_on(lore_stage(
+            test_operation_context(),
             repository_text.clone(),
             vec!["doc.txt".to_owned()],
         ))
         .expect("stage should succeed");
         let commit = tauri::async_runtime::block_on(lore_commit(
+            test_operation_context(),
             repository_text.clone(),
             format!("Write {}", content.trim()),
             Some("tester".to_owned()),
@@ -112,6 +114,7 @@ fn wait_for_tool_completion(marker: &Path) {
 #[cfg(unix)]
 #[test]
 fn external_merge_copies_the_tool_result_into_a_missing_workspace_file() {
+    let _operation_scope = test_operation_scope();
     let sandbox = tempfile::tempdir().unwrap();
     let (repository, current, incoming) = local_repository_with_two_revisions(sandbox.path());
     let target = PathBuf::from(&repository).join("doc.txt");
@@ -122,6 +125,7 @@ fn external_merge_copies_the_tool_result_into_a_missing_workspace_file() {
         "printf 'merged by tool\\n' > \"$4\"\nexit 0",
     );
     let launched = tauri::async_runtime::block_on(lore_open_external_merge(
+        test_operation_context(),
         repository.clone(),
         tool,
         "doc.txt".to_owned(),
@@ -146,6 +150,7 @@ fn external_merge_copies_the_tool_result_into_a_missing_workspace_file() {
 #[cfg(unix)]
 #[test]
 fn external_merge_never_overwrites_a_file_created_while_the_tool_ran() {
+    let _operation_scope = test_operation_scope();
     let sandbox = tempfile::tempdir().unwrap();
     let (repository, current, incoming) = local_repository_with_two_revisions(sandbox.path());
     let target = PathBuf::from(&repository).join("doc.txt");
@@ -159,6 +164,7 @@ fn external_merge_never_overwrites_a_file_created_while_the_tool_ran() {
     );
     let tool = write_fake_merge_tool(sandbox.path(), &body);
     tauri::async_runtime::block_on(lore_open_external_merge(
+        test_operation_context(),
         repository,
         tool,
         "doc.txt".to_owned(),
@@ -179,6 +185,7 @@ fn external_merge_never_overwrites_a_file_created_while_the_tool_ran() {
 #[cfg(unix)]
 #[test]
 fn external_merge_copy_back_does_not_follow_a_link_created_during_the_merge() {
+    let _operation_scope = test_operation_scope();
     let sandbox = tempfile::tempdir().unwrap();
     let (repository, current, incoming) = local_repository_with_two_revisions(sandbox.path());
     let target = PathBuf::from(&repository).join("doc.txt");
@@ -196,6 +203,7 @@ fn external_merge_copy_back_does_not_follow_a_link_created_during_the_merge() {
     );
     let tool = write_fake_merge_tool(sandbox.path(), &body);
     tauri::async_runtime::block_on(lore_open_external_merge(
+        test_operation_context(),
         repository.clone(),
         tool,
         "doc.txt".to_owned(),
@@ -225,6 +233,7 @@ fn external_merge_copy_back_does_not_follow_a_link_created_during_the_merge() {
     );
     let tool = write_fake_merge_tool(sandbox.path(), &body);
     tauri::async_runtime::block_on(lore_open_external_merge(
+        test_operation_context(),
         repository,
         tool,
         "doc.txt".to_owned(),
@@ -244,6 +253,7 @@ fn external_merge_copy_back_does_not_follow_a_link_created_during_the_merge() {
 #[cfg(unix)]
 #[test]
 fn external_merge_result_is_discarded_when_the_tool_fails() {
+    let _operation_scope = test_operation_scope();
     let sandbox = tempfile::tempdir().unwrap();
     let (repository, current, incoming) = local_repository_with_two_revisions(sandbox.path());
     let target = PathBuf::from(&repository).join("doc.txt");
@@ -256,6 +266,7 @@ fn external_merge_result_is_discarded_when_the_tool_fails() {
     );
     let tool = write_fake_merge_tool(sandbox.path(), &body);
     tauri::async_runtime::block_on(lore_open_external_merge(
+        test_operation_context(),
         repository,
         tool,
         "doc.txt".to_owned(),
@@ -282,6 +293,7 @@ fn patch_export_without_confirmation_refuses_a_symlink_destination() {
     std::os::unix::fs::symlink(&victim, &destination).unwrap();
 
     let result = tauri::async_runtime::block_on(lore_write_patch_file(
+        test_operation_context(),
         destination.to_string_lossy().into_owned(),
         "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n".to_owned(),
         false,

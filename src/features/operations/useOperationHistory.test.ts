@@ -20,6 +20,8 @@ function runningOperation(id: number, startedAt: number): OperationRecord {
 
 function stream(operationId: string, startedAt: number): OperationHistoryState['streams'][number] {
   return {
+    requestId: operationId,
+    workspaceKey: '/workspace/project',
     operationId,
     operation: 'repository.sync',
     phase: 'running',
@@ -63,6 +65,8 @@ describe('operation history controller', () => {
     }
     for (let index = 0; index < 100; index += 1) {
       const event: LoreOperationStreamEvent = {
+        requestId: `stream-${index + 1}`,
+        workspaceKey: '/workspace/project',
         operationId: `stream-${index + 1}`,
         operation: 'repository.sync',
         phase: 'running',
@@ -85,6 +89,8 @@ describe('operation history controller', () => {
   it('retains a long task and its stream progress while newer work completes, then trims its completion', () => {
     let state = operationHistoryReducer(INITIAL_OPERATION_HISTORY, { type: 'begin', record: runningOperation(1, 1) })
     const progressEvent: LoreOperationStreamEvent = {
+      requestId: 'long-task',
+      workspaceKey: null,
       operationId: 'long-task',
       operation: 'repository.clone',
       phase: 'streaming',
@@ -127,6 +133,8 @@ describe('operation history controller', () => {
 
   it('stamps stream records with the arrival time carried by the action, not the clock', () => {
     const progressEvent: LoreOperationStreamEvent = {
+      requestId: 'stream-1',
+      workspaceKey: '/workspace/project',
       operationId: 'stream-1',
       operation: 'file.stage',
       phase: 'streaming',

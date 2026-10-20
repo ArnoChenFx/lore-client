@@ -15,17 +15,21 @@ use super::*;
  * running，后续保留 streaming，最终只为已开启的流发送 terminal。
  */
 struct OperationStreamLifecycle {
+    context: OperationContext,
     operation_id: String,
     operation: &'static str,
     opened: bool,
+    completed: bool,
 }
 
 impl OperationStreamLifecycle {
-    fn new(operation_id: String, operation: &'static str) -> Self {
+    fn new(context: OperationContext, operation_id: String, operation: &'static str) -> Self {
         Self {
+            context,
             operation_id,
             operation,
             opened: false,
+            completed: false,
         }
     }
 
@@ -37,6 +41,8 @@ impl OperationStreamLifecycle {
         duration_ms: Option<u128>,
     ) -> LoreOperationStreamEvent {
         LoreOperationStreamEvent {
+            request_id: self.context.request_id.clone(),
+            workspace_key: self.context.workspace_key.clone(),
             operation_id: self.operation_id.clone(),
             operation: self.operation,
             phase,
@@ -48,6 +54,9 @@ impl OperationStreamLifecycle {
     }
 
     fn progress_events(&mut self, summary: Value) -> Vec<LoreOperationStreamEvent> {
+        if self.completed {
+            return Vec::new();
+        }
         let mut events = Vec::with_capacity(if self.opened { 1 } else { 3 });
         if !self.opened {
             self.opened = true;
@@ -58,7 +67,15 @@ impl OperationStreamLifecycle {
         events
     }
 
-    fn completion_event(&self, status: i32, duration_ms: u128) -> Option<LoreOperationStreamEvent> {
+    fn completion_event(
+        &mut self,
+        status: i32,
+        duration_ms: u128,
+    ) -> Option<LoreOperationStreamEvent> {
+        if self.completed {
+            return None;
+        }
+        self.completed = true;
         self.opened.then(|| {
             self.event(
                 if status == 0 { "succeeded" } else { "failed" },
@@ -82,22 +99,45 @@ struct OperationProgressStream {
 }
 
 impl OperationProgressStream {
-    fn new(operation_id: String, operation: &'static str, started_at: Instant) -> Self {
+    fn new(
+        context: OperationContext,
+        operation_id: String,
+        operation: &'static str,
+        started_at: Instant,
+    ) -> Self {
         Self {
             aggregator: ProgressAggregator::new(started_at),
-            lifecycle: OperationStreamLifecycle::new(operation_id, operation),
+            lifecycle: OperationStreamLifecycle::new(context, operation_id, operation),
         }
     }
 
     fn observe(&mut self, event: &LoreEvent, now: Instant) -> Vec<LoreOperationStreamEvent> {
+        if self.lifecycle.completed {
+            return Vec::new();
+        }
         match self.aggregator.observe(event, now) {
             Some(snapshot) => self.lifecycle.progress_events(snapshot),
             None => Vec::new(),
         }
     }
 
-    fn completion_event(&self, status: i32, duration_ms: u128) -> Option<LoreOperationStreamEvent> {
+    fn completion_event(
+        &mut self,
+        status: i32,
+        duration_ms: u128,
+    ) -> Option<LoreOperationStreamEvent> {
         self.lifecycle.completion_event(status, duration_ms)
+    }
+}
+
+/// Also stop retained callbacks when the synchronous Lore call unwinds.
+struct OperationStreamScope(Arc<Mutex<OperationProgressStream>>);
+
+impl Drop for OperationStreamScope {
+    fn drop(&mut self) {
+        if let Ok(mut stream) = self.0.lock() {
+            stream.lifecycle.completed = true;
+        }
     }
 }
 
@@ -110,21 +150,33 @@ pub(super) fn run_operation(
     operation: &'static str,
     call: impl FnOnce(LoreEventCallback) -> i32,
 ) -> Result<LoreOperationResult, LoreCommandError> {
+    let context = current_operation_context()?;
     let operation_id = format!(
         "lore-operation-{}",
         OPERATION_STREAM_COUNTER.fetch_add(1, Ordering::Relaxed)
     );
     let started_at = Instant::now();
+    log::debug!(
+        "Lore operation started requestId={:?} workspaceKey={:?} operationId={:?} operation={operation:?}",
+        context.request_id,
+        context.workspace_key,
+        operation_id
+    );
     let events = Arc::new(Mutex::new(Vec::<Value>::new()));
     let event_target = Arc::clone(&events);
     let progress_stream = Arc::new(Mutex::new(OperationProgressStream::new(
-        operation_id,
+        context.clone(),
+        operation_id.clone(),
         operation,
         started_at,
     )));
     let callback_progress_stream = Arc::clone(&progress_stream);
+    let _stream_scope = OperationStreamScope(Arc::clone(&progress_stream));
     let callback: LoreEventCallback = Some(Box::new(move |event: &LoreEvent| {
         if let Ok(mut stream) = callback_progress_stream.lock() {
+            if stream.lifecycle.completed {
+                return;
+            }
             for stream_event in stream.observe(event, Instant::now()) {
                 emit_operation_stream(stream_event);
             }
@@ -138,6 +190,7 @@ pub(super) fn run_operation(
     }));
 
     let status = call(callback);
+    let duration_ms = started_at.elapsed().as_millis();
     /*
      * Lore 的 EventDispatcher 会先调用 End callback，再通知 `complete()` 的等待者，
      * 最后才随转发任务退出而析构 callback。因此同步 Lore 调用返回时，事件流已经
@@ -154,7 +207,6 @@ pub(super) fn run_operation(
         std::mem::take(&mut *target)
     };
 
-    let duration_ms = started_at.elapsed().as_millis();
     /*
      * 凭据缺失/失效的失败会让无关命令（tag list、Revision Diff、分类采样…）
      * 各自报错而用户看不到任何恢复入口。这里在所有 Lore 命令的汇聚点统一检测
@@ -176,8 +228,15 @@ pub(super) fn run_operation(
     if let Some(terminal_event) = terminal_event {
         emit_operation_stream(terminal_event);
     }
-
+    log::debug!(
+        "Lore operation completed requestId={:?} workspaceKey={:?} operationId={:?} operation={operation:?} status={status} durationMs={duration_ms}",
+        context.request_id,
+        context.workspace_key,
+        operation_id
+    );
     Ok(LoreOperationResult {
+        request_id: context.request_id,
+        workspace_key: context.workspace_key,
         operation,
         status,
         duration_ms,
@@ -256,17 +315,63 @@ mod operation_stream_lifecycle_tests {
     use super::*;
 
     #[test]
+    fn terminal_stream_rejects_late_progress_and_duplicate_completion() {
+        let context = test_operation_context();
+        let mut lifecycle = OperationStreamLifecycle::new(
+            context.clone(),
+            "operation-terminal".into(),
+            "file.stage",
+        );
+        let opened = lifecycle.progress_events(serde_json::json!({}));
+        assert_eq!(opened.len(), 3);
+        assert!(opened
+            .iter()
+            .all(|event| event.request_id == context.request_id
+                && event.workspace_key == context.workspace_key));
+        assert!(lifecycle.completion_event(0, 500).is_some());
+        assert!(
+            lifecycle.progress_events(serde_json::json!({})).is_empty(),
+            "a terminal stream accepted late progress"
+        );
+        assert!(
+            lifecycle.completion_event(0, 600).is_none(),
+            "terminal was emitted twice"
+        );
+    }
+
+    #[test]
+    fn silent_completed_operation_cannot_open_a_late_stream() {
+        let base = Instant::now();
+        let mut stream = OperationProgressStream::new(
+            test_operation_context(),
+            "operation-completed".into(),
+            "file.stage",
+            base,
+        );
+        assert!(stream.completion_event(0, 10).is_none());
+        assert!(stream
+            .observe(&event(STAGE_END), base + Duration::from_secs(1))
+            .is_empty());
+    }
+
+    #[test]
     fn operation_stream_stays_silent_without_progress() {
-        let lifecycle =
-            OperationStreamLifecycle::new("operation-1".to_owned(), "repository.status");
+        let mut lifecycle = OperationStreamLifecycle::new(
+            test_operation_context(),
+            "operation-1".to_owned(),
+            "repository.status",
+        );
 
         assert!(lifecycle.completion_event(0, 8).is_none());
     }
 
     #[test]
     fn operation_stream_opens_in_order_on_the_first_progress_event() {
-        let mut lifecycle =
-            OperationStreamLifecycle::new("operation-2".to_owned(), "repository.clone");
+        let mut lifecycle = OperationStreamLifecycle::new(
+            test_operation_context(),
+            "operation-2".to_owned(),
+            "repository.clone",
+        );
         let first = lifecycle.progress_events(serde_json::json!({
             "tagName": "progress",
             "data": { "current": 1, "total": 3 }
@@ -308,7 +413,12 @@ mod operation_stream_lifecycle_tests {
     #[test]
     fn short_operations_never_open_the_global_stream() {
         let base = Instant::now();
-        let mut stream = OperationProgressStream::new("operation-3".to_owned(), "file.stage", base);
+        let mut stream = OperationProgressStream::new(
+            test_operation_context(),
+            "operation-3".to_owned(),
+            "file.stage",
+            base,
+        );
 
         for json in [STAGE_BEGIN, STAGE_TICK, STAGE_END] {
             assert!(stream
@@ -321,7 +431,12 @@ mod operation_stream_lifecycle_tests {
     #[test]
     fn slow_operations_stream_normalized_snapshots_and_close_with_a_terminal_event() {
         let base = Instant::now();
-        let mut stream = OperationProgressStream::new("operation-4".to_owned(), "file.stage", base);
+        let mut stream = OperationProgressStream::new(
+            test_operation_context(),
+            "operation-4".to_owned(),
+            "file.stage",
+            base,
+        );
 
         assert!(stream
             .observe(&event(STAGE_BEGIN), base + Duration::from_millis(1))
@@ -355,7 +470,12 @@ mod operation_stream_lifecycle_tests {
     fn payload_events_never_reach_the_stream() {
         // 流上只有聚合器构造的小快照；大载荷事件既不开流，也不会被复制进去。
         let base = Instant::now();
-        let mut stream = OperationProgressStream::new("operation-5".to_owned(), "file.diff", base);
+        let mut stream = OperationProgressStream::new(
+            test_operation_context(),
+            "operation-5".to_owned(),
+            "file.diff",
+            base,
+        );
         let payload = "x".repeat(1024 * 1024);
         let large = event(&format!(
             r#"{{"tagName":"complete","data":{{"error":{{"errorCode":0,"message":"{payload}","traceLocations":[]}},"status":0}}}}"#

@@ -34,6 +34,7 @@ fn committed_revision(result: &LoreOperationResult) -> String {
 
 #[test]
 fn status_omits_uncommitted_copy_removed_between_scans() {
+    let _operation_scope = test_operation_scope();
     let source_name = "source-document.txt";
     let target_name = "target-document.txt";
     let unique = SystemTime::now()
@@ -59,11 +60,13 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
     std::fs::write(repository_path.join(source_name), "same contents")
         .expect("The committed source file should be created");
     tauri::async_runtime::block_on(lore_stage(
+        test_operation_context(),
         repository_path_string.clone(),
         vec![source_name.to_owned()],
     ))
     .expect("The source file should be staged");
     let baseline_commit = tauri::async_runtime::block_on(lore_commit(
+        test_operation_context(),
         repository_path_string.clone(),
         "Commit source file".to_owned(),
         None,
@@ -84,9 +87,11 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
         repository_path.join(target_name),
     )
     .expect("The retained copy should be created");
-    let first_scan =
-        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
-            .expect("The first working-tree scan should succeed");
+    let first_scan = tauri::async_runtime::block_on(lore_repository_status(
+        test_operation_context(),
+        repository_path_string.clone(),
+    ))
+    .expect("The first working-tree scan should succeed");
     let reported_staged_revision = first_scan
         .events
         .iter()
@@ -100,9 +105,11 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
         is_zero_hash(reported_staged_revision),
         "The scan should start without a staged revision: {reported_staged_revision}",
     );
-    let state_after_scan =
-        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
-            .expect("Reading repository state after the scan should succeed");
+    let state_after_scan = tauri::async_runtime::block_on(lore_repository_status(
+        test_operation_context(),
+        repository_path_string.clone(),
+    ))
+    .expect("Reading repository state after the scan should succeed");
     let persisted_staged_revision = state_after_scan
         .events
         .iter()
@@ -121,9 +128,11 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
         .expect("The transient directory should be deleted");
     std::fs::remove_file(repository_path.join(source_name))
         .expect("The original source should be deleted");
-    let result =
-        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
-            .expect("The second working-tree scan should succeed");
+    let result = tauri::async_runtime::block_on(lore_repository_status(
+        test_operation_context(),
+        repository_path_string.clone(),
+    ))
+    .expect("The second working-tree scan should succeed");
     let status_files = result
         .events
         .iter()
@@ -142,14 +151,17 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
     assert_eq!(status_files[0]["data"]["action"], "move");
     assert_eq!(status_files[0]["data"]["fromPath"], source_name);
     tauri::async_runtime::block_on(lore_stage_move(
+        test_operation_context(),
         repository_path_string.clone(),
         source_name.to_owned(),
         target_name.to_owned(),
     ))
     .expect("The move should be staged through the native move operation");
-    let staged_result =
-        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
-            .expect("Status after staging the move should succeed");
+    let staged_result = tauri::async_runtime::block_on(lore_repository_status(
+        test_operation_context(),
+        repository_path_string.clone(),
+    ))
+    .expect("Status after staging the move should succeed");
     let staged_status_files = staged_result
         .events
         .iter()
@@ -174,6 +186,7 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
      * Status 必须仍只保留工作区真实存在的原子移动。
      */
     tauri::async_runtime::block_on(lore_unstage(
+        test_operation_context(),
         repository_path_string.clone(),
         vec![source_name.to_owned(), target_name.to_owned()],
     ))
@@ -215,9 +228,11 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
     )
     .expect("The legacy write-style status simulation should succeed");
     assert_eq!(legacy_scan.status, 0);
-    let legacy_persisted_state =
-        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
-            .expect("The persisted legacy staged anchor should be readable");
+    let legacy_persisted_state = tauri::async_runtime::block_on(lore_repository_status(
+        test_operation_context(),
+        repository_path_string.clone(),
+    ))
+    .expect("The persisted legacy staged anchor should be readable");
     assert!(
         legacy_persisted_state
             .events
@@ -232,14 +247,17 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
             .expect("The transient copy directory should be deleted");
     }
     tauri::async_runtime::block_on(lore_stage_move(
+        test_operation_context(),
         repository_path_string.clone(),
         source_name.to_owned(),
         target_name.to_owned(),
     ))
     .expect("The exact move should be staged after deleting transient copies");
-    let final_result =
-        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
-            .expect("Final status should succeed after removing transient additions");
+    let final_result = tauri::async_runtime::block_on(lore_repository_status(
+        test_operation_context(),
+        repository_path_string.clone(),
+    ))
+    .expect("Final status should succeed after removing transient additions");
     let final_status_files = final_result
         .events
         .iter()
@@ -257,6 +275,7 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
     assert_eq!(final_status_files[0]["data"]["flagStaged"], true);
 
     let move_commit = tauri::async_runtime::block_on(lore_commit(
+        test_operation_context(),
         repository_path_string.clone(),
         "Commit retained move".to_owned(),
         None,
@@ -264,6 +283,7 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
     .expect("The staged move should commit successfully");
     let move_revision = committed_revision(&move_commit);
     let revision_changes = tauri::async_runtime::block_on(lore_revision_changes(
+        test_operation_context(),
         repository_path_string.clone(),
         Some(baseline_revision),
         move_revision,
@@ -292,6 +312,7 @@ fn status_omits_uncommitted_copy_removed_between_scans() {
 
 #[test]
 fn commit_includes_only_explicitly_staged_files_after_read_only_scan() {
+    let _operation_scope = test_operation_scope();
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("System time should be later than the Unix epoch")
@@ -318,9 +339,11 @@ fn commit_includes_only_explicitly_staged_files_after_read_only_scan() {
     std::fs::write(repository_path.join("working-only.txt"), "excluded")
         .expect("The working-tree-only file should be created");
 
-    let scan =
-        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
-            .expect("The read-only working-tree scan should succeed");
+    let scan = tauri::async_runtime::block_on(lore_repository_status(
+        test_operation_context(),
+        repository_path_string.clone(),
+    ))
+    .expect("The read-only working-tree scan should succeed");
     assert_eq!(
         scan.events
             .iter()
@@ -330,15 +353,18 @@ fn commit_includes_only_explicitly_staged_files_after_read_only_scan() {
         "The read-only snapshot should display both working-tree files",
     );
     tauri::async_runtime::block_on(lore_stage(
+        test_operation_context(),
         repository_path_string.clone(),
         vec!["staged.txt".to_owned()],
     ))
     .expect("The selected file should be staged");
     std::fs::write(repository_path.join("staged.txt"), "working edit")
         .expect("The staged file should be edited again in the working tree");
-    let staged_status =
-        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
-            .expect("The read-only status after editing a staged path should succeed");
+    let staged_status = tauri::async_runtime::block_on(lore_repository_status(
+        test_operation_context(),
+        repository_path_string.clone(),
+    ))
+    .expect("The read-only status after editing a staged path should succeed");
     let staged_path_events = staged_status
         .events
         .iter()
@@ -353,6 +379,7 @@ fn commit_includes_only_explicitly_staged_files_after_read_only_scan() {
     );
     assert_eq!(staged_path_events[0]["data"]["flagStaged"], true);
     let commit = tauri::async_runtime::block_on(lore_commit(
+        test_operation_context(),
         repository_path_string.clone(),
         "Commit selected file".to_owned(),
         None,
@@ -397,6 +424,7 @@ fn commit_includes_only_explicitly_staged_files_after_read_only_scan() {
 
 #[test]
 fn revision_asset_preview_falls_back_to_full_read_when_range_parse_fails() {
+    let _operation_scope = test_operation_scope();
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("System time should be later than the Unix epoch")
@@ -427,11 +455,13 @@ fn revision_asset_preview_falls_back_to_full_read_when_range_parse_fails() {
     )
     .expect("The invalid asset file should be created");
     tauri::async_runtime::block_on(lore_stage(
+        test_operation_context(),
         repository_path_string.clone(),
         vec!["Assets/T_Invalid.uasset".to_owned()],
     ))
     .expect("The invalid asset should be staged");
     let commit = tauri::async_runtime::block_on(lore_commit(
+        test_operation_context(),
         repository_path_string.clone(),
         "Commit invalid asset".to_owned(),
         None,
@@ -563,6 +593,8 @@ fn structural_status_preserves_real_staged_changes() {
         }
     });
     let result = LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "repository.status",
         status: 0,
         duration_ms: 0,
@@ -737,6 +769,8 @@ fn auth_mutation_continues_releasing_contexts_after_one_failure() {
 #[test]
 fn successful_auth_mutation_invalidates_cached_transport_connections() {
     let result = LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "auth.test",
         status: 0,
         duration_ms: 0,
@@ -788,6 +822,7 @@ fn conflict_marker_detection_accepts_clean_content() {
 fn publish_command_rejects_invalid_authentication_identity_before_repository_access() {
     for user_id in ["".to_owned(), "user\nid".to_owned(), "x".repeat(513)] {
         let error = tauri::async_runtime::block_on(lore_repository_publish(
+            test_operation_context(),
             "unused-repository".to_owned(),
             "repository".to_owned(),
             String::new(),
@@ -805,6 +840,8 @@ fn publish_command_rejects_invalid_authentication_identity_before_repository_acc
 #[test]
 fn publish_preflight_finds_the_existing_remote_by_repository_id() {
     let result = LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "repository.list.publish-preflight",
         status: 0,
         duration_ms: 1,
@@ -826,6 +863,8 @@ fn publish_preflight_finds_the_existing_remote_by_repository_id() {
 #[test]
 fn failed_publish_preflight_does_not_claim_an_existing_remote() {
     let result = LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "repository.list.publish-preflight",
         status: -1,
         duration_ms: 1,
@@ -856,6 +895,8 @@ fn branch_list_entry(location: &str, name: &str, id: &str, latest: &str) -> Valu
 #[test]
 fn matching_zero_branch_tips_are_recognized_before_publish_push() {
     let result = LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "branch.list.publish-preflight",
         status: 0,
         duration_ms: 1,
@@ -871,6 +912,8 @@ fn matching_zero_branch_tips_are_recognized_before_publish_push() {
 #[test]
 fn nonzero_remote_branch_tip_requires_real_publish_push() {
     let result = LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "branch.list.publish-preflight",
         status: 0,
         duration_ms: 1,
@@ -886,6 +929,8 @@ fn nonzero_remote_branch_tip_requires_real_publish_push() {
 #[test]
 fn failed_branch_list_does_not_skip_publish_push() {
     let result = LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "branch.list.publish-preflight",
         status: -1,
         duration_ms: 1,
@@ -976,6 +1021,8 @@ fn revision_history_metadata(revision: &str) -> Value {
 
 fn revision_history_result(events: Vec<Value>) -> LoreOperationResult {
     LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "revision.history",
         status: 0,
         duration_ms: 1,
@@ -1327,6 +1374,8 @@ fn merge_history_preserves_secondary_parent_authentication_diagnostics() {
             ]))
         } else {
             Ok(LoreOperationResult {
+                request_id: test_operation_context().request_id,
+                workspace_key: None,
                 operation: "revision.history",
                 status: 401,
                 duration_ms: 7,
@@ -1350,6 +1399,8 @@ fn merge_history_reports_secondary_parent_read_failures() {
                 revision_history_entry("main-1", 1, ZERO, ZERO),
             ])),
             Some("side-1") => Ok(LoreOperationResult {
+                request_id: test_operation_context().request_id,
+                workspace_key: None,
                 operation: "revision.history",
                 status: -1,
                 duration_ms: 1,
@@ -1376,6 +1427,7 @@ fn merge_history_reports_secondary_parent_read_failures() {
 
 #[test]
 fn workspace_status_classifies_content_without_extension_hints() {
+    let _operation_scope = test_operation_scope();
     let (repository_path, _cleanup) =
         create_configuration_test_repository("workspace-content-classification", "");
     std::fs::write(repository_path.join("custom-script"), "print('lore')\n")
@@ -1432,6 +1484,8 @@ fn revision_content_reading_preserves_storage_item_error_detail() {
      * 单项诊断（如 PayloadNotFound），不得退化成操作级说明或泛化文案。
      */
     let result = LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "storage.get",
         status: -1,
         duration_ms: 1,
@@ -1474,6 +1528,8 @@ fn revision_content_reading_ignores_successful_storage_items() {
      * 成功单项的 `error.errorCode` 是 0；错误提取不得把它误报为失败来源。
      */
     let result = LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "storage.get",
         status: -1,
         duration_ms: 1,
@@ -1509,6 +1565,7 @@ fn revision_content_reading_ignores_successful_storage_items() {
 #[test]
 fn revision_text_command_rejects_invalid_revisions_before_storage() {
     let empty = tauri::async_runtime::block_on(lore_read_revision_text(
+        test_operation_context(),
         "unused-repository".into(),
         "   ".into(),
         "a.txt".into(),
@@ -1518,6 +1575,7 @@ fn revision_text_command_rejects_invalid_revisions_before_storage() {
     assert_eq!(empty.code, "empty_revision");
 
     let whitespace = tauri::async_runtime::block_on(lore_read_revision_text(
+        test_operation_context(),
         "unused-repository".into(),
         "abc def".into(),
         "a.txt".into(),
@@ -1530,6 +1588,7 @@ fn revision_text_command_rejects_invalid_revisions_before_storage() {
 #[test]
 fn revision_text_command_rejects_invalid_paths_before_storage() {
     let error = tauri::async_runtime::block_on(lore_read_revision_text(
+        test_operation_context(),
         "unused-repository".into(),
         "abc123".into(),
         "../outside.txt".into(),
@@ -1541,6 +1600,7 @@ fn revision_text_command_rejects_invalid_paths_before_storage() {
 
 #[test]
 fn revision_tree_and_text_reads_queue_independently_with_a_shared_budget() {
+    let _operation_scope = test_operation_scope();
     use std::future::Future;
     use std::task::{Context, Waker};
     let unique = SystemTime::now()
@@ -1571,11 +1631,13 @@ fn revision_tree_and_text_reads_queue_independently_with_a_shared_budget() {
     )
     .expect("The committed text file should be created");
     tauri::async_runtime::block_on(lore_stage(
+        test_operation_context(),
         repository_path_string.clone(),
         vec!["Content/World.txt".to_owned()],
     ))
     .expect("The text file should be staged");
     let commit = tauri::async_runtime::block_on(lore_commit(
+        test_operation_context(),
         repository_path_string.clone(),
         "Commit the text file".to_owned(),
         None,
@@ -1588,16 +1650,19 @@ fn revision_tree_and_text_reads_queue_independently_with_a_shared_budget() {
     let gate = HEAVY_READ_LOCK.get_or_init(|| tauri::async_runtime::Mutex::new(()));
     let permit = tauri::async_runtime::block_on(gate.lock());
     let mut old_text = Box::pin(lore_read_revision_text(
+        test_operation_context(),
         repository_path_string.clone(),
         revision.clone(),
         "Content/World.txt".to_owned(),
         None,
     ));
     let mut tree = Box::pin(lore_revision_files(
+        test_operation_context(),
         repository_path_string.clone(),
         revision.clone(),
     ));
     let mut text = Box::pin(lore_read_revision_text(
+        test_operation_context(),
         repository_path_string.clone(),
         revision.clone(),
         "Content/World.txt".to_owned(),
@@ -1629,6 +1694,7 @@ fn revision_tree_and_text_reads_queue_independently_with_a_shared_budget() {
 /// 这个测试锁死上游 Lore 的真实输出格式，防止适配层或上游改动破坏前端契约。
 #[test]
 fn workspace_diff_patch_preserves_unified_headers() {
+    let _operation_scope = test_operation_scope();
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("System time should be later than the Unix epoch")
@@ -1657,11 +1723,13 @@ fn workspace_diff_patch_preserves_unified_headers() {
     )
     .expect("The committed text file should be created");
     tauri::async_runtime::block_on(lore_stage(
+        test_operation_context(),
         repository_path_string.clone(),
         vec!["Content/World.txt".to_owned()],
     ))
     .expect("The text file should be staged");
     let commit = tauri::async_runtime::block_on(lore_commit(
+        test_operation_context(),
         repository_path_string.clone(),
         "Commit the text file".to_owned(),
         None,
@@ -1676,6 +1744,7 @@ fn workspace_diff_patch_preserves_unified_headers() {
     )
     .expect("The working-tree file should be modified");
     let result = tauri::async_runtime::block_on(lore_workspace_diff(
+        test_operation_context(),
         repository_path_string.clone(),
         vec!["Content/World.txt".to_owned()],
         Some(3),
@@ -1703,6 +1772,7 @@ fn workspace_diff_patch_preserves_unified_headers() {
 
 #[test]
 fn completed_operation_collects_events_while_callback_is_still_dropping() {
+    let _operation_scope = test_operation_scope();
     let mut retained_callback: LoreEventCallback = None;
     let result = run_operation("test.callback-drop-race", |callback| {
         /*
@@ -1725,6 +1795,7 @@ fn completed_operation_collects_events_while_callback_is_still_dropping() {
 
 #[test]
 fn workspace_binary_preview_returns_validated_real_file_content() {
+    let _operation_scope = test_operation_scope();
     let (repository_path, _cleanup) =
         create_configuration_test_repository("workspace-binary-preview", "");
     let image_directory = repository_path.join("Content").join("Images");
@@ -1762,6 +1833,7 @@ fn workspace_binary_preview_returns_validated_real_file_content() {
 
 #[test]
 fn workspace_blender_preview_returns_only_embedded_thumbnail_payload() {
+    let _operation_scope = test_operation_scope();
     let (repository_path, _cleanup) =
         create_configuration_test_repository("workspace-blender-thumbnail-preview", "");
     let asset_directory = repository_path.join("Art");
@@ -1806,6 +1878,7 @@ fn workspace_blender_preview_returns_only_embedded_thumbnail_payload() {
 
 #[test]
 fn workspace_large_blender_preview_bypasses_full_content_limit() {
+    let _operation_scope = test_operation_scope();
     let (repository_path, _cleanup) =
         create_configuration_test_repository("workspace-large-blender-thumbnail-preview", "");
     let asset_directory = repository_path.join("Art");
@@ -1891,6 +1964,7 @@ fn file_preview_envelope_preserves_metadata_and_payload() {
 
 #[test]
 fn disabled_workspace_binary_diff_returns_metadata_without_reading_content() {
+    let _operation_scope = test_operation_scope();
     let (repository_path, _cleanup) =
         create_configuration_test_repository("workspace-disabled-binary-preview", "");
     let image_directory = repository_path.join("Content").join("Images");
@@ -1922,6 +1996,7 @@ fn disabled_workspace_binary_diff_returns_metadata_without_reading_content() {
 
 #[test]
 fn oversized_workspace_asset_returns_size_metadata_without_reading_content() {
+    let _operation_scope = test_operation_scope();
     let (repository_path, _cleanup) =
         create_configuration_test_repository("workspace-oversized-preview", "");
     let asset_path = repository_path.join("Content").join("World.umap");
@@ -1953,6 +2028,7 @@ fn oversized_workspace_asset_returns_size_metadata_without_reading_content() {
 
 #[test]
 fn workspace_binary_preview_honors_the_configured_size_limit() {
+    let _operation_scope = test_operation_scope();
     let (repository_path, _cleanup) =
         create_configuration_test_repository("workspace-configured-preview-limit", "");
     let image_path = repository_path.join("Content").join("Configured.png");
@@ -1996,6 +2072,7 @@ fn workspace_binary_preview_honors_the_configured_size_limit() {
 
 #[test]
 fn unsupported_workspace_binary_returns_size_metadata_without_reading_content() {
+    let _operation_scope = test_operation_scope();
     let (repository_path, _cleanup) =
         create_configuration_test_repository("workspace-unsupported-preview", "");
     let binary_path = repository_path
@@ -2031,6 +2108,7 @@ fn unsupported_workspace_binary_returns_size_metadata_without_reading_content() 
 
 #[test]
 fn revision_storage_prefers_bound_auth_identity_over_commit_identity() {
+    let _operation_scope = test_operation_scope();
     let (repository_path, _cleanup) = create_configuration_test_repository(
         "revision-storage-auth-identity",
         "identity = \"commit-author\"\nremote_url = \"lore://127.0.0.1:41337\"\n",
@@ -2224,6 +2302,7 @@ fn conflict_file_action_rejects_empty_paths_and_abort_discards_stale_selection()
 
 #[test]
 fn commit_identity_prefers_repository_configuration_and_falls_back_to_client_default() {
+    let _operation_scope = test_operation_scope();
     let (repository_path, _cleanup) = create_configuration_test_repository(
         "identity-resolution",
         "identity = \"repository@example.com\"\n",
@@ -2267,6 +2346,7 @@ fn git_style_author_and_email_pass_through_as_single_lore_identity() {
 
 #[test]
 fn repository_configuration_edit_preserves_unknown_tables_and_comments() {
+    let _operation_scope = test_operation_scope();
     let (repository_path, _cleanup) = create_configuration_test_repository(
         "config-update",
         concat!(
@@ -3170,6 +3250,7 @@ fn save_patch(
     replace_existing: bool,
 ) -> Result<(), LoreCommandError> {
     tauri::async_runtime::block_on(lore_write_patch_file(
+        test_operation_context(),
         destination_path,
         patch,
         replace_existing,
@@ -3361,6 +3442,7 @@ fn remote_repository_url_rejects_path_injection() {
 
 #[test]
 fn directory_probe_finds_repository_root_and_preserves_damaged_metadata() {
+    let _operation_scope = test_operation_scope();
     let (repository_path, _cleanup) = create_configuration_test_repository("directory-probe", "");
     let nested_path = repository_path.join("Content").join("Maps");
     std::fs::create_dir_all(&nested_path)
@@ -3391,6 +3473,7 @@ fn directory_probe_finds_repository_root_and_preserves_damaged_metadata() {
 
 #[test]
 fn ordinary_nonempty_directory_can_be_initialized_without_persisting_client_identity() {
+    let _operation_scope = test_operation_scope();
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("System time should be later than the Unix epoch")
@@ -3432,11 +3515,13 @@ fn ordinary_nonempty_directory_can_be_initialized_without_persisting_client_iden
      * Status 边界，防止空仓库把全零 Revision 当成真实对象并在首次打开时失败。
      */
     let status = tauri::async_runtime::block_on(lore_repository_status(
+        test_operation_context(),
         repository_path.to_string_lossy().into_owned(),
     ))
     .expect("A newly initialized repository should be readable immediately");
     assert_eq!(status.status, 0);
     let history = tauri::async_runtime::block_on(lore_revision_history(
+        test_operation_context(),
         repository_path.to_string_lossy().into_owned(),
         Some(100),
         None,
@@ -3458,6 +3543,7 @@ fn ordinary_nonempty_directory_can_be_initialized_without_persisting_client_iden
 
 #[test]
 fn native_repository_id_is_converted_to_fixed_length_hex() {
+    let _operation_scope = test_operation_scope();
     let (repository_path, _cleanup) = create_configuration_test_repository("repository-id", "");
     let expected = (0_u8..16)
         .map(|byte| format!("{byte:02x}"))
@@ -3547,6 +3633,8 @@ fn bare_clone_rejects_options_that_lore_would_ignore() {
 #[test]
 fn repository_list_authentication_error_maps_to_stable_state() {
     let result = LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "repository.list",
         status: -1,
         duration_ms: 1,
@@ -3570,6 +3658,8 @@ fn authentication_failure_with_structured_not_authenticated_code_is_recognized()
     // Lore 0.10.0 把错误码重排后，认证失败以结构化 FFI 码 16 终止；事件文本
     // 不再包含旧的 gRPC 认证描述，识别必须只依赖状态码。
     let result = LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "repository.list",
         status: super::runtime::LORE_FFI_ERROR_NOT_AUTHENTICATED,
         duration_ms: 1,
@@ -3593,6 +3683,8 @@ fn unrelated_structured_error_code_is_not_treated_as_authentication() {
     // RepositoryNotFound（码 89）等具体错误码不得被误判为需要认证，否则远端
     // Create 会错误地启动交互登录并可能重复创建仓库。
     let result = LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "repository.create.remote",
         status: 89,
         duration_ms: 1,
@@ -3617,6 +3709,8 @@ fn connection_stage_credential_failure_is_recognized_as_authentication() {
     // 详细消息带 "Not authenticated"；这是用户真实日志中的形态，必须被识别为
     // 需要重新认证，而不是当成普通网络故障。
     let result = LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "revision_tree.load",
         status: super::runtime::LORE_FFI_ERROR_NOT_CONNECTED,
         duration_ms: 1,
@@ -3640,6 +3734,8 @@ fn plain_connection_refusal_is_not_treated_as_authentication() {
     // 码 29 只有在事件文本给出认证语义时才代表凭据失效；纯网络拒绝必须保持
     // offline 语义，避免服务器宕机被误报成“请重新登录”。
     let result = LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "revision_tree.load",
         status: super::runtime::LORE_FFI_ERROR_NOT_CONNECTED,
         duration_ms: 1,
@@ -3663,6 +3759,8 @@ fn not_authorized_permission_error_is_not_treated_as_authentication() {
     // NotAuthorized 是已认证但无权限，属于账户权限问题；重新登录不会改变结果，
     // 不得触发重新认证流程。该码跨版本发生过变化，因此测试覆盖当前取值。
     let result = LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "repository.list",
         status: 17,
         duration_ms: 1,
@@ -3684,6 +3782,8 @@ fn not_authorized_permission_error_is_not_treated_as_authentication() {
 #[test]
 fn operation_success_error_renders_known_ffi_code_name() {
     let result = LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "revision_tree.child",
         status: 29,
         duration_ms: 1,
@@ -3714,6 +3814,8 @@ fn operation_success_error_renders_known_ffi_code_name() {
 fn operation_success_unknown_status_code_keeps_numeric_detail() {
     // 内部错误 -1 必须保留数字原样，绝不猜测更具体的错误语义。
     let result = LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "revision_tree.child",
         status: -1,
         duration_ms: 1,
@@ -3819,9 +3921,16 @@ fn real_lore_repository_can_be_created_and_events_read() {
         .expect("System time should be later than the Unix epoch")
         .as_nanos();
     let repository_path = std::env::temp_dir().join(format!("lore-client-smoke-{unique}"));
-    let _cleanup = TemporaryRepository::new(repository_path.clone());
     std::fs::create_dir_all(&repository_path)
         .expect("The temporary test directory should be created");
+    let operation_context = OperationContext {
+        workspace_key: Some(display_path_without_windows_verbatim_prefix(
+            &std::fs::canonicalize(&repository_path).unwrap(),
+        )),
+        ..test_operation_context()
+    };
+    let _operation_scope = OperationContextScope::enter(operation_context.clone());
+    let _cleanup = TemporaryRepository::new(repository_path.clone());
 
     let globals = LoreGlobalArgs {
         repository_path: repository_path.as_path().into(),
@@ -4088,6 +4197,7 @@ fn real_lore_repository_can_be_created_and_events_read() {
         "New Lore commits should store milliseconds"
     );
     let history_dto = tauri::async_runtime::block_on(lore_revision_history(
+        operation_context.clone(),
         repository_path.to_string_lossy().into_owned(),
         Some(10),
         Some(source_revision.clone()),
@@ -4097,6 +4207,8 @@ fn real_lore_repository_can_be_created_and_events_read() {
     ))
     .expect("The production history command should project real Lore metadata into its DTO");
     assert_eq!(history_dto.status, 0);
+    assert_eq!(history_dto.request_id, operation_context.request_id);
+    assert_eq!(history_dto.workspace_key, operation_context.workspace_key);
     assert_eq!(
         history_dto.entries,
         vec![LoreRevisionHistoryEntry {
@@ -4133,6 +4245,8 @@ fn real_lore_repository_can_be_created_and_events_read() {
         source_revision.clone(),
     )
     .expect("Creating a branch from a revision should return a structured result");
+    assert_eq!(branch_result.request_id, operation_context.request_id);
+    assert_eq!(branch_result.workspace_key, operation_context.workspace_key);
     assert_eq!(
         branch_result.status, 0,
         "A branch should be created from a real revision"
@@ -4159,6 +4273,11 @@ fn real_lore_repository_can_be_created_and_events_read() {
         source_revision.clone(),
     )
     .expect("Duplicate branch creation should also return a structured result");
+    assert_eq!(duplicate_result.request_id, operation_context.request_id);
+    assert_eq!(
+        duplicate_result.workspace_key,
+        operation_context.workspace_key
+    );
     assert_ne!(
         duplicate_result.status, 0,
         "Lore must reject a duplicate branch name"
@@ -4413,6 +4532,7 @@ fn peak_resident_kib() -> Option<u64> {
 #[test]
 #[ignore]
 fn measure_status_event_volume() {
+    let _operation_scope = test_operation_scope();
     const FILE_COUNT: usize = 10_000;
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -4442,9 +4562,14 @@ fn measure_status_event_volume() {
         std::fs::write(repository_path.join(path), format!("original {index}"))
             .expect("The original file should be written");
     }
-    tauri::async_runtime::block_on(lore_stage(repository_path_string.clone(), paths.clone()))
-        .expect("The measurement files should be staged");
+    tauri::async_runtime::block_on(lore_stage(
+        test_operation_context(),
+        repository_path_string.clone(),
+        paths.clone(),
+    ))
+    .expect("The measurement files should be staged");
     tauri::async_runtime::block_on(lore_commit(
+        test_operation_context(),
         repository_path_string.clone(),
         "Commit measurement files".to_owned(),
         None,
@@ -4457,9 +4582,11 @@ fn measure_status_event_volume() {
 
     let before_peak = peak_resident_kib();
     let started = std::time::Instant::now();
-    let status =
-        tauri::async_runtime::block_on(lore_repository_status(repository_path_string.clone()))
-            .expect("The status read should succeed");
+    let status = tauri::async_runtime::block_on(lore_repository_status(
+        test_operation_context(),
+        repository_path_string.clone(),
+    ))
+    .expect("The status read should succeed");
     let elapsed = started.elapsed();
     let after_peak = peak_resident_kib();
     let json_bytes = serde_json::to_vec(&status)

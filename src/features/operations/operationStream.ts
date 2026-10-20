@@ -21,6 +21,8 @@ export function mergeLoreOperationStream(
   }
   const progress = parseOperationProgress(data)
   const next: LoreOperationStreamRecord = {
+    requestId: incoming.requestId,
+    workspaceKey: incoming.workspaceKey,
     operationId: incoming.operationId,
     operation: incoming.operation,
     phase: incoming.phase,

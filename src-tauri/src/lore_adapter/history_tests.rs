@@ -13,6 +13,8 @@ fn metadata(key: &str, value: Value) -> Value {
 
 fn operation(events: Vec<Value>) -> LoreOperationResult {
     LoreOperationResult {
+        request_id: test_operation_context().request_id,
+        workspace_key: None,
         operation: "revision.history",
         status: 0,
         duration_ms: 1,
@@ -202,6 +204,8 @@ fn history_primary_failure_retains_diagnostics_without_partial_entries() {
         ];
         events.extend(diagnostics.clone());
         Ok(LoreOperationResult {
+            request_id: test_operation_context().request_id,
+            workspace_key: None,
             operation: "revision.history",
             status: 401,
             duration_ms: 7,

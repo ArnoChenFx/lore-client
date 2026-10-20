@@ -1194,6 +1194,8 @@ describe('Lore event adapter', () => {
 
   it('preserves irreversible remote publication stages and provides safe retry guidance', () => {
     const createResult = {
+      requestId: 'repository-publish',
+      workspaceKey: '/workspace/project',
       status: 0,
       operation: 'repository.create.remote',
       // 事件信封的稳定 DTO 始终包含耗时；测试夹具也必须满足完整类型契约。
@@ -1384,6 +1386,8 @@ describe('Lore event adapter', () => {
   it('reduces diagnostic events to bounded stable findings', () => {
     expect(
       parseDiagnosticReport({
+        requestId: 'repository-verify',
+        workspaceKey: '/workspace/project',
         operation: 'repository.verify',
         status: 0,
         durationMs: 12,

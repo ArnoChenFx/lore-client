@@ -7,9 +7,10 @@ use super::*;
 /// 探测普通目录、仓库根目录或仓库子目录，不打开 Lore Store。
 #[tauri::command]
 pub async fn lore_repository_probe(
+    operation_context: OperationContext,
     directory_path: String,
 ) -> Result<RepositoryDirectoryProbe, LoreCommandError> {
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let selected_path = validate_existing_directory(&directory_path, "Selected directory")?;
         Ok(probe_repository_directory(&selected_path))
     })
@@ -23,6 +24,7 @@ pub async fn lore_repository_probe(
 /// 仓库创建者元数据，不会自动写回新仓库的 `identity`。
 #[tauri::command]
 pub async fn lore_repository_initialize(
+    operation_context: OperationContext,
     directory_path: String,
     repository_name: String,
     description: String,
@@ -31,7 +33,7 @@ pub async fn lore_repository_initialize(
     use_shared_store: bool,
     shared_store_path: Option<String>,
 ) -> Result<LoreRepositoryInitializeResult, LoreCommandError> {
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         initialize_repository(
             &directory_path,
             &repository_name,
@@ -51,6 +53,7 @@ pub async fn lore_repository_initialize(
 /// 副本放在受控临时目录；原仓库只接收白名单配置更新，绝不会被 Create 覆盖。
 #[tauri::command]
 pub async fn lore_repository_publish(
+    operation_context: OperationContext,
     repository_path: String,
     repository_name: String,
     description: String,
@@ -61,7 +64,7 @@ pub async fn lore_repository_publish(
     user_id: Option<String>,
 ) -> Result<LoreRepositoryPublishResult, LoreCommandError> {
     let user_id = validate_optional_auth_identity(user_id)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         publish_repository(
             &repository_path,
             &repository_name,
@@ -82,6 +85,7 @@ pub async fn lore_repository_publish(
 /// 服务器可达，再决定打开哪个已经克隆到本地的仓库。
 #[tauri::command]
 pub async fn lore_repository_list(
+    operation_context: OperationContext,
     server_url: String,
     user_id: Option<String>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
@@ -95,7 +99,7 @@ pub async fn lore_repository_list(
             "The authentication user identity is invalid",
         ));
     }
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = LoreGlobalArgs {
             identity: user_id.unwrap_or_default().into(),
             ..Default::default()
@@ -136,8 +140,10 @@ pub(super) fn operation_requires_authentication(result: &LoreOperationResult) ->
 /// 该命令不依赖仓库，也不会打开 Store；容量扫描在 Tauri 阻塞任务中完成，避免
 /// 阻塞主线程。固定版本未返回精确去重收益，因此只报告可验证的当前占用。
 #[tauri::command]
-pub async fn lore_shared_store_info() -> Result<LoreSharedStoreInfo, LoreCommandError> {
-    run_lore_task(move || {
+pub async fn lore_shared_store_info(
+    operation_context: OperationContext,
+) -> Result<LoreSharedStoreInfo, LoreCommandError> {
+    run_lore_task(operation_context, move || {
         let result = run_operation("shared_store.info", move |callback| {
             lore::runtime().block_on(lore::shared_store::info(
                 LoreGlobalArgs::default(),
@@ -161,6 +167,7 @@ pub async fn lore_shared_store_info() -> Result<LoreSharedStoreInfo, LoreCommand
 /// 本适配层从不传递 `force`，因此不会覆盖已有 Store。
 #[tauri::command]
 pub async fn lore_shared_store_create(
+    operation_context: OperationContext,
     remote_url: String,
     parent_path: Option<String>,
     make_default: bool,
@@ -172,7 +179,7 @@ pub async fn lore_shared_store_create(
         )),
         None => None,
     };
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         run_operation("shared_store.create", move |callback| {
             lore::runtime().block_on(lore::shared_store::create(
                 LoreGlobalArgs::default(),
@@ -191,9 +198,10 @@ pub async fn lore_shared_store_create(
 /// 切换新建仓库是否自动使用已登记的 Shared Store。
 #[tauri::command]
 pub async fn lore_shared_store_set_use_automatically(
+    operation_context: OperationContext,
     enabled: bool,
 ) -> Result<LoreOperationResult, LoreCommandError> {
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         run_operation("shared_store.set_use_automatically", move |callback| {
             lore::runtime().block_on(lore::shared_store::set_use_automatically(
                 LoreGlobalArgs::default(),
@@ -219,9 +227,10 @@ pub async fn lore_shared_store_set_use_automatically(
  */
 #[tauri::command]
 pub async fn lore_shared_store_list(
+    operation_context: OperationContext,
     include_instances: bool,
 ) -> Result<LoreSharedStoreRegistry, LoreCommandError> {
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let result = run_operation("shared_store.list", move |callback| {
             lore::runtime().block_on(lore::shared_store::list(
                 LoreGlobalArgs::default(),
@@ -244,6 +253,7 @@ pub async fn lore_shared_store_list(
 /// 查询指定 Branch 的协作锁，可按 Owner ID 或仓库相对路径筛选。
 #[tauri::command]
 pub async fn lore_lock_file_query(
+    operation_context: OperationContext,
     repository_path: String,
     branch: String,
     owner: Option<String>,
@@ -257,7 +267,7 @@ pub async fn lore_lock_file_query(
             .replace('\\', "/"),
         None => String::new(),
     };
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("lock.file-query", move |callback| {
             lore::runtime().block_on(lore::lock::file_query(
@@ -277,6 +287,7 @@ pub async fn lore_lock_file_query(
 /// 只查询明确路径集合的协作锁状态，供本地更改行和右侧 Diff 按需刷新。
 #[tauri::command]
 pub async fn lore_lock_file_status(
+    operation_context: OperationContext,
     repository_path: String,
     branch: String,
     paths: Vec<String>,
@@ -287,7 +298,7 @@ pub async fn lore_lock_file_status(
      * 文件锁状态只查询调用方给出的少量路径，不会构造完整 Tree、Diff 或二进制载荷。
      * 它不能进入全局重型读取通道，否则另一个仓库的新查询会把当前合法请求淘汰。
      */
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("lock.file-status", move |callback| {
             lore::runtime().block_on(lore::lock::file_status(
@@ -309,13 +320,14 @@ pub async fn lore_lock_file_status(
 /// 强制独占。路径仍在 Rust 边界执行仓库相对校验。
 #[tauri::command]
 pub async fn lore_lock_file_acquire(
+    operation_context: OperationContext,
     repository_path: String,
     branch: String,
     paths: Vec<String>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let branch = validate_branch_name(&branch)?;
     let paths = validate_repository_relative_paths(paths)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("lock.file-acquire", move |callback| {
             lore::runtime().block_on(lore::lock::file_acquire(
@@ -336,13 +348,14 @@ pub async fn lore_lock_file_acquire(
 /// Owner 留空让 Lore 使用当前已认证身份；客户端不会让 React 构造或持有 Owner ID。
 #[tauri::command]
 pub async fn lore_lock_file_release(
+    operation_context: OperationContext,
     repository_path: String,
     branch: String,
     paths: Vec<String>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let branch = validate_branch_name(&branch)?;
     let paths = validate_repository_relative_paths(paths)?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("lock.file-release", move |callback| {
             lore::runtime().block_on(lore::lock::file_release(
@@ -366,6 +379,7 @@ pub async fn lore_lock_file_release(
 /// `force` 只在用户明确确认后传入，不能作为隐藏默认值。
 #[tauri::command]
 pub async fn lore_file_dependency_add(
+    operation_context: OperationContext,
     repository_path: String,
     source_path: String,
     dependency_path: String,
@@ -381,7 +395,7 @@ pub async fn lore_file_dependency_add(
             "The dependency contains too many tags",
         )
     })?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("file.dependency-add", move |callback| {
             lore::runtime().block_on(lore::dependency::dependency_add(
@@ -404,6 +418,7 @@ pub async fn lore_file_dependency_add(
 /// 从来源文件移除一条依赖边；标签为空表示移除该目标的全部标签关系。
 #[tauri::command]
 pub async fn lore_file_dependency_remove(
+    operation_context: OperationContext,
     repository_path: String,
     source_path: String,
     dependency_path: String,
@@ -418,7 +433,7 @@ pub async fn lore_file_dependency_remove(
             "The dependency contains too many tags",
         )
     })?;
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("file.dependency-remove", move |callback| {
             lore::runtime().block_on(lore::dependency::dependency_remove(
@@ -440,6 +455,7 @@ pub async fn lore_file_dependency_remove(
 /// 在精确 Revision（空值表示当前 Revision）查询依赖或反向依赖。
 #[tauri::command]
 pub async fn lore_file_dependency_list(
+    operation_context: OperationContext,
     repository_path: String,
     paths: Vec<String>,
     revision: Option<String>,
@@ -460,7 +476,7 @@ pub async fn lore_file_dependency_list(
             "Dependency depth limit must not exceed 1024",
         ));
     }
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("file.dependency-list", move |callback| {
             lore::runtime().block_on(lore::dependency::dependency_list(
@@ -486,10 +502,13 @@ pub async fn lore_file_dependency_list(
 /// 释放的 `run_operation` 收集器。回调只向 WebView 发送序列化事件，不持有仓库
 /// 内容、凭据或 React 状态。
 #[tauri::command]
-pub async fn lore_notification_subscribe(repository_path: String) -> Result<i32, LoreCommandError> {
+pub async fn lore_notification_subscribe(
+    operation_context: OperationContext,
+    repository_path: String,
+) -> Result<i32, LoreCommandError> {
     let normalized_path =
         display_path_without_windows_verbatim_prefix(&validate_repository_path(&repository_path)?);
-    run_notification_lore_task(move || {
+    run_notification_lore_task(operation_context, move || {
         let globals = global_args(&normalized_path)?;
         let callback_path = normalized_path.clone();
         let callback: LoreEventCallback = Some(Box::new(move |event: &LoreEvent| {
@@ -507,11 +526,12 @@ pub async fn lore_notification_subscribe(repository_path: String) -> Result<i32,
 /// 真实取消当前仓库的通知订阅；固定 Lore 没有通用长操作取消 API。
 #[tauri::command]
 pub async fn lore_notification_unsubscribe(
+    operation_context: OperationContext,
     repository_path: String,
 ) -> Result<i32, LoreCommandError> {
     let repository_path =
         display_path_without_windows_verbatim_prefix(&validate_repository_path(&repository_path)?);
-    run_notification_lore_task(move || {
+    run_notification_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         let callback: LoreEventCallback = Some(Box::new(|_event: &LoreEvent| {}));
         Ok(lore::runtime().block_on(lore::notification::unsubscribe(
@@ -529,6 +549,7 @@ pub async fn lore_notification_unsubscribe(
 /// Lore 已经写入的诊断现场，由用户决定检查或删除，不做隐式递归清理。
 #[tauri::command]
 pub async fn lore_repository_clone(
+    operation_context: OperationContext,
     server_url: String,
     repository_name: String,
     destination_parent: String,
@@ -569,7 +590,7 @@ pub async fn lore_repository_clone(
         dependency_depth_limit,
     )?;
 
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let destination = display_path_without_windows_verbatim_prefix(&destination);
         let result_destination = destination.clone();
         let globals = LoreGlobalArgs {
@@ -623,6 +644,7 @@ pub async fn lore_repository_clone(
 /// Lore 事件流，避免暴露上游内部配置结构。
 #[tauri::command]
 pub async fn lore_repository_config_get(
+    operation_context: OperationContext,
     repository_path: String,
     key: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
@@ -634,7 +656,7 @@ pub async fn lore_repository_config_get(
         ));
     }
 
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("repository.config-get", move |callback| {
             lore::runtime().block_on(lore::repository::config_get(
@@ -654,11 +676,12 @@ pub async fn lore_repository_config_get(
 /// 表和注释都会保留。
 #[tauri::command]
 pub async fn lore_repository_config_update(
+    operation_context: OperationContext,
     repository_path: String,
     identity: String,
     remote_url: String,
 ) -> Result<RepositoryConfiguration, LoreCommandError> {
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let repository_path = validate_repository_path(&repository_path)?;
         // 先释放可能仍由 30 秒 keep-alive 保留的 RepositoryContext；否则紧随其后的
         // Status/Push 可能继续沿用修改前的 remote_url 或 identity。
@@ -671,22 +694,29 @@ pub async fn lore_repository_config_update(
 /// 读取当前 Instance 的选择性同步 View 和结构化诊断。
 #[tauri::command]
 pub async fn lore_repository_view_get(
+    operation_context: OperationContext,
     repository_path: String,
 ) -> Result<LoreRepositoryView, LoreCommandError> {
-    run_lore_task(move || read_repository_view(Path::new(&repository_path))).await
+    run_lore_task(operation_context, move || {
+        read_repository_view(Path::new(&repository_path))
+    })
+    .await
 }
 
 /// 在不改写 View 或工作区的前提下预览规则对当前 Revision 的影响。
 #[tauri::command]
 pub async fn lore_repository_view_preview(
+    operation_context: OperationContext,
     repository_path: String,
     revision: String,
     content: String,
 ) -> Result<LoreRepositoryViewPreview, LoreCommandError> {
     let revision = validate_revision(&revision)?;
     validate_view_content_size(&content)?;
-    run_lore_task(move || build_repository_view_preview(&repository_path, &revision, &content))
-        .await
+    run_lore_task(operation_context, move || {
+        build_repository_view_preview(&repository_path, &revision, &content)
+    })
+    .await
 }
 
 /// 原子替换当前 Instance View，并通过 Lore Sync 重新协调物化文件。
@@ -695,13 +725,17 @@ pub async fn lore_repository_view_preview(
 /// 只负责解释原因，不能替代这个 Rust 安全边界。
 #[tauri::command]
 pub async fn lore_repository_view_apply(
+    operation_context: OperationContext,
     repository_path: String,
     revision: String,
     content: String,
 ) -> Result<LoreRepositoryViewApplyResult, LoreCommandError> {
     let revision = validate_revision(&revision)?;
     validate_view_content_size(&content)?;
-    run_lore_task(move || apply_repository_view(repository_path, revision, content)).await
+    run_lore_task(operation_context, move || {
+        apply_repository_view(repository_path, revision, content)
+    })
+    .await
 }
 
 /// 读取仓库状态，并对旧版本可能遗留的结构事件做保守归一化。
@@ -1166,9 +1200,10 @@ fn run_read_only_repository_status(
 
 #[tauri::command]
 pub async fn lore_repository_status(
+    operation_context: OperationContext,
     repository_path: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
-    run_lore_task(move || {
+    run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         /*
          * 必须与 Lore 顶层调用使用同一套路径清理。Windows `canonicalize` 产生的

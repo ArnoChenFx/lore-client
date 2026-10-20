@@ -9,6 +9,8 @@ import { OperationProgressStatus } from './OperationProgressStatus'
 
 function render(operation: string, tagName: string, progress: OperationProgress, now = 0, progressAt = 0): string {
   const record: LoreOperationStreamRecord = {
+    requestId: 'operation-1',
+    workspaceKey: '/workspace/project',
     operationId: 'operation-1',
     operation,
     phase: 'streaming',

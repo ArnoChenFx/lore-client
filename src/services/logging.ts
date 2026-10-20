@@ -1,7 +1,8 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { debug, error as writeError, info, warn } from '@tauri-apps/plugin-log'
 
-import type { ApplicationLogInfo } from '../types'
+import type { ApplicationLogInfo, OperationContext } from '../types'
+import { acquireOperationRequest, createOperationContext } from './operationRequests'
 
 const MAX_LOG_MESSAGE_LENGTH = 4_000
 const EXPECTED_IPC_CONTROL_FLOW_CODES = new Set([
@@ -103,18 +104,32 @@ export function logError(scope: string, value: unknown): void {
  * callback 告警，也放大 WebView2 页面切换期间的投递压力。失败路径仍保留日志，且绝不
  * 序列化 args，避免认证信息、仓库配置或大块文件内容进入日志。
  */
-export async function invokeLogged<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+export async function invokeLogged<T>(
+  command: string,
+  args?: Record<string, unknown>,
+  context?: OperationContext
+): Promise<T> {
+  const operationContext = context
+    ? Object.freeze({ requestId: context.requestId, workspaceKey: context.workspaceKey })
+    : createOperationContext(typeof args?.repositoryPath === 'string' ? args.repositoryPath : null)
+  const release = acquireOperationRequest(operationContext)
   const startedAt = performance.now()
   try {
-    return await invoke<T>(command, args)
+    return await invoke<T>(command, { ...args, operationContext })
   } catch (cause) {
     const durationMs = Math.round(performance.now() - startedAt)
+    const trace = `requestId=${JSON.stringify(operationContext.requestId)} workspaceKey=${JSON.stringify(operationContext.workspaceKey)}`
     if (isExpectedIpcControlFlowError(cause)) {
-      logDebug('ipc', `not-applicable command=${command} durationMs=${durationMs} detail=${sanitizeLogMessage(cause)}`)
+      logDebug(
+        'ipc',
+        `not-applicable command=${command} ${trace} durationMs=${durationMs} detail=${sanitizeLogMessage(cause)}`
+      )
     } else {
-      logError('ipc', `failed command=${command} durationMs=${durationMs} error=${sanitizeLogMessage(cause)}`)
+      logError('ipc', `failed command=${command} ${trace} durationMs=${durationMs} error=${sanitizeLogMessage(cause)}`)
     }
     throw cause
+  } finally {
+    release()
   }
 }
 

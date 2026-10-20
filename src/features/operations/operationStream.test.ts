@@ -7,6 +7,8 @@ describe('Lore operation stream reducer', () => {
     let records = mergeLoreOperationStream(
       [],
       {
+        requestId: 'operation-1',
+        workspaceKey: null,
         operationId: 'operation-1',
         operation: 'repository.clone',
         phase: 'queued',
@@ -17,6 +19,8 @@ describe('Lore operation stream reducer', () => {
     records = mergeLoreOperationStream(
       records,
       {
+        requestId: 'operation-1',
+        workspaceKey: null,
         operationId: 'operation-1',
         operation: 'repository.clone',
         phase: 'streaming',
@@ -31,6 +35,8 @@ describe('Lore operation stream reducer', () => {
     records = mergeLoreOperationStream(
       records,
       {
+        requestId: 'operation-1',
+        workspaceKey: null,
         operationId: 'operation-1',
         operation: 'repository.clone',
         phase: 'succeeded',
@@ -60,6 +66,8 @@ describe('Lore operation stream reducer', () => {
 
   it('keeps accumulated progress on an old active stream while other streams complete', () => {
     const event = {
+      requestId: 'long-clone',
+      workspaceKey: null,
       operationId: 'long-clone',
       operation: 'repository.clone',
       phase: 'streaming' as const,
@@ -71,6 +79,8 @@ describe('Lore operation stream reducer', () => {
       records = mergeLoreOperationStream(
         records,
         {
+          requestId: `completed-${index}`,
+          workspaceKey: '/workspace/project',
           operationId: `completed-${index}`,
           operation: 'repository.sync',
           phase: 'succeeded',
@@ -88,6 +98,8 @@ describe('Lore operation stream reducer', () => {
     let records = mergeLoreOperationStream(
       [],
       {
+        requestId: 'long-task',
+        workspaceKey: null,
         operationId: 'long-task',
         operation: 'repository.clone',
         phase: 'running',
@@ -99,6 +111,8 @@ describe('Lore operation stream reducer', () => {
       records = mergeLoreOperationStream(
         records,
         {
+          requestId: `done-${index}`,
+          workspaceKey: '/workspace/project',
           operationId: `done-${index}`,
           operation: 'repository.sync',
           phase: 'succeeded',
@@ -110,6 +124,8 @@ describe('Lore operation stream reducer', () => {
     records = mergeLoreOperationStream(
       records,
       {
+        requestId: 'long-task',
+        workspaceKey: null,
         operationId: 'long-task',
         operation: 'repository.clone',
         phase: 'succeeded',

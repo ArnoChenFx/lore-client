@@ -632,7 +632,13 @@ export interface LoreEvent {
   data: Record<string, unknown>
 }
 
-export interface LoreOperationResult {
+/** One explicitly owned workflow, potentially containing several IPC and native operations. */
+export interface OperationContext {
+  readonly requestId: string
+  readonly workspaceKey: string | null
+}
+
+export interface LoreOperationResult extends OperationContext {
   operation: string
   status: number
   durationMs: number
@@ -655,7 +661,7 @@ export interface LoreRevisionHistoryResult extends LoreOperationResult {
 }
 
 /** Rust 适配层实时发出的单个操作生命周期或 Lore 事件。 */
-export interface LoreOperationStreamEvent {
+export interface LoreOperationStreamEvent extends OperationContext {
   operationId: string
   operation: string
   phase: LoreOperationStreamPhase
@@ -694,7 +700,7 @@ export interface OperationProgress {
 }
 
 /** 操作中心中的流式聚合记录，保留最近阶段和轻量指标，不复制大型事件载荷。 */
-export interface LoreOperationStreamRecord {
+export interface LoreOperationStreamRecord extends OperationContext {
   operationId: string
   operation: string
   phase: LoreOperationStreamPhase
