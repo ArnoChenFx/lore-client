@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { resolveBrowserExecutable } from './browser-path.mjs'
+import { createCdpClient } from './cdp-client.mjs'
 import { removeOwnedTemporaryDirectory, terminateOwnedProcess } from './temporary-resources.mjs'
 
 // 与冒烟测试共享三平台浏览器发现逻辑；非标准安装仍可通过环境变量覆盖。
@@ -124,6 +125,9 @@ const browserProcess = spawn(
   chromePath,
   [
     '--headless=new',
+    // UI assertions use Simplified Chinese regardless of the host locale.
+    '--lang=zh-CN',
+    '--accept-lang=zh-CN',
     '--disable-gpu',
     '--disable-breakpad',
     '--disable-crash-reporter',
@@ -150,7 +154,7 @@ browserProcess.stderr?.on('data', (chunk) => {
 async function waitForDebugTarget() {
   for (let attempt = 0; attempt < 30; attempt += 1) {
     try {
-      const targets = await fetch(`${debugBaseUrl}/json/list`).then((response) => response.json())
+      const targets = await fetch(`${debugBaseUrl}/json/list`, { signal: AbortSignal.timeout(500) }).then((response) => response.json())
       const applicationTarget = targets.find((target) => target.url?.startsWith(applicationUrl))
       if (applicationTarget) {
         return applicationTarget
@@ -163,97 +167,6 @@ async function waitForDebugTarget() {
   }
 
   throw new Error('No Lore Client debugging target appeared before the timeout')
-}
-
-function createCdpClient(webSocketUrl) {
-  const socket = new WebSocket(webSocketUrl)
-  const commandTimeoutMilliseconds = 15_000
-  const opened = new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('The CDP WebSocket did not connect before the timeout')), 5_000)
-    socket.addEventListener(
-      'open',
-      () => {
-        clearTimeout(timeout)
-        resolve()
-      },
-      { once: true }
-    )
-    socket.addEventListener(
-      'error',
-      (event) => {
-        clearTimeout(timeout)
-        reject(event)
-      },
-      { once: true }
-    )
-  })
-  const pendingCommands = new Map()
-  let commandId = 0
-
-  const rejectPendingCommands = (reason) => {
-    for (const { method, reject, timeout } of pendingCommands.values()) {
-      clearTimeout(timeout)
-      reject(new Error(`CDP command ${method} failed: ${reason}`))
-    }
-    pendingCommands.clear()
-  }
-
-  socket.addEventListener('close', () => rejectPendingCommands('The browser target was closed'))
-  socket.addEventListener('error', () => rejectPendingCommands('The CDP WebSocket connection failed'))
-
-  socket.addEventListener('message', (event) => {
-    const message = JSON.parse(event.data)
-    if (!message.id || !pendingCommands.has(message.id)) {
-      return
-    }
-
-    const { method, resolve, reject, timeout } = pendingCommands.get(message.id)
-    pendingCommands.delete(message.id)
-    clearTimeout(timeout)
-    if (message.error) {
-      reject(new Error(`CDP command ${method} failed: ${message.error.message}`))
-    } else {
-      resolve(message.result)
-    }
-  })
-
-  async function send(method, params = {}) {
-    await opened
-    commandId += 1
-
-    return new Promise((resolve, reject) => {
-      const currentCommandId = commandId
-      const timeout = setTimeout(() => {
-        if (!pendingCommands.has(currentCommandId)) {
-          return
-        }
-        pendingCommands.delete(currentCommandId)
-        reject(new Error(`CDP command ${method} did not return within ${commandTimeoutMilliseconds}ms`))
-      }, commandTimeoutMilliseconds)
-      pendingCommands.set(currentCommandId, {
-        method,
-        resolve,
-        reject,
-        timeout
-      })
-      socket.send(JSON.stringify({ id: commandId, method, params }))
-    })
-  }
-
-  async function evaluate(expression) {
-    const result = await send('Runtime.evaluate', {
-      expression,
-      awaitPromise: true,
-      returnByValue: true
-    })
-
-    if (result.exceptionDetails) {
-      throw new Error(result.exceptionDetails.text)
-    }
-    return result.result.value
-  }
-
-  return { socket, send, evaluate }
 }
 
 async function waitForApplication(cdp) {

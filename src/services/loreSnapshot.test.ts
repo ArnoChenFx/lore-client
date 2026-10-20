@@ -7,6 +7,7 @@ import i18n from '../i18n'
  * 在服务模块求值前已初始化。这种写法不依赖 mock 调用的提升，bun test 中同样成立。
  */
 const invokeMock = vi.fn()
+const tauriCore = await import('@tauri-apps/api/core')
 let repositoryStatusEvents: Array<{ tagName: string; data: Record<string, unknown> }> = []
 let branchListEvents: Array<{ tagName: string; data: Record<string, unknown> }> = []
 // mock 的冲突会话响应只覆盖断言需要的字段，保留"任意响应"的 mock 语义。
@@ -19,6 +20,8 @@ interface MockConflictSessionResponse {
 let conflictSessionResponse: MockConflictSessionResponse | null = null
 
 vi.mock('@tauri-apps/api/core', () => ({
+  // 保留 Resource 等未替换导出；裸 bun test 共享模块注册表时其他插件仍可正确加载。
+  ...tauriCore,
   // lore.ts 同时导出二进制流式预览；即使本文件不触发该路径，Bun 也要求 mock
   // 提供模块导入时引用的全部具名导出。
   Channel: class {

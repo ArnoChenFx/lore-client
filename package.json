@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "check": "tsc -b --pretty false",
-    "test": "bun test",
+    "test": "bun test --isolate",
     "test:ui": "bun scripts/cdp-smoke.mjs",
     "test:visual": "bun scripts/visual-audit.mjs",
     "release:prepare": "bun scripts/prepare-release.mjs",

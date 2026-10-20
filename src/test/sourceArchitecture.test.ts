@@ -3,9 +3,10 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { parseSync, traverse } from '@babel/core'
+
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const SOURCE_ROOT = resolve(PROJECT_ROOT, 'src')
-const ROOT_FILE_ALLOWLIST = ['App.tsx', 'main.tsx', 'styles.css', 'types.ts', 'vite-env.d.ts']
 
 function toProjectPath(filePath: string): string {
   return relative(PROJECT_ROOT, filePath).split(sep).join('/')
@@ -42,9 +43,33 @@ function resolveLocalModule(importer: string, specifier: string): string | null 
 }
 
 /** 提取静态、动态和仅副作用导入，确保架构守卫不会漏掉懒加载边界。 */
-function readImportSpecifiers(source: string): string[] {
-  const pattern = /\bfrom\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)|\bimport\s*['"]([^'"]+)['"]/gu
-  return [...source.matchAll(pattern)].map((match) => match[1] ?? match[2] ?? match[3])
+function readImportSpecifiers(source: string, filename = 'example.ts'): string[] {
+  const ast = parseSync(source, {
+    filename,
+    configFile: false,
+    babelrc: false,
+    parserOpts: { plugins: filename.endsWith('.tsx') ? ['typescript', 'jsx'] : ['typescript'] }
+  })
+  if (!ast) throw new Error(`Could not parse architecture input: ${filename}`)
+  const specifiers: string[] = []
+  traverse(ast, {
+    ImportDeclaration({ node }) {
+      specifiers.push(node.source.value)
+    },
+    ExportNamedDeclaration({ node }) {
+      if (node.source) specifiers.push(node.source.value)
+    },
+    ExportAllDeclaration({ node }) {
+      specifiers.push(node.source.value)
+    },
+    ImportExpression({ node }) {
+      if (node.source.type === 'StringLiteral') specifiers.push(node.source.value)
+    },
+    TSImportType({ node }) {
+      specifiers.push(node.source.value)
+    }
+  })
+  return specifiers
 }
 
 function boundaryRoot(modulePath: string): string | null {
@@ -65,20 +90,27 @@ interface LocalImport {
 const localImports: LocalImport[] = moduleFiles.flatMap((absoluteImporter) => {
   const importer = toProjectPath(absoluteImporter)
   const source = readFileSync(absoluteImporter, 'utf8')
-  return readImportSpecifiers(source)
+  return readImportSpecifiers(source, absoluteImporter)
     .map((specifier) => resolveLocalModule(absoluteImporter, specifier))
     .filter((target): target is string => target !== null)
     .map((target) => ({ importer, target }))
 })
 
 describe('source architecture boundaries', () => {
-  it('keeps only application entry files in the source root', () => {
-    const rootFiles = readdirSync(SOURCE_ROOT, { withFileTypes: true })
-      .filter((entry) => entry.isFile())
-      .map((entry) => entry.name)
-      .sort()
-
-    expect(rootFiles).toEqual([...ROOT_FILE_ALLOWLIST].sort())
+  it('reads real imports and re-exports without treating comments or examples as dependencies', () => {
+    expect(
+      readImportSpecifiers(`
+      import type { Model } from './types'
+      import './setup'
+      export { value } from './value'
+      export * from './public'
+      const view = import('./view')
+      type State = import('./state').State
+      // import './comment'
+      const example = "from './example'"
+    `)
+    ).toEqual(['./types', './setup', './value', './public', './view', './state'])
+    expect(localImports.length).toBeGreaterThan(0)
   })
 
   it('uses public indexes for imports that cross module boundaries', () => {

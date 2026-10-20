@@ -10,7 +10,7 @@ This guide is the shortest path from a fresh checkout to a validated contributio
 
 Install:
 
-- Bun 1.3 or newer.
+- Bun 1.4.3 (the version used by CI).
 - The stable Rust toolchain with Cargo.
 - Git LFS 3.x.
 - The platform dependencies required by Tauri: WebView2 and Windows build tools on Windows, WebKitGTK 4.1 development packages on Linux, or Xcode Command Line Tools on macOS.
@@ -63,11 +63,13 @@ bun tauri build --debug --no-bundle
 
 Do not commit generated dependencies, build output, Rust targets, temporary browser profiles, or generated analysis directories.
 
+The `bun run test` script enables Bun's `--isolate` mode so module mocks and global state do not leak across test files. Bun 1.4.3 does not expose this setting in `bunfig.toml`; use the script in local development and CI.
+
 ## Common development tasks
 
 ### Change the interface
 
-Start with `bun run dev`, update the relevant component and shared styles, then add or update nearby `bun test` coverage. Use semantic design tokens so the same change works in light and dark themes.
+Start with `bun run dev`, update the relevant component and shared styles, then add or update nearby `bun run test` coverage. Use semantic design tokens so the same change works in light and dark themes.
 
 All user-visible text, accessible names, tooltips, confirmations, and errors must use the localization resources. Update the English and Simplified Chinese resources together.
 
@@ -164,14 +166,14 @@ Run checks in proportion to the files and behavior you changed.
 | Change                                   | Required checks                                                                                                                          |
 | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Documentation only                       | Check links and bilingual parity; run `git diff --check`                                                                                 |
-| Frontend logic or components             | `bun run check`, `bun test`, `bun run lint`, `bun run format:check`, `bun run build`                                                     |
+| Frontend logic or components             | `bun run check`, `bun run test`, `bun run lint`, `bun run format:check`, `bun run build`                                                     |
 | Rust or Lore adapter                     | `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`, `cargo check --manifest-path src-tauri/Cargo.toml`, and targeted Rust tests |
 | Desktop permissions, shell, or packaging | `bun tauri build --debug --no-bundle`                                                                                                    |
 
 The baseline delivery checks are:
 
 ```powershell
-bun test
+bun run test
 bun run build
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 cargo check --manifest-path src-tauri/Cargo.toml

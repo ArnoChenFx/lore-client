@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { resolveBrowserExecutable } from './browser-path.mjs'
+import { createCdpClient } from './cdp-client.mjs'
 import { removeOwnedTemporaryDirectory, terminateOwnedProcess } from './temporary-resources.mjs'
 
 // 自动覆盖 Windows、Linux 与 macOS 的常见 Chrome、Chromium 和 Edge 安装；
@@ -98,6 +99,9 @@ const browserProcess = spawn(
   chromePath,
   [
     '--headless=new',
+    // UI assertions use Simplified Chinese regardless of the host locale.
+    '--lang=zh-CN',
+    '--accept-lang=zh-CN',
     '--disable-gpu',
     '--disable-breakpad',
     '--disable-crash-reporter',
@@ -124,7 +128,7 @@ browserProcess.stderr?.on('data', (chunk) => {
 async function waitForDebugTarget() {
   for (let attempt = 0; attempt < 30; attempt += 1) {
     try {
-      const targets = await fetch(`${debugBaseUrl}/json/list`).then((response) => response.json())
+      const targets = await fetch(`${debugBaseUrl}/json/list`, { signal: AbortSignal.timeout(500) }).then((response) => response.json())
       const applicationTarget = targets.find((target) => target.url?.startsWith(applicationUrl))
       if (applicationTarget) {
         return applicationTarget
@@ -136,71 +140,6 @@ async function waitForDebugTarget() {
   }
 
   throw new Error('No Lore Client debugging target appeared before the timeout')
-}
-
-function createCdpClient(webSocketUrl) {
-  const socket = new WebSocket(webSocketUrl)
-  let commandId = 0
-  const pendingCommands = new Map()
-  const eventListeners = new Map()
-  const runtimeErrors = []
-
-  const opened = new Promise((resolve, reject) => {
-    socket.addEventListener('open', resolve, { once: true })
-    socket.addEventListener('error', reject, { once: true })
-  })
-
-  socket.addEventListener('message', (event) => {
-    const message = JSON.parse(event.data)
-
-    if (message.id && pendingCommands.has(message.id)) {
-      const { method, resolve, reject } = pendingCommands.get(message.id)
-      pendingCommands.delete(message.id)
-      if (message.error) {
-        reject(new Error(`CDP command ${method} failed: ${message.error.message}`))
-      } else {
-        resolve(message.result)
-      }
-      return
-    }
-
-    if (message.method === 'Runtime.exceptionThrown') {
-      runtimeErrors.push(message.params.exceptionDetails.text)
-    }
-    for (const listener of eventListeners.get(message.method) ?? []) {
-      listener(message.params)
-    }
-  })
-
-  function on(method, listener) {
-    eventListeners.set(method, [...(eventListeners.get(method) ?? []), listener])
-  }
-
-  async function send(method, params = {}) {
-    await opened
-    commandId += 1
-
-    return new Promise((resolve, reject) => {
-      // 保存方法名，让浏览器只返回通用错误时仍能定位失败发生在哪个交互阶段。
-      pendingCommands.set(commandId, { method, resolve, reject })
-      socket.send(JSON.stringify({ id: commandId, method, params }))
-    })
-  }
-
-  async function evaluate(expression) {
-    const result = await send('Runtime.evaluate', {
-      expression,
-      awaitPromise: true,
-      returnByValue: true
-    })
-
-    if (result.exceptionDetails) {
-      throw new Error(result.exceptionDetails.text)
-    }
-    return result.result.value
-  }
-
-  return { socket, send, evaluate, on, runtimeErrors }
 }
 
 function assert(condition, message) {

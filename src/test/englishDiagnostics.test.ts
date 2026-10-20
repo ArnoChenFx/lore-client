@@ -3,6 +3,8 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { inspectRustDiagnostics } from './rustDiagnostics'
+
 const HAN_TEXT = /\p{Script=Han}/u
 // 本测试已归入 `src/test`，因此需要回到两级父目录才能定位项目根。
 const PROJECT_ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -175,14 +177,21 @@ function readProjectFile(relativePath: string): string {
   return readFileSync(resolve(PROJECT_ROOT, relativePath), 'utf8')
 }
 
-/** 递归收集目录中的测试源码，避免英文命名守卫依赖某个测试运行器的发现规则。 */
-function collectTestFiles(directory: string): string[] {
+/** 递归发现源码，Rust 拆分到子模块后仍属于诊断守卫的检查范围。 */
+function collectFiles(directory: string, pattern: RegExp): string[] {
   return readdirSync(resolve(PROJECT_ROOT, directory), { withFileTypes: true }).flatMap((entry) => {
     const relativePath = `${directory}/${entry.name}`
-    if (entry.isDirectory()) return collectTestFiles(relativePath)
-    return /\.(?:test|spec)\.(?:ts|tsx)$/.test(entry.name) ? [relativePath] : []
+    if (entry.isDirectory()) return collectFiles(relativePath, pattern)
+    return pattern.test(entry.name) ? [relativePath] : []
   })
 }
+
+const rustFiles = ['src-tauri/build.rs', ...collectFiles('src-tauri/src', /\.rs$/u)]
+const rustDiagnostics = rustFiles.map((file) => ({
+  file,
+  testOnly: /\/(?:tests|[^/]+_tests)\.rs$/u.test(file),
+  ...inspectRustDiagnostics(readProjectFile(file), /\/(?:tests|[^/]+_tests)\.rs$/u.test(file))
+}))
 
 /**
  * 提取 bun test 的直接名称和 `it.each(...)(name, ...)` 参数化名称。
@@ -197,16 +206,21 @@ function findChineseTestNames(source: string): string[] {
 
 describe('English internal diagnostics', () => {
   test('TypeScript and Rust test names contain no Chinese text', () => {
-    const frontendFindings = [...collectTestFiles('src'), ...collectTestFiles('scripts')].flatMap((relativePath) =>
+    const testFilePattern = /\.(?:test|spec)\.(?:ts|tsx)$/u
+    const frontendFiles = [...collectFiles('src', testFilePattern), ...collectFiles('scripts', testFilePattern)]
+    const frontendFindings = frontendFiles.flatMap((relativePath) =>
       findChineseTestNames(readProjectFile(relativePath)).map((name) => ({
         file: relativePath,
         name
       }))
     )
-    const rustSource = readProjectFile('src-tauri/src/lore_adapter.rs').split('#[cfg(test)]')[1] ?? ''
-    const rustFindings = [...rustSource.matchAll(/#\[test\][\s\S]*?\bfn\s+([^\s(]+)/gu)]
-      .map((match) => match[1])
-      .filter((name) => HAN_TEXT.test(name))
+    const rustFindings = rustDiagnostics.flatMap(({ file, testNames }) =>
+      testNames.filter((name) => HAN_TEXT.test(name)).map((name) => ({ file, name }))
+    )
+
+    expect(frontendFiles.length).toBeGreaterThan(0)
+    expect(rustDiagnostics.some(({ testOnly, testNames }) => testOnly && testNames.length > 0)).toBe(true)
+    expect(rustDiagnostics.reduce((count, { testNames }) => count + testNames.length, 0)).toBeGreaterThan(0)
 
     expect({ frontendFindings, rustFindings }).toEqual({
       frontendFindings: [],
@@ -227,25 +241,11 @@ describe('English internal diagnostics', () => {
   })
 
   test('Rust production strings contain no Chinese text', () => {
-    const rustFiles = [
-      'src-tauri/build.rs',
-      'src-tauri/src/lib.rs',
-      'src-tauri/src/client_preferences.rs',
-      'src-tauri/src/lore_adapter.rs'
-    ]
-    const findings = rustFiles.flatMap((relativePath) => {
-      const productionSource = readProjectFile(relativePath).split('#[cfg(test)]')[0]
-      return productionSource
-        .split('\n')
-        .map((line, index) => ({ line, lineNumber: index + 1 }))
-        .filter(({ line }) => {
-          const trimmed = line.trimStart()
-          if (trimmed.startsWith('//') || trimmed.startsWith('*')) return false
-          return /"(?:\\.|[^"\\])*[\p{Script=Han}]/u.test(line)
-        })
-        .map(({ line, lineNumber }) => ({ file: relativePath, line: lineNumber, text: line.trim() }))
-    })
+    const findings = rustDiagnostics.flatMap(({ file, productionStrings }) =>
+      productionStrings.map((finding) => ({ file, ...finding }))
+    )
 
+    expect(rustDiagnostics.some(({ testOnly }) => !testOnly)).toBe(true)
     expect(findings).toEqual([])
   })
 })
