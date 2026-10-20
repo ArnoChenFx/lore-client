@@ -173,7 +173,7 @@ pub async fn lore_shared_store_create(
     make_default: bool,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let remote_url = validate_server_url(&remote_url)?;
-    let parent_path = match parent_path.filter(|path| !path.trim().is_empty()) {
+    let parent_path = match parent_path.filter(|path| !path.is_empty()) {
         Some(path) => Some(display_path_without_windows_verbatim_prefix(
             &validate_existing_directory(&path, "Shared Store parent directory")?,
         )),
@@ -260,13 +260,12 @@ pub async fn lore_lock_file_query(
     path: Option<String>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let branch = validate_branch_name(&branch)?;
-    let owner = validate_optional_lock_filter(owner, "Lock owner")?;
-    let path = match validate_optional_lock_filter(path, "Lock path")? {
-        Some(path) => validate_repository_relative_path(&path)?
-            .to_string_lossy()
-            .replace('\\', "/"),
-        None => String::new(),
-    };
+    let owner =
+        validate_optional_lock_filter(owner.map(|owner| owner.trim().to_owned()), "Lock owner")?;
+    let path = validate_optional_repository_relative_path(validate_optional_lock_filter(
+        path,
+        "Lock path",
+    )?)?;
     run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("lock.file-query", move |callback| {

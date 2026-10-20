@@ -1205,11 +1205,11 @@ fn ffi_error_code_table_covers_the_relocated_code_blocks() {
 }
 
 #[test]
-fn lock_query_filters_reject_control_characters_and_preserve_trimmed_values() {
+fn lock_query_filters_reject_control_characters_without_rewriting_paths() {
     assert_eq!(
-        validate_optional_lock_filter(Some("  artist@example.com  ".to_owned()), "Lock owner")
-            .expect("a normal owner filter should be accepted"),
-        Some("artist@example.com".to_owned())
+        validate_optional_lock_filter(Some("  asset  ".to_owned()), "Lock path")
+            .expect("a path filter should preserve its original name"),
+        Some("  asset  ".to_owned())
     );
     let error =
         validate_optional_lock_filter(Some("Content/Maps/\nSecret.umap".to_owned()), "Lock path")
@@ -2150,9 +2150,16 @@ fn composition_argument_builders_preserve_safe_link_and_layer_options() {
         Some(" release ".to_owned()),
     )
     .expect("A complete Layer request should be accepted");
-    assert_eq!(layer.target_path.as_str(), "Content/Shared");
+    assert_eq!(layer.target_path.as_str(), " Content/Shared ");
     assert_eq!(layer.source_repository.as_str(), "repository-shared");
     assert_eq!(layer.source_path.as_str(), "Assets");
+    assert_eq!(
+        build_link_update_args(" ".to_owned(), None)
+            .unwrap()
+            .link_path
+            .as_str(),
+        " "
+    );
     assert_eq!(layer.metadata.as_str(), "release");
 
     let link = build_link_add_args(
@@ -2180,7 +2187,7 @@ fn composition_argument_builders_preserve_safe_link_and_layer_options() {
 
 #[test]
 fn composition_argument_builders_reject_missing_or_control_character_fields() {
-    let empty = build_link_update_args("  ".to_owned(), None)
+    let empty = build_link_update_args(String::new(), None)
         .expect_err("An empty Link path must be rejected before entering Lore");
     assert_eq!(empty.code, "composition_field_required");
 
@@ -2520,7 +2527,46 @@ fn ignore_rules_refuse_a_loreignore_link_that_leaves_the_repository() {
 
 #[test]
 fn empty_file_list_maps_to_repository_root() {
-    assert_eq!(normalize_paths(Vec::new(), true), vec!["."]);
+    assert_eq!(validate_stage_paths(Vec::new()).unwrap(), vec!["."]);
+}
+
+#[test]
+fn explicit_file_paths_preserve_spaces_and_never_expand_empty_entries_to_root() {
+    let paths = ["asset", "asset ", " asset", " ", "directory / file "]
+        .map(str::to_owned)
+        .to_vec();
+    assert_eq!(validate_stage_paths(paths.clone()).unwrap(), paths);
+    assert_eq!(
+        validate_repository_relative_paths(paths.clone()).unwrap(),
+        paths
+    );
+    assert_eq!(
+        validate_optional_repository_relative_path(None).unwrap(),
+        ""
+    );
+    assert_eq!(
+        validate_optional_repository_relative_path(Some(String::new())).unwrap(),
+        ""
+    );
+    for path in &paths {
+        assert_eq!(
+            validate_optional_repository_relative_path(Some(path.clone())).unwrap(),
+            *path
+        );
+    }
+    for paths in [
+        vec![String::new()],
+        vec!["asset".to_owned(), String::new()],
+        vec!["../outside".to_owned()],
+        vec!["directory/../../outside".to_owned()],
+        vec!["/outside".to_owned()],
+    ] {
+        assert!(validate_stage_paths(paths).is_err());
+    }
+    assert_eq!(
+        validate_stage_paths(vec![".".to_owned(), "./".to_owned()]).unwrap(),
+        vec![".", "."]
+    );
 }
 
 #[test]
@@ -2650,7 +2696,7 @@ fn clearing_empty_tag_keys_does_not_clear_all_repository_metadata() {
 #[test]
 fn file_paths_are_normalized_to_forward_slashes() {
     assert_eq!(
-        normalize_paths(vec!["Content\\Maps\\World.umap".to_owned()], false),
+        validate_stage_paths(vec!["Content\\Maps\\World.umap".to_owned()]).unwrap(),
         vec!["Content/Maps/World.umap"],
     );
 }
@@ -3887,7 +3933,14 @@ fn clone_target_rejects_windows_reserved_names_on_every_platform() {
     std::fs::create_dir_all(&parent).expect("The test parent directory should be created");
     let parent = parent.to_string_lossy();
 
-    for directory_name in ["CON", "nul.txt", "COM1", "LPT9.logs", "trailing."] {
+    for directory_name in [
+        "CON",
+        "nul.txt",
+        "COM1",
+        "LPT9.logs",
+        "trailing.",
+        "trailing ",
+    ] {
         let error = validate_clone_destination(parent.as_ref(), directory_name)
             .expect_err("Windows reserved names must be rejected on every platform");
         assert_eq!(error.code, "invalid_clone_directory");

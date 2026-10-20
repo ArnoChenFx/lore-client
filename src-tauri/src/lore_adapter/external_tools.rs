@@ -46,27 +46,38 @@ pub(super) fn ensure_conflict_read_succeeded(
     ))
 }
 
-pub(super) fn normalize_paths(
-    paths: Vec<String>,
-    use_repository_root_when_empty: bool,
-) -> Vec<String> {
-    let mut paths = paths
-        .into_iter()
-        .map(|path| path.trim().replace('\\', "/"))
-        .filter(|path| !path.is_empty())
-        .collect::<Vec<_>>();
-
-    if paths.is_empty() && use_repository_root_when_empty {
-        paths.push(".".to_owned());
+/// Stage/Unstage 的空集合明确表示全仓；非空集合不能丢弃无效项后变为全仓操作。
+pub(super) fn validate_stage_paths(paths: Vec<String>) -> Result<Vec<String>, LoreCommandError> {
+    if paths.is_empty() {
+        return Ok(vec![".".to_owned()]);
     }
     paths
+        .into_iter()
+        .map(|path| {
+            let normalized = path.replace('\\', "/");
+            // 显式根路径只在这两个仓库级操作允许；纯空白仍是一个真实文件名。
+            if !normalized.is_empty()
+                && Path::new(&normalized)
+                    .components()
+                    .all(|component| matches!(component, std::path::Component::CurDir))
+            {
+                return Ok(".".to_owned());
+            }
+            validate_repository_relative_path(&normalized).map(|validated| {
+                validated
+                    .to_string_lossy()
+                    .replace(std::path::MAIN_SEPARATOR, "/")
+            })
+        })
+        .collect()
 }
 
 /// 校验单个 Lore 仓库相对路径，禁止绝对路径、父目录跳转和平台路径前缀。
 pub(super) fn validate_repository_relative_path(path: &str) -> Result<PathBuf, LoreCommandError> {
-    let mut normalized = path.trim().replace('\\', "/");
+    // 文件名中的外围空白属于身份；固定 Lore 只统一路径分隔符，不会 trim。
+    let mut normalized = path.replace('\\', "/");
     // “./文件”仍是合法的仓库相对路径。前端会优先消除该前缀，这里再做一次
-    // 防御性归一化，兼容旧会话和外部调用方，同时绝不放宽 “../” 跳转限制。
+    // 防御性归一化，同时绝不放宽 “../” 跳转限制。
     while let Some(stripped) = normalized.strip_prefix("./") {
         normalized = stripped.to_owned();
     }
@@ -86,6 +97,21 @@ pub(super) fn validate_repository_relative_path(path: &str) -> Result<PathBuf, L
         ));
     }
     Ok(parsed.to_path_buf())
+}
+
+/// 可选路径仅以缺省或空串表示不限定范围，纯空白文件名必须原样验证。
+pub(super) fn validate_optional_repository_relative_path(
+    path: Option<String>,
+) -> Result<String, LoreCommandError> {
+    match path {
+        None => Ok(String::new()),
+        Some(path) if path.is_empty() => Ok(String::new()),
+        Some(path) => validate_repository_relative_path(&path).map(|validated| {
+            validated
+                .to_string_lossy()
+                .replace(std::path::MAIN_SEPARATOR, "/")
+        }),
+    }
 }
 
 /// Windows `canonicalize` 会返回 `\\?\` 扩展路径；它适合系统调用，却不适合
@@ -180,7 +206,6 @@ pub(super) fn resolve_external_executable_with(
     path_value: Option<&std::ffi::OsStr>,
     extensions: &[String],
 ) -> Option<PathBuf> {
-    let executable = executable.trim();
     if executable.is_empty() || executable.contains(['\0', '\r', '\n']) {
         return None;
     }
@@ -212,7 +237,7 @@ pub(super) fn resolve_external_executable_with(
 pub(super) fn resolve_external_executable(executable: &str) -> Option<PathBuf> {
     #[cfg(windows)]
     let extensions = {
-        let path = Path::new(executable.trim());
+        let path = Path::new(executable);
         let configured = std::env::var_os("PATHEXT")
             .map(|value| {
                 value
@@ -249,7 +274,7 @@ pub(super) fn resolve_external_diff_arguments(
     after_label: &str,
 ) -> Result<Vec<String>, LoreCommandError> {
     let tool_name = tool.name.trim();
-    let executable = tool.executable.trim();
+    let executable = &tool.executable;
     if tool_name.is_empty()
         || tool_name.len() > 128
         || executable.is_empty()
@@ -442,7 +467,7 @@ pub(super) fn launch_external_diff(
         &after.label,
     )?;
     let tool_name = tool.name.trim().to_owned();
-    let configured_executable = tool.executable.trim().to_owned();
+    let configured_executable = tool.executable.clone();
     let executable = resolve_external_executable(&configured_executable).ok_or_else(|| {
         LoreCommandError::new(
             "external_diff_executable_missing",
@@ -704,7 +729,7 @@ pub(super) fn launch_external_merge(
             "external_merge_executable_missing",
             format!(
                 "External Merge executable was not found: {}",
-                tool.executable.trim()
+                tool.executable
             ),
         )
     })?;

@@ -99,10 +99,10 @@ pub async fn lore_stage(
     repository_path: String,
     paths: Vec<String>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
+    let paths = validate_stage_paths(paths)?;
     run_lore_task(operation_context, move || {
         reset_legacy_dirty_only_anchor_before_stage(&repository_path)?;
         let globals = global_args(&repository_path)?;
-        let paths = normalize_paths(paths, true);
         run_operation("file.stage", move |callback| {
             lore::runtime().block_on(lore::file::stage(
                 globals,
@@ -169,9 +169,9 @@ pub async fn lore_unstage(
     repository_path: String,
     paths: Vec<String>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
+    let paths = validate_stage_paths(paths)?;
     run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
-        let paths = normalize_paths(paths, true);
         run_operation("file.unstage", move |callback| {
             lore::runtime().block_on(lore::file::unstage(
                 globals,
@@ -783,7 +783,7 @@ fn write_patch_file(
     replace_existing: bool,
 ) -> Result<(), LoreCommandError> {
     validate_patch_content(&patch)?;
-    let destination = PathBuf::from(destination_path.trim());
+    let destination = PathBuf::from(destination_path);
     if !destination.is_absolute() || destination.file_name().is_none() {
         return Err(LoreCommandError::new(
             "invalid_patch_destination",

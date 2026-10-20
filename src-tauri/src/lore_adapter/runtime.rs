@@ -545,7 +545,6 @@ pub(super) fn validate_clone_destination(
     directory_name: &str,
 ) -> Result<PathBuf, LoreCommandError> {
     let parent = validate_existing_directory(destination_parent, "Clone parent directory")?;
-    let directory_name = directory_name.trim();
     let directory_path = Path::new(directory_name);
     /*
      * `Path::components()` 只理解当前宿主的分隔符：`foo\bar` 在 Windows 是两级
@@ -656,7 +655,7 @@ pub(super) fn validate_optional_file(
     path: Option<String>,
     label: &str,
 ) -> Result<Option<String>, LoreCommandError> {
-    let Some(path) = path.map(|value| value.trim().to_owned()) else {
+    let Some(path) = path else {
         return Ok(None);
     };
     if path.is_empty() {
@@ -694,7 +693,7 @@ pub(super) fn validate_shared_store_path(
     if !use_shared_store {
         return Ok(None);
     }
-    let Some(path) = shared_store_path.filter(|path| !path.trim().is_empty()) else {
+    let Some(path) = shared_store_path.filter(|path| !path.is_empty()) else {
         return Ok(None);
     };
     Ok(Some(display_path_without_windows_verbatim_prefix(
@@ -702,12 +701,12 @@ pub(super) fn validate_shared_store_path(
     )))
 }
 
-/// Lock 查询筛选器进入远端请求前拒绝控制字符和异常长度。
+/// Lock 查询筛选器进入远端请求前拒绝控制字符和异常长度，保留路径的精确空白。
 pub(super) fn validate_optional_lock_filter(
     value: Option<String>,
     label: &str,
 ) -> Result<Option<String>, LoreCommandError> {
-    let value = value.unwrap_or_default().trim().to_owned();
+    let value = value.unwrap_or_default();
     if value.is_empty() {
         return Ok(None);
     }
