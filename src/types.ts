@@ -289,13 +289,20 @@ export interface Revision {
   id: string
   shortId: string
   title: string
-  description: string
+  /** Revision 编号与提交时间保留原始事实，展示文案由界面按当前语言生成。 */
+  revisionNumber?: number
+  /** Unix 纪元毫秒；null 表示原生历史没有有效时间，undefined 兼容旧演示数据。 */
+  committedAt?: number | null
+  /** @deprecated 仅兼容旧演示数据；原生历史使用 revisionNumber。 */
+  description?: string
   author: string
   /** 从提交时 identity 拆出的邮箱；只用于头像哈希，不替代历史作者文字。 */
   authorEmail?: string
   initials: string
-  timestamp: string
-  relativeTime: string
+  /** @deprecated 仅兼容旧演示数据；原生历史使用 committedAt。 */
+  timestamp?: string
+  /** @deprecated 相对时间应在展示时计算，不能存入原生历史快照。 */
+  relativeTime?: string
   /** 当前精确指向该 Revision 的 Branch，以及工作区 HEAD；不表示历史归属。 */
   branchPointers: RevisionBranchPointer[]
   parentCount: number
@@ -308,7 +315,7 @@ export interface Revision {
   filesChanged: number
   additions: number
   deletions: number
-  size: string
+  size?: string
 }
 
 /** Revision Info 的文件级父子变化。 */

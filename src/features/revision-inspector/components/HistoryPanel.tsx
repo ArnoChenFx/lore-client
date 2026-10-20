@@ -4,9 +4,10 @@ import { useTranslation } from 'react-i18next'
 
 import { useAdjustFromProps } from '../../../hooks/useAdjustFromProps'
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
+import { useCurrentTime } from '../../../hooks/useCurrentTime'
 import { useDismissiblePopover } from '../../../hooks/useDismissiblePopover'
 import { t } from '../../../i18n'
-import { shouldDisplayRevisionAuthorEmail } from '../../../shared/lib'
+import { revisionPresentation, shouldDisplayRevisionAuthorEmail } from '../../../shared/lib'
 import {
   CheckboxInput,
   ControlInput,
@@ -74,6 +75,7 @@ export function HistoryPanel({
    * 默认语言，且后续任何 state 变化都不会再读取当前语言。
    */
   const { t } = useTranslation()
+  const now = useCurrentTime()
   const [query, setQuery] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
   const [columnsOpen, setColumnsOpen] = useState(false)
@@ -377,6 +379,7 @@ export function HistoryPanel({
           </div>
         ) : (
           filteredRevisions.map((revision, revisionIndex) => {
+            const presentation = revisionPresentation(revision, t, now)
             const selected = revision.id === selectedId
             const attachedTags = tags.filter((tag) => tag.revision === revision.id)
             const visibleBranchPointers = branchPointersForLaneMode(
@@ -418,7 +421,7 @@ export function HistoryPanel({
                 <span className="revision-row__content">
                   <span className="revision-row__title">
                     {revision.parentCount > 1 && <GitMerge size={12} />}
-                    <strong>{revision.title}</strong>
+                    <strong>{presentation.title}</strong>
                   </span>
                   <span className="revision-row__meta">
                     <code>{revision.shortId}</code>
@@ -457,25 +460,25 @@ export function HistoryPanel({
                 </span>
                 <span className="revision-row__author">
                   <RevisionAuthorAvatar
-                    identity={revision.authorEmail ?? revision.author}
-                    initials={revision.initials}
+                    identity={revision.authorEmail ?? presentation.author}
+                    initials={presentation.initials}
                     variant="compact"
                   />
                   <span className="revision-row__author-copy">
-                    <strong title={revision.author}>{revision.author}</strong>
+                    <strong title={presentation.author}>{presentation.author}</strong>
                     {/*
                      * 历史身份的邮箱只在该 Revision 自身明确携带时展示，绝不能用
                      * 当前仓库身份补齐旧历史。列表列宽有限，因此视觉上允许省略，
                      * 但 title 始终保留完整邮箱供鼠标用户核对。
                      */}
-                    {shouldDisplayRevisionAuthorEmail(revision.author, revision.authorEmail) && (
+                    {shouldDisplayRevisionAuthorEmail(presentation.author, revision.authorEmail) && (
                       <small title={revision.authorEmail}>{revision.authorEmail}</small>
                     )}
                   </span>
                 </span>
-                <time dateTime={revision.timestamp}>
-                  {revision.relativeTime}
-                  <small>{revision.timestamp.slice(5, 16)}</small>
+                <time dateTime={presentation.dateTime}>
+                  {presentation.relativeTime}
+                  <small>{presentation.shortTimestamp}</small>
                 </time>
               </div>
             )

@@ -2,7 +2,37 @@ import { describe, expect, it } from 'bun:test'
 
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import { InspectorTabs } from './Inspector'
+import i18n from '../../../i18n'
+import { loreEventParsers } from '../../../services/lore'
+import { InspectorTabs, OverviewTab } from './Inspector'
+
+describe('Revision Inspector history localization', () => {
+  it('renders already-loaded revision facts after changing language without a history reload', async () => {
+    await i18n.changeLanguage('en-US')
+    const repository = loreEventParsers.parseRepository('/repository', [])
+    const revision = loreEventParsers.parseRevisions(
+      [{ tagName: 'revisionHistoryEntry', data: { revision: 'abcdef1234567890', revisionNumber: 12 } }],
+      repository
+    )[0]!
+    const render = () =>
+      renderToStaticMarkup(<OverviewTab revision={revision} demoMode={false} onOpenOperations={() => undefined} />)
+
+    try {
+      const english = render()
+      expect(english).toContain('Unknown author')
+      expect(english).toContain('Unknown time')
+
+      await i18n.changeLanguage('zh-CN')
+      const chinese = render()
+      expect(chinese).toContain('未知作者')
+      expect(chinese).toContain('时间未知')
+      expect(chinese).toContain(i18n.t('status.revisionLabel', { number: 12, id: 'abcdef12' }))
+      expect(chinese).not.toContain('Unknown author')
+    } finally {
+      await i18n.changeLanguage('en-US')
+    }
+  })
+})
 
 describe('Revision Inspector change counts', () => {
   it('does not render an unknown lightweight change count as zero', () => {

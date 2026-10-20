@@ -16,9 +16,11 @@ import {
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
+import { useTranslation } from 'react-i18next'
 
 import { t } from '../../i18n'
 import type { Branch, BranchCreationSource, Revision, TagCreationSource, ToastMessage } from '../../types'
+import { revisionPresentation } from '../lib'
 
 /** 触发菜单时立即保存坐标与焦点锚点，避免列表刷新后继续依赖 React 合成事件。 */
 export interface ContextMenuPoint {
@@ -55,15 +57,16 @@ const VIEWPORT_GAP = 8
 
 /** 生成可直接粘贴到问题单或聊天中的稳定修订摘要。 */
 export function getRevisionClipboardInfo(revision: Revision) {
+  const presentation = revisionPresentation(revision, t)
   const branchText =
     revision.branchPointers.length > 0
       ? revision.branchPointers.map((pointer) => pointer.name).join(', ')
       : t('noBranchPointer')
   return [
-    revision.title,
+    presentation.title,
     `${t('revisions')}: ${revision.id}`,
-    `${t('author')}: ${revision.author}`,
-    `${t('time')}: ${revision.timestamp}`,
+    `${t('author')}: ${presentation.author}`,
+    `${t('time')}: ${presentation.timestamp}`,
     `${t('branches')}: ${branchText}`
   ].join('\n')
 }
@@ -117,6 +120,7 @@ export function VersionContextMenu({
   onCreateTag,
   onNotify
 }: VersionContextMenuProps) {
+  const { t } = useTranslation()
   const menuRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState({
     left: request.x,
@@ -251,11 +255,16 @@ export function VersionContextMenu({
       />
     )
 
-  const title = request.kind === 'revision' ? request.revision.title : request.branch.name
-  const subtitle =
-    request.kind === 'revision'
-      ? t('status.revisionMeta', { id: request.revision.shortId, author: request.revision.author })
-      : `${request.branch.archived ? t('status.archivedLocalBranch') : request.branch.remote ? t('remoteBranches') : t('localBranches')} · ${request.branch.latest?.slice(0, 8) || t('noRevisions')}`
+  let title: string
+  let subtitle: string
+  if (request.kind === 'revision') {
+    const presentation = revisionPresentation(request.revision, t)
+    title = presentation.title
+    subtitle = t('status.revisionMeta', { id: request.revision.shortId, author: presentation.author })
+  } else {
+    title = request.branch.name
+    subtitle = `${request.branch.archived ? t('status.archivedLocalBranch') : request.branch.remote ? t('remoteBranches') : t('localBranches')} · ${request.branch.latest?.slice(0, 8) || t('noRevisions')}`
+  }
 
   return createPortal(
     <div

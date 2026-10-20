@@ -1,6 +1,6 @@
 /** 修订的查询、修改、历史、变更列表与文件历史。 */
 import { t } from '../../i18n'
-import { revisionAuthorFromIdentity } from '../../shared/lib'
+import { parseCommitIdentity } from '../../shared/lib'
 import type {
   Branch,
   ChangeFile,
@@ -19,13 +19,11 @@ import type {
   WorkingTreeDiff
 } from '../../types'
 import { collectRevisionAuthorIdentities, resolveAuthorNames } from './authors'
-import { invokeCommand, runOperation } from './core'
+import { LoreCommandClientError, invokeCommand, runOperation } from './core'
 import {
   ZERO_HASH_PATTERN,
   eventData,
   formatBytes,
-  formatDateTime,
-  formatRelativeTime,
   readBoolean,
   readFileContentClassification,
   readMetadataValue,
@@ -456,30 +454,38 @@ export function parseRevisions(
     }
   }
 
-  return pending.map(({ entry, metadata }, index): Revision => {
-    const id = readString(entry.revision, `revision-${index}`)
+  return pending.map(({ entry, metadata }): Revision => {
+    // 身份字段不能像展示文案一样降级，否则会把伪造的 ID 交给检出/还原操作。
+    const id = entry.revision
+    if (typeof id !== 'string' || !id.trim() || id !== id.trim() || ZERO_HASH_PATTERN.test(id)) {
+      throw new LoreCommandClientError(
+        { code: 'revision_history_invalid_identity', message: t('revisionHistoryInvalidIdentity') },
+        'lore_revision_history'
+      )
+    }
     const timestampValue = readNumber(metadata.get('timestamp'))
     // 固定 Lore 提交使用毫秒；阈值兼容非常早期可能写入秒值的仓库。
     const timestampMilliseconds =
       timestampValue > 0 && timestampValue < 100_000_000_000 ? timestampValue * 1_000 : timestampValue
-    const timestamp = timestampMilliseconds ? new Date(timestampMilliseconds) : null
+    const committedAt =
+      timestampMilliseconds > 0 && Number.isFinite(new Date(timestampMilliseconds).getTime())
+        ? timestampMilliseconds
+        : null
     /*
      * Revision 作者是提交时固化的历史事实，只能来自该 Revision 自己的元数据。
      * repository.identity 表示“当前仓库下一次提交准备使用的身份”，它可能在历史
      * 形成后被修改，因此绝不能用来回填旧 Revision 的作者。
      */
-    const historicalIdentity = readString(
-      metadata.get('committed-by') ?? metadata.get('created-by'),
-      t('unknownAuthor')
-    )
+    const historicalIdentity = readString(metadata.get('committed-by') ?? metadata.get('created-by'))
     /*
      * Auth 只会为真实 userId 返回名称；未返回的候选值必须继续使用
      * Revision 中固化的 identity。解析后统一走 `Name <email>` / 纯 email /
      * 自由文本规则，确保 username 携带邮箱时也能获得 Gravatar。
      */
     const displayIdentity = resolvedAuthorNames.get(historicalIdentity) ?? historicalIdentity
-    const { author, email: authorEmail } = revisionAuthorFromIdentity(displayIdentity)
-    const message = readString(metadata.get('message'), `Revision #${readNumber(entry.revisionNumber)}`)
+    const { name, email } = parseCommitIdentity(displayIdentity)
+    const author = name || email
+    const message = readString(metadata.get('message'))
     const parents = Array.isArray(entry.parent) ? entry.parent : []
     const parentIds = parents.filter(
       (parent): parent is string => typeof parent === 'string' && !ZERO_HASH_PATTERN.test(parent)
@@ -524,24 +530,17 @@ export function parseRevisions(
       id,
       shortId: id.slice(0, 8),
       title: message,
-      // `title` 才是用户输入的 Revision message；这里仅显示简短稳定身份，
-      // 避免完整哈希被误认为不可编辑的默认消息。
-      description: t('status.revisionLabel', {
-        number: readNumber(entry.revisionNumber),
-        id: id.slice(0, 8)
-      }),
+      revisionNumber: readNumber(entry.revisionNumber),
+      committedAt,
       author,
-      authorEmail,
+      authorEmail: email || undefined,
       initials: author.slice(0, 1).toLocaleUpperCase(),
-      timestamp: timestamp ? formatDateTime(timestamp) : t('unknownTime'),
-      relativeTime: timestamp ? formatRelativeTime(timestamp) : t('unknownTime'),
       branchPointers,
       parentCount,
       parentIds,
       filesChanged: 0,
       additions: 0,
-      deletions: 0,
-      size: t('loadOnDemand')
+      deletions: 0
     }
   })
 }

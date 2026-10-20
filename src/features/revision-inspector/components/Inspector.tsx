@@ -34,7 +34,7 @@ import { useTranslation } from 'react-i18next'
 
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
 import { t } from '../../../i18n'
-import { shouldDisplayRevisionAuthorEmail } from '../../../shared/lib'
+import { revisionPresentation, shouldDisplayRevisionAuthorEmail } from '../../../shared/lib'
 import { IconButton, RevisionAuthorAvatar } from '../../../shared/ui'
 import type {
   BinaryFilePreview,
@@ -281,6 +281,8 @@ export function OverviewTab({
   demoMode: boolean
   onOpenOperations: () => void
 }) {
+  const { t } = useTranslation()
+  const presentation = revisionPresentation(revision, t)
   return (
     <div className="overview-tab">
       <section className="revision-summary">
@@ -289,8 +291,8 @@ export function OverviewTab({
             {revision.parentCount > 1 ? <GitMerge size={13} /> : <GitCommitHorizontal size={13} />}
             {t('revision')}
           </span>
-          <h2>{revision.title}</h2>
-          <p>{revision.description}</p>
+          <h2>{presentation.title}</h2>
+          <p>{presentation.description}</p>
         </div>
       </section>
 
@@ -299,8 +301,8 @@ export function OverviewTab({
           <UserRound size={14} />
           <span>{t('author')}</span>
           <div className="metadata-grid__identity">
-            <strong title={revision.author}>{revision.author}</strong>
-            {shouldDisplayRevisionAuthorEmail(revision.author, revision.authorEmail) && (
+            <strong title={presentation.author}>{presentation.author}</strong>
+            {shouldDisplayRevisionAuthorEmail(presentation.author, revision.authorEmail) && (
               <small title={revision.authorEmail}>{revision.authorEmail}</small>
             )}
           </div>
@@ -308,7 +310,7 @@ export function OverviewTab({
         <article>
           <Clock3 size={14} />
           <span>{t('created')}</span>
-          <strong>{revision.timestamp}</strong>
+          <strong>{presentation.timestamp}</strong>
         </article>
         <article>
           <GitMerge size={14} />
@@ -891,30 +893,31 @@ export function Inspector({
     await navigator.clipboard?.writeText(revision.id)
     onNotify(t('revisionIdCopied'), revision.shortId)
   }
+  const presentation = revisionPresentation(revision, t)
 
   return (
     <>
       <aside className="inspector" aria-label={t('revisionInspector')}>
         <header className="inspector__identity">
           <RevisionAuthorAvatar
-            identity={revision.authorEmail ?? revision.author}
-            initials={revision.initials}
+            identity={revision.authorEmail ?? presentation.author}
+            initials={presentation.initials}
             variant="detail"
           />
           <div>
             <span className="inspector__author-line">
-              <strong title={revision.author}>{revision.author}</strong>
+              <strong title={presentation.author}>{presentation.author}</strong>
               {/*
                * Inspector 使用同一份历史 DTO 展示邮箱；这里只渲染显式历史值，
                * 不从当前设置推断，避免改变旧 Revision 的作者事实。
                */}
-              {shouldDisplayRevisionAuthorEmail(revision.author, revision.authorEmail) && (
+              {shouldDisplayRevisionAuthorEmail(presentation.author, revision.authorEmail) && (
                 <small title={revision.authorEmail}>{revision.authorEmail}</small>
               )}
             </span>
             <span className="inspector__revision-meta">
               <code>{revision.shortId}</code>
-              <time>{revision.timestamp}</time>
+              <time dateTime={presentation.dateTime}>{presentation.timestamp}</time>
             </span>
           </div>
           <IconButton icon={<Copy size={14} />} label={t('copyFullRevisionId')} onClick={() => void copyRevisionId()} />

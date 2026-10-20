@@ -1,5 +1,4 @@
 /** 与 Lore 事件和界面展示无关的纯工具：字段读取、路径规范化、格式化与颜色。 */
-import { t } from '../../i18n'
 import { repositoryAccentFromIndex } from '../../shared/lib'
 import type { FileContentClassification, LoreEvent } from '../../types'
 
@@ -153,25 +152,4 @@ export function formatBytes(bytes: number): string {
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
   const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1_024)), units.length - 1)
   return `${(bytes / 1_024 ** unitIndex).toFixed(unitIndex ? 1 : 0)} ${units[unitIndex]}`
-}
-
-export function formatDateTime(date: Date): string {
-  const parts = new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  }).formatToParts(date)
-  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? ''
-  return `${value('year')}-${value('month')}-${value('day')} ${value('hour')}:${value('minute')}`
-}
-
-export function formatRelativeTime(date: Date): string {
-  const deltaMinutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60_000))
-  if (deltaMinutes < 1) return t('status.justNow')
-  if (deltaMinutes < 60) return t('status.minutesAgo', { count: deltaMinutes })
-  if (deltaMinutes < 1_440) return t('status.hoursAgo', { count: Math.floor(deltaMinutes / 60) })
-  return t('status.daysAgo', { count: Math.floor(deltaMinutes / 1_440) })
 }

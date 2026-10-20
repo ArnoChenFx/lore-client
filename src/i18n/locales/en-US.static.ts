@@ -622,6 +622,8 @@ const enUSStatic = {
   historyLimit: 'Maximum entries',
   applyHistoryFilter: 'Apply History Filter',
   unableToLoadRevisionHistory: 'Unable to Load Revision History',
+  revisionHistoryInvalidIdentity:
+    'Revision history contains an invalid revision ID. Refresh the history before continuing.',
   manageLayers: 'Manage Layers',
   maximizeOrRestoreWindow: 'Maximize or restore window',
   maximizeRestore: 'Maximize / Restore',
