@@ -138,7 +138,14 @@ pub(super) fn required_composition_value(
     value: String,
     field_name: &'static str,
 ) -> Result<String, LoreCommandError> {
-    let value = value.trim();
+    required_composition_path(value.trim().to_owned(), field_name)
+}
+
+/// 挂载与来源路径保留真实文件名空白；根路径语义仍由固定 Lore 校验。
+fn required_composition_path(
+    value: String,
+    field_name: &'static str,
+) -> Result<String, LoreCommandError> {
     if value.is_empty() {
         return Err(LoreCommandError::new(
             "composition_field_required",
@@ -151,7 +158,7 @@ pub(super) fn required_composition_value(
             format!("{field_name} must not contain control characters"),
         ));
     }
-    Ok(value.to_owned())
+    Ok(value)
 }
 
 /// 可选的 Pin/Metadata 空字符串统一映射为 Lore 的默认空值。
@@ -170,13 +177,13 @@ pub(super) fn build_layer_add_args(
     metadata: Option<String>,
 ) -> Result<LoreLayerAddArgs, LoreCommandError> {
     Ok(LoreLayerAddArgs {
-        target_path: required_composition_value(target_path, "Layer mount path")?.into(),
+        target_path: required_composition_path(target_path, "Layer mount path")?.into(),
         source_repository: required_composition_value(
             source_repository,
             "Layer source repository",
         )?
         .into(),
-        source_path: required_composition_value(source_path, "Layer source path")?.into(),
+        source_path: required_composition_path(source_path, "Layer source path")?.into(),
         metadata: optional_composition_value(metadata),
     })
 }
@@ -187,7 +194,7 @@ pub(super) fn build_layer_remove_args(
     purge: bool,
 ) -> Result<LoreLayerRemoveArgs, LoreCommandError> {
     Ok(LoreLayerRemoveArgs {
-        target_path: required_composition_value(target_path, "Layer mount path")?.into(),
+        target_path: required_composition_path(target_path, "Layer mount path")?.into(),
         source_repository: required_composition_value(
             source_repository,
             "Layer source repository",
@@ -206,8 +213,8 @@ pub(super) fn build_link_add_args(
 ) -> Result<LoreLinkAddArgs, LoreCommandError> {
     Ok(LoreLinkAddArgs {
         link: required_composition_value(link, "Link repository address")?.into(),
-        link_path: required_composition_value(link_path, "Link mount path")?.into(),
-        source_path: required_composition_value(source_path, "Link source path")?.into(),
+        link_path: required_composition_path(link_path, "Link mount path")?.into(),
+        source_path: required_composition_path(source_path, "Link source path")?.into(),
         pin: optional_composition_value(pin),
         disable_branching: u8::from(disable_branching),
     })
@@ -218,7 +225,7 @@ pub(super) fn build_link_update_args(
     pin: Option<String>,
 ) -> Result<LoreLinkUpdateArgs, LoreCommandError> {
     Ok(LoreLinkUpdateArgs {
-        link_path: required_composition_value(link_path, "Link mount path")?.into(),
+        link_path: required_composition_path(link_path, "Link mount path")?.into(),
         pin: optional_composition_value(pin),
     })
 }
@@ -333,7 +340,7 @@ pub async fn lore_link_info(
     link_path: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let args = LoreLinkInfoArgs {
-        link_path: required_composition_value(link_path, "Link mount path")?.into(),
+        link_path: required_composition_path(link_path, "Link mount path")?.into(),
     };
     run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
@@ -392,7 +399,7 @@ pub async fn lore_link_remove(
     link_path: String,
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let args = LoreLinkRemoveArgs {
-        link_path: required_composition_value(link_path, "Link mount path")?.into(),
+        link_path: required_composition_path(link_path, "Link mount path")?.into(),
     };
     run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;

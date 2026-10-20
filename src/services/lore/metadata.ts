@@ -17,7 +17,7 @@ export async function loadMetadata(
     {
       repositoryPath,
       scope,
-      target: target?.trim() || null,
+      target: (scope === 'file' ? target : target?.trim()) || null,
       revision: revision?.trim() || null
     },
     operationContext

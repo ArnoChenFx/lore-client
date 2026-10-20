@@ -1289,7 +1289,7 @@ describe('repository snapshot branch loading', () => {
   it('passes every supported advanced Clone option through the stable service boundary', async () => {
     await cloneRepository('lore://127.0.0.1:41337', 'world', 'E:\\Worlds', 'world', 'C:\\views\\world.view', {
       useSharedStore: true,
-      sharedStorePath: 'D:\\LoreStore',
+      sharedStorePath: 'D:\\LoreStore ',
       revision: 'release/1.0',
       bare: false,
       directFileWrite: true,
@@ -1319,7 +1319,7 @@ describe('repository snapshot branch loading', () => {
         layerRepository: 'world-lighting',
         layerMetadataKey: 'build-id',
         useSharedStore: true,
-        sharedStorePath: 'D:\\LoreStore',
+        sharedStorePath: 'D:\\LoreStore ',
         dependencyRootFiles: ['Content/World.umap'],
         dependencyTags: ['runtime'],
         dependencyRecursive: true,
@@ -1337,7 +1337,7 @@ describe('repository snapshot branch loading', () => {
 
     await initializeRepository('E:\\Worlds\\NewProject', 'new-project', 'Initialize with Shared Store', '', undefined, {
       useSharedStore: true,
-      sharedStorePath: 'D:\\LoreStore'
+      sharedStorePath: 'D:\\LoreStore '
     })
 
     expect(invokeMock).toHaveBeenCalledWith(
@@ -1349,7 +1349,7 @@ describe('repository snapshot branch loading', () => {
         repositoryIdentity: '',
         defaultIdentity: null,
         useSharedStore: true,
-        sharedStorePath: 'D:\\LoreStore'
+        sharedStorePath: 'D:\\LoreStore '
       })
     )
   })

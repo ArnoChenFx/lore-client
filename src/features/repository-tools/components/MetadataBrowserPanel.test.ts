@@ -28,9 +28,14 @@ describe('metadata browser request resolution', () => {
   it('waits for a file path and preserves its optional revision context', () => {
     expect(resolveMetadataRequest('file', ' Content/World.umap ', ' revision-a ')).toEqual({
       scope: 'file',
-      target: 'Content/World.umap',
+      target: ' Content/World.umap ',
       revision: 'revision-a'
     })
-    expect(resolveMetadataRequest('file', '   ', 'revision-a')).toBeNull()
+    expect(resolveMetadataRequest('file', ' ', 'revision-a')).toEqual({
+      scope: 'file',
+      target: ' ',
+      revision: 'revision-a'
+    })
+    expect(resolveMetadataRequest('file', '', 'revision-a')).toBeNull()
   })
 })

@@ -57,7 +57,7 @@ export async function loadBranchDiff(
       repositoryPath,
       source,
       target,
-      path: path?.trim() || null
+      path: path || null
     },
     operationContext
   )

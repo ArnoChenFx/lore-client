@@ -12,10 +12,12 @@ import {
 } from './useRepositoryToolsController'
 
 describe('repository tools controller helpers', () => {
-  it('normalizes duplicate and blank paths before a lock mutation', () => {
-    expect(normalizeRepositoryToolPaths([' Content/A ', '', 'Content/B', 'Content/A', '   '])).toEqual([
-      'Content/A',
-      'Content/B'
+  it('keeps distinct selected file paths when preparing a lock mutation', () => {
+    expect(normalizeRepositoryToolPaths(['asset', 'asset ', ' asset', '', 'asset', ' '])).toEqual([
+      'asset',
+      'asset ',
+      ' asset',
+      ' '
     ])
   })
 

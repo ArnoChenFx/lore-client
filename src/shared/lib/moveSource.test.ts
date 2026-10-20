@@ -19,6 +19,12 @@ describe('readMoveSourceFromPatch', () => {
     expect(readMoveSourceFromPatch(patch)).toBe('Content/World/Old.umap')
   })
 
+  it('preserves significant whitespace in the native move header', () => {
+    for (const source of ['asset ', ' asset', ' ']) {
+      expect(readMoveSourceFromPatch(`move from ${source}\nmove to asset\n`)).toBe(source)
+    }
+  })
+
   it('returns undefined when no move header is present', () => {
     expect(readMoveSourceFromPatch('')).toBeUndefined()
     expect(readMoveSourceFromPatch('diff --git a/a.txt b/a.txt\n@@ -1 +1 @@\n-a\n+b\n')).toBeUndefined()

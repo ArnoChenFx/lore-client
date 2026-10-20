@@ -17,7 +17,7 @@ export async function queryFileLocks(
       repositoryPath,
       branch,
       owner: owner?.trim() || null,
-      path: path?.trim() || null
+      path: path || null
     },
     operationContext
   )

@@ -81,7 +81,7 @@ export function InitializeRepositoryDialog({
           if (repositoryName.trim()) {
             onConfirm(repositoryName.trim(), description.trim(), repositoryIdentity.trim(), {
               useSharedStore,
-              sharedStorePath: useSharedStore ? sharedStorePath.trim() || undefined : undefined
+              sharedStorePath: useSharedStore ? sharedStorePath || undefined : undefined
             })
           }
         }}

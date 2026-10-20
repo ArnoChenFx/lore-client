@@ -31,6 +31,8 @@ describe('external diff configuration', () => {
   it('requires an executable and both path placeholders', () => {
     expect(isExternalToolConfigured(tool, 'diff')).toBe(true)
     expect(isExternalToolConfigured({ ...tool, executable: '' }, 'diff')).toBe(false)
+    // 配置检查不猜测文件名；即使命令只有空格，也交由原生按原值探测。
+    expect(isExternalToolConfigured({ ...tool, executable: ' ' }, 'diff')).toBe(true)
     expect(isExternalToolConfigured({ ...tool, arguments: ['{before}'] }, 'diff')).toBe(false)
   })
 

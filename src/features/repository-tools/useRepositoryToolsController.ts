@@ -124,9 +124,9 @@ export function isRepositoryToolsBusy(busyAction: string | null): boolean {
   return busyAction !== null && REPOSITORY_TOOL_BUSY_ACTIONS.has(busyAction)
 }
 
-/** 文件菜单和目录批量操作可能传入重复或空路径，进入 Lore 前统一规范化。 */
+/** 文件菜单去除完全重复及空字符串，保留真实文件名中的空格。 */
 export function normalizeRepositoryToolPaths(paths: readonly string[]): string[] {
-  return [...new Set(paths.map((path) => path.trim()).filter(Boolean))]
+  return [...new Set(paths.filter((path) => path.length > 0))]
 }
 
 /**

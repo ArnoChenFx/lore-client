@@ -89,17 +89,7 @@ pub async fn lore_branch_diff(
 ) -> Result<LoreOperationResult, LoreCommandError> {
     let source = validate_branch_name(&source)?;
     let target = validate_branch_name(&target)?;
-    let path = path
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| {
-            validate_repository_relative_path(&value).map(|validated| {
-                validated
-                    .to_string_lossy()
-                    .replace(std::path::MAIN_SEPARATOR, "/")
-            })
-        })
-        .transpose()?
-        .unwrap_or_default();
+    let path = validate_optional_repository_relative_path(path)?;
     run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("branch.diff", move |callback| {

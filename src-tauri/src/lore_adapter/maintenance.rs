@@ -15,14 +15,7 @@ pub async fn lore_repository_verify(
     path: Option<String>,
     heal: Option<bool>,
 ) -> Result<LoreOperationResult, LoreCommandError> {
-    let path = path.unwrap_or_default();
-    let path = if path.trim().is_empty() {
-        String::new()
-    } else {
-        validate_repository_relative_path(&path)?
-            .to_string_lossy()
-            .replace('\\', "/")
-    };
+    let path = validate_optional_repository_relative_path(path)?;
     let heal = heal.unwrap_or(false);
     run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
@@ -99,14 +92,7 @@ pub async fn lore_repository_dump(
         .filter(|value| !value.trim().is_empty())
         .map(|value| validate_revision(&value))
         .transpose()?;
-    let path = path.unwrap_or_default();
-    let path = if path.trim().is_empty() {
-        String::new()
-    } else {
-        validate_repository_relative_path(&path)?
-            .to_string_lossy()
-            .replace('\\', "/")
-    };
+    let path = validate_optional_repository_relative_path(path)?;
     let max_depth = max_depth.unwrap_or(4).clamp(1, 32);
     run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;

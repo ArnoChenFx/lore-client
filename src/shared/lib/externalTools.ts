@@ -136,7 +136,7 @@ export function isExternalToolConfigured(tool: ExternalDiffToolPreference, mode:
   return (
     tool.kind !== 'none' &&
     tool.name.trim().length > 0 &&
-    tool.executable.trim().length > 0 &&
+    tool.executable.length > 0 &&
     placeholders.every((placeholder) => template.includes(placeholder))
   )
 }

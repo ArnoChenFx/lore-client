@@ -145,7 +145,7 @@ export function RepositoryDiagnosticsPanel({
               onClick={() =>
                 void runReport('verify', async () => {
                   const next = await onVerify(path, false)
-                  setVerifiedPath(path.trim())
+                  setVerifiedPath(path)
                   return next
                 })
               }
@@ -155,14 +155,14 @@ export function RepositoryDiagnosticsPanel({
             </TextButton>
             <TextButton
               variant="danger"
-              disabled={Boolean(pending) || verifiedPath !== path.trim()}
-              title={verifiedPath !== path.trim() ? t('healRequiresMatchingPreflight') : undefined}
+              disabled={Boolean(pending) || verifiedPath !== path}
+              title={verifiedPath !== path ? t('healRequiresMatchingPreflight') : undefined}
               onClick={() => {
                 if (
                   !confirmLocalized(
                     t('confirm.healRepositoryPath', {
                       repository: repositoryName,
-                      path: path.trim() || t('entireRepository')
+                      path: path || t('entireRepository')
                     })
                   )
                 ) {

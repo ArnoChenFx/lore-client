@@ -55,7 +55,7 @@ describe('Clone option availability', () => {
   })
 
   it('disables dependency filters when root files are empty', () => {
-    const availability = resolveCloneDependencyAvailability(' \n ', true)
+    const availability = resolveCloneDependencyAvailability('\n\r\n', true)
 
     expect(availability).toEqual({
       hasDependencyRootFiles: false,
@@ -113,13 +113,13 @@ describe('Clone submission normalization', () => {
         layerMetadataKey: ' build-id ',
         useSharedStore: true,
         sharedStorePath: 'C:\\LoreStore',
-        dependencyRootFiles: 'Content/World.umap\nContent/World.umap,Content/Hero.uasset',
+        dependencyRootFiles: 'Content/World.umap\nContent/World.umap\nContent/Hero.uasset',
         dependencyTags: 'runtime, runtime, high-resolution',
         dependencyRecursive: true,
         dependencyDepthLimit: 4
       })
     ).toEqual({
-      viewPath: 'C:\\views\\game.view',
+      viewPath: ' C:\\views\\game.view ',
       options: {
         useSharedStore: true,
         sharedStorePath: 'C:\\LoreStore',
@@ -138,6 +138,28 @@ describe('Clone submission normalization', () => {
         }
       }
     })
+  })
+
+  it('preserves paths and parses one exact dependency filename per line', () => {
+    const submission = buildCloneSubmission({
+      viewPath: '/tmp/rules ',
+      targetRevision: '',
+      bare: false,
+      directFileWrite: false,
+      layerRepository: '',
+      layerMetadataKey: '',
+      useSharedStore: true,
+      sharedStorePath: '/tmp/store ',
+      dependencyRootFiles: 'asset\r\nasset \n asset\n \nwith,comma\nasset\n',
+      dependencyTags: ' runtime, asset ',
+      dependencyRecursive: true,
+      dependencyDepthLimit: 0
+    })
+    expect(submission.viewPath).toBe('/tmp/rules ')
+    expect(submission.options.sharedStorePath).toBe('/tmp/store ')
+    expect(submission.options.dependency?.rootFiles).toEqual(['asset', 'asset ', ' asset', ' ', 'with,comma'])
+    expect(submission.options.dependency?.tags).toEqual(['runtime', 'asset'])
+    expect(resolveCloneDependencyAvailability(' ', true).tagsDisabled).toBe(false)
   })
 
   it('removes inert materialization options from a Bare Clone', () => {

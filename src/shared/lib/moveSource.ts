@@ -27,7 +27,8 @@ export function readMoveSourceFromPatch(patch: string): string | undefined {
     // 头部结束后正文可能包含任意内容，见到 `diff --git` 或首个 hunk 即停止扫描。
     if (line.startsWith('diff --git ') || line.startsWith('@@')) break
     if (line.startsWith(MOVE_FROM_PREFIX)) {
-      const source = line.slice(MOVE_FROM_PREFIX.length).trim()
+      // 固定 Lore 使用 LF 分隔补丁头；前缀后的全部内容都是原始来源路径。
+      const source = line.slice(MOVE_FROM_PREFIX.length)
       return source ? source.replaceAll('\\', '/') : undefined
     }
   }

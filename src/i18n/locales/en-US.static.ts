@@ -1301,8 +1301,8 @@ const enUSStatic = {
   dependencyDrivenClone: 'Dependency-driven selective clone',
   dependencyDrivenCloneDescription:
     'Enter root files to materialize only those files and their matching dependency closure. Leave empty for a complete workspace.',
-  dependencyRootFilesOptional: 'Dependency root files (optional; line or comma separated)',
-  dependencyRootFiles: 'Dependency root files',
+  dependencyRootFilesOptional: 'Dependency root files (optional; one path per line)',
+  dependencyRootFiles: 'Dependency root files (one path per line)',
   dependencyRootFilesPlaceholder: 'Content/Maps/World.umap\nContent/Characters/Hero.uasset',
   dependencyTagsOptional: 'Dependency tags (optional; comma separated)',
   dependencyTagsPlaceholder: 'runtime, high-resolution',

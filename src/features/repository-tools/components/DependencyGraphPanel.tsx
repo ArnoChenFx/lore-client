@@ -15,6 +15,7 @@ import type { CSSProperties, KeyboardEvent, PointerEvent as ReactPointerEvent, W
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { parseRepositoryFilePathLines } from '../../../shared/lib'
 import { CheckboxInput } from '../../../shared/ui'
 import type { LoreDependencyGraphEdge, LoreDependencyGraphQuery, LoreDependencySelection } from '../../../types'
 import {
@@ -86,7 +87,7 @@ export function DependencyGraphPanel({
   const [selectedNodePath, setSelectedNodePath] = useState('')
   const [selectedEdgeKey, setSelectedEdgeKey] = useState('')
   const [proposedCyclePath, setProposedCyclePath] = useState<string[] | null>(null)
-  const roots = useMemo(() => parseList(rootFiles), [rootFiles])
+  const roots = useMemo(() => parseRepositoryFilePathLines(rootFiles), [rootFiles])
   const queryTags = useMemo(() => parseList(tags), [tags])
   const busy = loading || pending
   const selection = useMemo<LoreDependencySelection>(
@@ -144,8 +145,8 @@ export function DependencyGraphPanel({
   }
 
   const submitAdd = async () => {
-    const source = sourcePath.trim()
-    const dependency = dependencyPath.trim()
+    const source = sourcePath
+    const dependency = dependencyPath
     const edgeTagList = parseList(edgeTags)
     if (
       force &&
@@ -446,7 +447,7 @@ export function DependencyGraphPanel({
             <button
               className="is-primary"
               type="submit"
-              disabled={busy || !available || !sourcePath.trim() || !dependencyPath.trim()}
+              disabled={busy || !available || !sourcePath || !dependencyPath}
             >
               {pending ? <LoaderCircle className="is-spinning" size={13} /> : <GitBranchPlus size={13} />}
               {t('addDependency')}

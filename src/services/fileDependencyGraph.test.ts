@@ -15,6 +15,16 @@ function directQuery(groups: LoreDependencyQuery['groups'], reverse = false): Lo
 }
 
 describe('file dependency graph collection', () => {
+  it('queries distinct whitespace filenames as separate dependency roots', async () => {
+    const roots = ['asset', 'asset ', ' asset', ' ', 'asset']
+    const loadDirectBatch = vi.fn(async (paths: string[]) => directQuery(paths.map((path) => ({ path, entries: [] }))))
+    const result = await collectFileDependencyGraph(roots, recursiveSelection, false, 'revision-1', loadDirectBatch)
+    expect(loadDirectBatch.mock.calls).toEqual([[['asset', 'asset ', ' asset', ' ']]])
+    expect(new Set(result.nodes.filter((node) => node.root).map((node) => node.path))).toEqual(
+      new Set(['asset', 'asset ', ' asset', ' '])
+    )
+  })
+
   it('rebuilds exact transitive edges from breadth-first direct batches', async () => {
     const loadDirectBatch = vi.fn(async (paths: string[]) => {
       const groups = paths.map((path) => {
