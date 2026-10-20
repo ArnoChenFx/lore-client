@@ -447,17 +447,27 @@ pub(super) fn write_repository_view_temporary(
         })?;
     }
     if let Err(error) = fs::rename(&temporary_path, view_path) {
-        if had_original {
-            let _ = fs::rename(&backup_path, view_path);
-        }
         let _ = fs::remove_file(&temporary_path);
-        return Err(LoreCommandError::new(
+        let error = LoreCommandError::new(
             "repository_view_replace_failed",
             format!(
                 "Failed to replace the current view {}: {error}",
                 view_path.display()
             ),
-        ));
+        );
+        // 新规则尚未生效，不需重建 Lore 上下文；仍必须报告规则文件恢复失败。
+        return Err(if had_original {
+            rollback_repository_view(
+                view_path,
+                &backup_path,
+                had_original,
+                error,
+                || Ok(()),
+                || Ok(()),
+            )
+        } else {
+            error
+        });
     }
     Ok((temporary_path, backup_path, had_original))
 }
@@ -487,11 +497,87 @@ pub(super) fn run_repository_view_sync(
     })
 }
 
-pub(super) fn restore_repository_view(view_path: &Path, backup_path: &Path, had_original: bool) {
-    let _ = fs::remove_file(view_path);
+pub(super) fn restore_repository_view(
+    view_path: &Path,
+    backup_path: &Path,
+    had_original: bool,
+) -> Result<(), LoreCommandError> {
+    // 备份保留到规则、缓存及工作区全部恢复；后续 Sync 失败时仍可人工恢复。
     if had_original {
-        let _ = fs::rename(backup_path, view_path);
+        let restored = (|| {
+            if fs::symlink_metadata(view_path).is_ok_and(|metadata| !metadata.is_file()) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "the view destination is no longer a regular file",
+                ));
+            }
+            fs::read(backup_path).and_then(|content| {
+                crate::atomic_file::write_resolved_file_atomically(view_path, &content)
+            })
+        })();
+        restored.map_err(|error| {
+            LoreCommandError::new(
+                "repository_view_restore_failed",
+                format!(
+                    "Failed to restore view rules {}: {error}",
+                    view_path.display()
+                ),
+            )
+        })
+    } else {
+        match fs::remove_file(view_path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(LoreCommandError::new(
+                "repository_view_restore_failed",
+                format!(
+                    "Failed to remove newly created view rules {}: {error}",
+                    view_path.display()
+                ),
+            )),
+        }
     }
+}
+
+/// 只在前一步成功后继续恢复，避免用未恢复的规则执行 reset sync。
+/// 回调隔离外部 Lore 操作，让故障回归可以覆盖每一个恢复步骤。
+fn rollback_repository_view(
+    view_path: &Path,
+    backup_path: &Path,
+    had_original: bool,
+    original_error: LoreCommandError,
+    release_cache: impl FnOnce() -> Result<(), LoreCommandError>,
+    sync: impl FnOnce() -> Result<(), LoreCommandError>,
+) -> LoreCommandError {
+    let recovery = restore_repository_view(view_path, backup_path, had_original)
+        .and_then(|()| release_cache())
+        .and_then(|()| sync());
+    if let Err(recovery_error) = recovery {
+        let backup_note = if had_original && backup_path.is_file() {
+            format!(
+                " The original view backup has been retained at {}.",
+                backup_path.display()
+            )
+        } else if had_original {
+            format!(
+                " The original view backup is unavailable at {}.",
+                backup_path.display()
+            )
+        } else {
+            " The original view had no rules file.".to_owned()
+        };
+        return LoreCommandError::new(
+            "repository_view_recovery_incomplete",
+            format!(
+                "{} Recovery is incomplete: {}{} Refresh repository status before retrying.",
+                original_error.message, recovery_error.message, backup_note
+            ),
+        );
+    }
+    if had_original {
+        let _ = fs::remove_file(backup_path);
+    }
+    original_error
 }
 
 /// 删除新 View 明确排除、且属于当前不可变 Revision 的已物化普通文件。
@@ -555,23 +641,42 @@ pub(super) fn apply_repository_view(
      * 使用旧 View。替换后必须显式释放仓库缓存，让 Sync 从新文件重建上下文。
      */
     if let Err(error) = release_repository_cache(&repository_root) {
-        restore_repository_view(&view_path, &backup_path, had_original);
-        let _ = release_repository_cache(&repository_root);
-        return Err(LoreCommandError::new(
-            "repository_view_cache_release_failed",
-            format!(
-                "Failed to release the Lore repository cache for the previous view; the original rules were restored: {}",
-                error.message
+        return Err(rollback_repository_view(
+            &view_path,
+            &backup_path,
+            had_original,
+            LoreCommandError::new(
+                "repository_view_cache_release_failed",
+                format!(
+                    "Failed to release the Lore repository cache for the previous view: {}",
+                    error.message
+                ),
             ),
+            || release_repository_cache(&repository_root),
+            || Ok(()),
         ));
     }
 
+    let rollback = |error| {
+        rollback_repository_view(
+            &view_path,
+            &backup_path,
+            had_original,
+            error,
+            || release_repository_cache(&repository_root),
+            || {
+                let result = run_repository_view_sync(
+                    &repository_path,
+                    &revision,
+                    "repository.view-rollback",
+                )?;
+                ensure_operation_success(&result, "Restore the workspace after view apply failed")
+            },
+        )
+    };
     if let Err(error) = dematerialize_repository_view_files(&repository_path, &dematerialize_paths)
     {
-        restore_repository_view(&view_path, &backup_path, had_original);
-        let _ = release_repository_cache(&repository_root);
-        let _ = run_repository_view_sync(&repository_path, &revision, "repository.view-rollback");
-        return Err(error);
+        return Err(rollback(error));
     }
 
     let sync_result =
@@ -583,26 +688,175 @@ pub(super) fn apply_repository_view(
             }
             Ok(LoreRepositoryViewApplyResult { preview, result })
         }
-        Ok(result) => {
-            restore_repository_view(&view_path, &backup_path, had_original);
-            // 失败的 Sync 已加载新 Filter；回滚同步前同样需要强制重读旧 View。
-            let _ = release_repository_cache(&repository_root);
-            let _ =
-                run_repository_view_sync(&repository_path, &revision, "repository.view-rollback");
-            Err(LoreCommandError::new(
-                "repository_view_sync_failed",
-                operation_failure_message(
-                    &result,
-                    "Lore sync failed after applying the view; the original rules were restored",
-                ),
-            ))
-        }
-        Err(error) => {
-            restore_repository_view(&view_path, &backup_path, had_original);
-            let _ = release_repository_cache(&repository_root);
-            let _ =
-                run_repository_view_sync(&repository_path, &revision, "repository.view-rollback");
-            Err(error)
+        Ok(result) => Err(rollback(LoreCommandError::new(
+            "repository_view_sync_failed",
+            operation_failure_message(&result, "Lore sync failed after applying the view"),
+        ))),
+        Err(error) => Err(rollback(error)),
+    }
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+
+    fn changed_view() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let directory = tempfile::tempdir().unwrap();
+        let view = directory.path().join("view");
+        fs::write(&view, "original rules").unwrap();
+        let (_, backup, had_original) =
+            write_repository_view_temporary(&view, "replacement rules").unwrap();
+        assert!(had_original);
+        (directory, view, backup)
+    }
+
+    fn apply_failure() -> LoreCommandError {
+        LoreCommandError::new("repository_view_sync_failed", "Apply sync failed")
+    }
+
+    #[test]
+    fn view_recovery_preserves_backup_when_rules_cannot_be_restored() {
+        let (_directory, view, backup) = changed_view();
+        fs::remove_file(&view).unwrap();
+        fs::create_dir(&view).unwrap();
+        fs::write(view.join("unrelated"), "keep").unwrap();
+
+        let error = rollback_repository_view(
+            &view,
+            &backup,
+            true,
+            apply_failure(),
+            || panic!("Cache release must wait for successful rule restoration"),
+            || panic!("Sync must not run with the replacement rules"),
+        );
+        assert_eq!(error.code, "repository_view_recovery_incomplete");
+        assert!(error.message.contains("Apply sync failed"));
+        assert!(error.message.contains("Failed to restore view rules"));
+        assert!(error.message.contains(backup.to_str().unwrap()));
+        assert_eq!(fs::read_to_string(backup).unwrap(), "original rules");
+        assert_eq!(fs::read_to_string(view.join("unrelated")).unwrap(), "keep");
+    }
+
+    #[test]
+    fn view_recovery_does_not_remove_current_rules_when_backup_is_missing() {
+        let (_directory, view, backup) = changed_view();
+        fs::remove_file(&backup).unwrap();
+        let error = rollback_repository_view(
+            &view,
+            &backup,
+            true,
+            apply_failure(),
+            || panic!("A missing backup must stop recovery"),
+            || panic!("A missing backup must stop recovery"),
+        );
+        assert_eq!(error.code, "repository_view_recovery_incomplete");
+        assert!(error.message.contains("backup is unavailable"));
+        assert_eq!(fs::read_to_string(view).unwrap(), "replacement rules");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn view_recovery_does_not_follow_a_replaced_rules_symlink() {
+        let (directory, view, backup) = changed_view();
+        let outside = directory.path().join("unrelated");
+        fs::write(&outside, "keep").unwrap();
+        fs::remove_file(&view).unwrap();
+        std::os::unix::fs::symlink(&outside, &view).unwrap();
+
+        let error = rollback_repository_view(
+            &view,
+            &backup,
+            true,
+            apply_failure(),
+            || panic!("A replaced destination must stop recovery"),
+            || panic!("A replaced destination must stop recovery"),
+        );
+        assert_eq!(error.code, "repository_view_recovery_incomplete");
+        assert_eq!(fs::read_to_string(outside).unwrap(), "keep");
+        assert_eq!(fs::read_to_string(backup).unwrap(), "original rules");
+        assert!(fs::symlink_metadata(view).unwrap().file_type().is_symlink());
+    }
+
+    #[test]
+    fn view_recovery_preserves_backup_and_skips_sync_when_cache_release_fails() {
+        let (_directory, view, backup) = changed_view();
+        let error = rollback_repository_view(
+            &view,
+            &backup,
+            true,
+            apply_failure(),
+            || {
+                assert_eq!(fs::read_to_string(&view).unwrap(), "original rules");
+                Err(LoreCommandError::new(
+                    "repository_cache_release_failed",
+                    "cache unavailable",
+                ))
+            },
+            || panic!("Sync must not reuse a cache with replacement rules"),
+        );
+        assert_eq!(error.code, "repository_view_recovery_incomplete");
+        assert!(error.message.contains("cache unavailable"));
+        assert_eq!(fs::read_to_string(backup).unwrap(), "original rules");
+    }
+
+    #[test]
+    fn view_recovery_checks_sync_status_and_preserves_backup_on_failure() {
+        let (_directory, view, backup) = changed_view();
+        let cache_released = std::cell::Cell::new(false);
+        let error = rollback_repository_view(
+            &view,
+            &backup,
+            true,
+            apply_failure(),
+            || {
+                cache_released.set(true);
+                Ok(())
+            },
+            || {
+                assert!(cache_released.get());
+                assert_eq!(fs::read_to_string(&view).unwrap(), "original rules");
+                assert!(backup.is_file());
+                ensure_operation_success(
+                    &LoreOperationResult {
+                        operation: "repository.view-rollback",
+                        status: 1,
+                        duration_ms: 0,
+                        events: vec![],
+                    },
+                    "Recovery sync failed",
+                )
+            },
+        );
+        assert_eq!(error.code, "repository_view_recovery_incomplete");
+        assert!(error.message.contains("Recovery sync failed"));
+        assert_eq!(fs::read_to_string(backup).unwrap(), "original rules");
+    }
+
+    #[test]
+    fn view_recovery_cleans_backup_only_after_complete_restoration() {
+        for had_original in [false, true] {
+            let (_directory, view, backup) = changed_view();
+            if !had_original {
+                fs::remove_file(&backup).unwrap();
+            }
+            let error = rollback_repository_view(
+                &view,
+                &backup,
+                had_original,
+                apply_failure(),
+                || Ok(()),
+                || {
+                    if had_original {
+                        assert_eq!(fs::read_to_string(&view).unwrap(), "original rules");
+                        assert!(backup.is_file());
+                    } else {
+                        assert!(!view.exists());
+                    }
+                    Ok(())
+                },
+            );
+            assert_eq!(error.code, "repository_view_sync_failed");
+            assert!(!backup.exists());
         }
     }
 }

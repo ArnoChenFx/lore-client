@@ -139,6 +139,7 @@ static OPERATION_STREAM_COUNTER: AtomicU64 = AtomicU64::new(1);
 static HEAVY_READ_LOCK: OnceLock<tauri::async_runtime::Mutex<()>> = OnceLock::new();
 static WORKSPACE_DIFF_READ_LANE: HeavyReadLane = HeavyReadLane::new();
 static REVISION_FILES_READ_LANE: HeavyReadLane = HeavyReadLane::new();
+static REVISION_TEXT_READ_LANE: HeavyReadLane = HeavyReadLane::new();
 static FILE_PREVIEW_READ_LANE: HeavyReadLane = HeavyReadLane::new();
 static WORKSPACE_TEXT_READ_LANE: HeavyReadLane = HeavyReadLane::new();
 static REVISION_DIFF_READ_LANE: HeavyReadLane = HeavyReadLane::new();
