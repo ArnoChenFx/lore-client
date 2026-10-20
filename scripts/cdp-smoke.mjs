@@ -6,19 +6,32 @@ import { fileURLToPath } from 'node:url'
 
 import { resolveBrowserExecutable } from './browser-path.mjs'
 import { createCdpClient } from './cdp-client.mjs'
+import { runLazyViewRecoveryWorkflow } from './cdp-workflows/lazy-view-recovery.mjs'
+import { runRevisionNavigationWorkflow } from './cdp-workflows/revision-navigation.mjs'
+import { runSettingsWorkflow } from './cdp-workflows/settings.mjs'
+import { runStartupWorkflow } from './cdp-workflows/startup.mjs'
 import { removeOwnedTemporaryDirectory, terminateOwnedProcess } from './temporary-resources.mjs'
 
-// 自动覆盖 Windows、Linux 与 macOS 的常见 Chrome、Chromium 和 Edge 安装；
-// CI 使用非标准浏览器时仍可通过 LORE_CLIENT_BROWSER_PATH 显式指定。
-const chromePath = resolveBrowserExecutable()
 // 每个测试进程使用独立调试端口，避免并行执行或异常退出的旧 Chromium 让新用例
 // 误连到另一份页面状态。端口范围保持在普通用户可监听区间，并远离 Vite 的 1420。
 const debugPort = 9_300 + (process.pid % 20_000)
 const debugBaseUrl = `http://127.0.0.1:${debugPort}`
-const applicationUrl = 'http://127.0.0.1:1420/'
+let applicationPort = 1420
+let applicationUrl = `http://127.0.0.1:${applicationPort}/`
 const projectRoot = fileURLToPath(new URL('..', import.meta.url))
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
 let applicationServer = null
+let browserProcess = null
+let profilePath = null
+let browserDiagnostic = ''
+let browserLaunchError = null
+let cdp = null
+let activeWorkflow = 'startup'
+let suite = 'full'
+const results = {}
+const completedWorkflows = []
+const artifactDirectory = process.env.LORE_CDP_ARTIFACT_DIR
+const startedAt = Date.now()
 
 async function applicationServerIsReady() {
   try {
@@ -53,7 +66,12 @@ async function closeOwnedApplicationServer() {
    * Vite 的程序化实例能在三个平台上关闭真实监听器，不依赖 Shell 或启动器的
    * 父子进程关系。超时保护只防止异常插件句柄阻塞测试进程。
    */
-  await Promise.race([server.close().catch(() => {}), delay(2_000)])
+  await Promise.race([
+    server.close(),
+    delay(2_000).then(() => {
+      throw new Error('The owned UI server did not close before the timeout')
+    })
+  ])
 }
 
 async function ensureApplicationServer() {
@@ -72,7 +90,7 @@ async function ensureApplicationServer() {
     logLevel: 'silent',
     server: {
       host: '127.0.0.1',
-      port: 1420,
+      port: applicationPort,
       strictPort: true
     }
   })
@@ -89,44 +107,54 @@ async function ensureApplicationServer() {
   }
 }
 
-await ensureApplicationServer()
-// 浏览器缓存不能放进 Vite 监听的项目树，否则其锁文件会触发 Windows EBUSY。
-const profilePath = resolve(tmpdir(), `lore-client-cdp-profile-${process.pid}-${Date.now()}`)
+async function launchBrowser() {
+  // Resolve before creating resources so a missing system browser fails cleanly.
+  const chromePath = resolveBrowserExecutable()
+  await ensureApplicationServer()
+  // 浏览器缓存不能放进 Vite 监听的项目树，否则其锁文件会触发 Windows EBUSY。
+  profilePath = resolve(tmpdir(), `lore-client-cdp-profile-${process.pid}-${Date.now()}`)
 
-// 使用独立、一次性的无头浏览器实例，避免读取或污染用户真实浏览器资料。
-await mkdir(profilePath, { recursive: true })
-const browserProcess = spawn(
-  chromePath,
-  [
-    '--headless=new',
-    // UI assertions use Simplified Chinese regardless of the host locale.
-    '--lang=zh-CN',
-    '--accept-lang=zh-CN',
-    '--disable-gpu',
-    '--disable-breakpad',
-    '--disable-crash-reporter',
-    '--disable-extensions',
-    '--hide-scrollbars',
-    // UI 冒烟测试只访问本机 Vite 页面并使用一次性资料目录；受限 Windows
-    // 执行环境无法启动 Chromium 沙箱子进程时，允许测试实例无沙箱运行。
-    '--no-sandbox',
-    '--no-default-browser-check',
-    '--no-first-run',
-    `--remote-debugging-port=${debugPort}`,
-    `--user-data-dir=${profilePath}`,
-    '--window-size=1440,900',
-    applicationUrl
-  ],
-  { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true }
-)
-let browserDiagnostic = ''
-browserProcess.stderr?.on('data', (chunk) => {
-  // 仅保留尾部诊断，失败时帮助区分页面错误与 Chrome 启动策略限制。
-  browserDiagnostic = `${browserDiagnostic}${chunk}`.slice(-4_000)
-})
+  // 使用独立、一次性的无头浏览器实例，避免读取或污染用户真实浏览器资料。
+  await mkdir(profilePath, { recursive: true })
+  browserProcess = spawn(
+    chromePath,
+    [
+      '--headless=new',
+      // UI assertions use Simplified Chinese regardless of the host locale.
+      '--lang=zh-CN',
+      '--accept-lang=zh-CN',
+      '--disable-gpu',
+      '--disable-breakpad',
+      '--disable-crash-reporter',
+      '--disable-extensions',
+      '--hide-scrollbars',
+      // UI 冒烟测试只访问本机 Vite 页面并使用一次性资料目录；受限 Windows
+      // 执行环境无法启动 Chromium 沙箱子进程时，允许测试实例无沙箱运行。
+      '--no-sandbox',
+      '--no-default-browser-check',
+      '--no-first-run',
+      `--remote-debugging-port=${debugPort}`,
+      `--user-data-dir=${profilePath}`,
+      '--window-size=1440,900',
+      applicationUrl
+    ],
+    { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true }
+  )
+  browserProcess.on('error', (error) => {
+    browserLaunchError = error
+  })
+  browserProcess.stderr?.on('data', (chunk) => {
+    // 仅保留尾部诊断，失败时帮助区分页面错误与 Chrome 启动策略限制。
+    browserDiagnostic = `${browserDiagnostic}${chunk}`.slice(-4_000)
+  })
+}
 
 async function waitForDebugTarget() {
   for (let attempt = 0; attempt < 30; attempt += 1) {
+    if (browserLaunchError) throw browserLaunchError
+    if (browserProcess.exitCode !== null || browserProcess.signalCode !== null) {
+      throw new Error('The browser exited before its debugging target was ready')
+    }
     try {
       const targets = await fetch(`${debugBaseUrl}/json/list`, { signal: AbortSignal.timeout(500) }).then((response) => response.json())
       const applicationTarget = targets.find((target) => target.url?.startsWith(applicationUrl))
@@ -165,7 +193,7 @@ async function waitForApplication(cdp) {
   // 首次启动时 Vite 可能正在优化依赖，不能用固定 120ms 假定 React 已挂载。
   let lastContextError = ''
   let lastPageState = ''
-  for (let attempt = 0; attempt < 50; attempt += 1) {
+  for (let attempt = 0; attempt < 150; attempt += 1) {
     try {
       const state = await cdp.evaluate(`({
         mounted: Boolean(document.querySelector(".app-shell")),
@@ -199,16 +227,17 @@ async function openFreshApplicationDocument(cdp, navigate) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const replaced = await cdp.evaluate('window.__cdpDocumentMarker !== true').catch(() => false)
     if (replaced) {
-      break
+      await waitForApplication(cdp)
+      return
     }
     await delay(100)
   }
-  await waitForApplication(cdp)
+  throw new Error('The previous application document remained active after navigation')
 }
 
-/** 仅在设置 LORE_CDP_SCREENSHOT_DIR 时把当前页面保存为 PNG，便于人工核对关键状态。 */
+/** 显式截图目录或 CI 证据目录可保留关键页面状态。 */
 async function captureScreenshot(cdp, fileName) {
-  const directory = process.env.LORE_CDP_SCREENSHOT_DIR
+  const directory = process.env.LORE_CDP_SCREENSHOT_DIR ?? artifactDirectory
   if (!directory) {
     return
   }
@@ -217,183 +246,17 @@ async function captureScreenshot(cdp, fileName) {
   await writeFile(resolve(directory, fileName), Buffer.from(data, 'base64'))
 }
 
-try {
-  const target = await waitForDebugTarget()
-  const cdp = createCdpClient(target.webSocketDebuggerUrl)
-  await cdp.send('Runtime.enable')
-  await cdp.send('Page.enable')
-  // Chrome 150 可能先公开空白 Target，再异步处理命令行 URL；显式导航可稳定建立默认执行上下文。
-  await cdp.send('Page.navigate', { url: applicationUrl })
-  await waitForApplication(cdp)
+async function runWorkflow(name, run, context) {
+  const previousWorkflow = activeWorkflow
+  activeWorkflow = name
+  await run(context)
+  completedWorkflows.push(name)
+  activeWorkflow = previousWorkflow
+}
 
-  const results = {}
+async function runFullSuite(context) {
+  await runWorkflow('startup', runStartupWorkflow, context)
 
-  results.initial = await cdp.evaluate(`({
-    revisionRows: document.querySelectorAll(".revision-row").length,
-    hasInspector: Boolean(document.querySelector(".inspector")),
-    historyFooterRemoved: !document.querySelector(".history-footer"),
-    historyGridRows:
-      getComputedStyle(document.querySelector(".history-panel")).gridTemplateRows,
-    bodyOverflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth
-  })`)
-  assert(results.initial.revisionRows >= 10, 'Revision history was not fully rendered')
-  assert(results.initial.hasInspector, 'The revision inspector was not rendered')
-  assert(
-    results.initial.historyFooterRemoved && results.initial.historyGridRows.trim().split(/\s+/).length === 3,
-    `The removed revision footer still occupies a history grid row: ${JSON.stringify(results.initial)}`
-  )
-  assert(!results.initial.bodyOverflowX, 'The main page has horizontal overflow')
-
-  /*
-   * 历史按新到旧排列；精确 HEAD 上方的每一行都必须带相对状态类，
-   * HEAD 自身及更旧历史不得误标。搜索隐藏 HEAD 后，状态仍由完整投影保留。
-   */
-  results.revisionsAheadOfHead = await cdp.evaluate(`(() => {
-    const rows = Array.from(document.querySelectorAll(".revision-row"));
-    const headIndex = rows.findIndex((row) => row.querySelector(".revision-row__meta em.is-head"));
-    const aheadIndices = rows
-      .map((row, index) => row.classList.contains("is-ahead-of-head") ? index : -1)
-      .filter((index) => index >= 0);
-    return {
-      headIndex,
-      aheadIndices,
-      headMarked: headIndex >= 0 && rows[headIndex].classList.contains("is-ahead-of-head"),
-      olderMarked: headIndex >= 0 && rows.slice(headIndex + 1).some((row) =>
-        row.classList.contains("is-ahead-of-head")
-      )
-    };
-  })()`)
-  assert(
-    results.revisionsAheadOfHead.headIndex >= 0 &&
-      JSON.stringify(results.revisionsAheadOfHead.aheadIndices) ===
-        JSON.stringify(Array.from({ length: results.revisionsAheadOfHead.headIndex }, (_, index) => index)) &&
-      !results.revisionsAheadOfHead.headMarked &&
-      !results.revisionsAheadOfHead.olderMarked,
-    `Revision rows ahead of HEAD were classified incorrectly: ${JSON.stringify(results.revisionsAheadOfHead)}`
-  )
-
-  /*
-   * 默认演示仓库的 HEAD 就是首行，因此真实界面覆盖“不误标”边界；
-   * HEAD 落后时的正向分类与筛选稳定性由 HistoryPanel 组件夹具覆盖。
-   */
-
-  /*
-   * 底部实例、分区和状态栏都是高密度缩写信息；每一项都必须提供完整 title，
-   * 让鼠标用户无需猜测图标或短文本的语义。
-   */
-  results.bottomInformationTooltips = await cdp.evaluate(`(() => {
-    const readItems = (selector) =>
-      Array.from(document.querySelectorAll(selector)).map((element) => ({
-        text: element.textContent?.trim() ?? "",
-        title: element.getAttribute("title") ?? ""
-      }));
-    return {
-      sidebar: readItems(".sidebar__instance > div"),
-      status: readItems(".statusbar > span:not(.statusbar__spacer)")
-    };
-  })()`)
-  assert(
-    results.bottomInformationTooltips.sidebar.length === 2 &&
-      results.bottomInformationTooltips.status.length === 6 &&
-      [...results.bottomInformationTooltips.sidebar, ...results.bottomInformationTooltips.status].every(
-        (item) => item.text.length > 0 && item.title.length > 0 && item.title !== item.text && item.title.includes('：')
-      ),
-    `Bottom information tooltips are incomplete: ${JSON.stringify(results.bottomInformationTooltips)}`
-  )
-
-  // 桌面交互表面不允许拖出跨面板文本选区；搜索输入仍必须保留文字编辑与选择。
-  results.textSelectionPolicy = await cdp.evaluate(`(() => {
-    const shell = document.querySelector(".app-shell");
-    const input = document.querySelector(".sidebar__filter input");
-    return {
-      shell: shell ? getComputedStyle(shell).userSelect : "",
-      input: input ? getComputedStyle(input).userSelect : ""
-    };
-  })()`)
-  assert(
-    results.textSelectionPolicy.shell === 'none' && results.textSelectionPolicy.input === 'text',
-    `The interface text-selection policy is invalid: ${JSON.stringify(results.textSelectionPolicy)}`
-  )
-  /*
-   * 顶部仓库工具栏必须真正释放垂直空间，而不是只把内部内容缩小后仍保留
-   * 旧网格轨道。这里读取浏览器最终矩形，并同时确认动作已经采用横向排列。
-   */
-  results.compactToolbar = await cdp.evaluate(`(() => {
-    const toolbar = document.querySelector(".toolbar");
-    const repositorySwitcher = document.querySelector(
-      ".repository-switcher"
-    );
-    const actions = Array.from(document.querySelectorAll(".toolbar-action"));
-    const labeledAction = actions.find((action) =>
-      action.querySelector(":scope > span")
-    );
-    return {
-      height: toolbar?.getBoundingClientRect().height ?? 0,
-      repositoryHeight:
-        repositorySwitcher?.getBoundingClientRect().height ?? 0,
-      maximumActionHeight: actions.length
-        ? Math.max(
-            ...actions.map(
-              (action) => action.getBoundingClientRect().height,
-            ),
-          )
-        : 0,
-      actionCount: actions.length,
-      actionLabels: actions.map(
-        (action) =>
-          action.getAttribute("aria-label") ??
-          action.textContent?.trim() ??
-          "",
-      ),
-      labeledActionDirection: labeledAction
-        ? getComputedStyle(labeledAction).flexDirection
-        : "",
-      overflowX: toolbar
-        ? toolbar.scrollWidth > toolbar.clientWidth
-        : true
-    };
-  })()`)
-  const expectedToolbarActions = [
-    '同步',
-    '推送',
-    '新建修订',
-    '打开项目目录',
-    '命令',
-    '全局搜索',
-    '服务器设置',
-    '客户端设置'
-  ]
-  assert(
-    results.compactToolbar.height <= 42 &&
-      results.compactToolbar.repositoryHeight <= 34 &&
-      results.compactToolbar.maximumActionHeight <= 34 &&
-      results.compactToolbar.actionCount === expectedToolbarActions.length &&
-      expectedToolbarActions.every((label) => results.compactToolbar.actionLabels.includes(label)) &&
-      results.compactToolbar.labeledActionDirection === 'row' &&
-      !results.compactToolbar.overflowX,
-    `The top toolbar did not release vertical space as expected: ${JSON.stringify(results.compactToolbar)}`
-  )
-  /*
-   * 首次启动和缺少轨道偏好字段的配置都必须进入平铺模式。当前 Branch 的
-   * 本地指针与精确 HEAD 仍需可见，其他 Branch 指针不能混入默认列表。
-   */
-  results.revisionLaneDefault = await cdp.evaluate(`(() => ({
-    mode: document.querySelector(".history-list")?.dataset.laneMode ?? "",
-    revisionRows: document.querySelectorAll(".revision-row").length,
-    visibleBranchPointers: Array.from(
-      document.querySelectorAll(".revision-row__meta > em")
-    ).map((pointer) => pointer.textContent?.trim() ?? "")
-  }))()`)
-  assert(
-    results.revisionLaneDefault.mode === 'flat' &&
-      results.revisionLaneDefault.revisionRows === 10 &&
-      results.revisionLaneDefault.visibleBranchPointers.includes('world/lighting-pass') &&
-      results.revisionLaneDefault.visibleBranchPointers.includes('HEAD') &&
-      results.revisionLaneDefault.visibleBranchPointers.every(
-        (pointer) => pointer === 'world/lighting-pass' || pointer === 'HEAD'
-      ),
-    `Revision History did not default to the current-branch Flat view: ${JSON.stringify(results.revisionLaneDefault)}`
-  )
   /*
    * 后续仍需验证完整拓扑的跨行连接；先通过真实显示选项切到拓扑模式，再执行
    * 既有 SVG 几何断言。该动作也验证用户明确选择拓扑后不会被默认值覆盖。
@@ -900,38 +763,7 @@ try {
     })}`
   )
 
-  // Revision 单击只选择并更新检查器，不应触发 Checkout 或显示操作通知。
-  await cdp.evaluate(`document.querySelectorAll(".revision-row")[2]?.click()`)
-  await delay(60)
-  results.revisionSingleClick = await cdp.evaluate(`({
-    selected: document.querySelectorAll(".revision-row")[2]
-      ?.classList.contains("is-selected") ?? false,
-    hasOperationToast: Boolean(document.querySelector(".toast"))
-  })`)
-  assert(
-    results.revisionSingleClick.selected && !results.revisionSingleClick.hasOperationToast,
-    `A single revision click must not perform checkout: ${JSON.stringify(results.revisionSingleClick)}`
-  )
-
-  // 双击同一 Revision 才触发 Checkout；浏览器演示必须明确说明桌面行为。
-  await cdp.evaluate(`document.querySelectorAll(".revision-row")[2]
-    ?.dispatchEvent(new MouseEvent("dblclick", {
-      bubbles: true,
-      cancelable: true
-    }))`)
-  await delay(60)
-  results.revisionDoubleClick = await cdp.evaluate(`({
-    title: document.querySelector(".toast strong")?.textContent?.trim() ?? "",
-    detail: document.querySelector(".toast small")?.textContent?.trim() ?? ""
-  })`)
-  assert(
-    results.revisionDoubleClick.title === '浏览器演示模式' &&
-      results.revisionDoubleClick.detail.includes('检出') &&
-      results.revisionDoubleClick.detail.includes('1dd6e2a3'),
-    `Double-clicking a revision did not trigger the checkout entry point: ${JSON.stringify(results.revisionDoubleClick)}`
-  )
-  await cdp.evaluate(`document.querySelector(".toast > button")?.click()`)
-  await delay(40)
+  await runWorkflow('revision-navigation', runRevisionNavigationWorkflow, context)
 
   // 修订行直接显示附着标签；右击标签徽标必须进入标签修改菜单而不是修订菜单。
   results.revisionTagBadges = await cdp.evaluate(`({
@@ -4142,293 +3974,7 @@ try {
   await cdp.evaluate(`document.querySelector(".tag-dialog button[aria-label='关闭']")?.click()`)
   await delay(40)
 
-  // 纯前端演示同样提供产品级 Ctrl+P，但不拦截查找、刷新等其他浏览器默认快捷键。
-  results.frontendBrowserShortcuts = await cdp.evaluate(`(() => {
-    const findEvent = new KeyboardEvent("keydown", {
-      key: "f",
-      ctrlKey: true,
-      bubbles: true,
-      cancelable: true
-    });
-    const shiftedPaletteEvent = new KeyboardEvent("keydown", {
-      key: "p",
-      ctrlKey: true,
-      shiftKey: true,
-      bubbles: true,
-      cancelable: true
-    });
-    window.dispatchEvent(findEvent);
-    window.dispatchEvent(shiftedPaletteEvent);
-    return {
-      findPrevented: findEvent.defaultPrevented,
-      shiftedPalettePrevented: shiftedPaletteEvent.defaultPrevented
-    };
-  })()`)
-  assert(
-    !results.frontendBrowserShortcuts.findPrevented &&
-      !results.frontendBrowserShortcuts.shiftedPalettePrevented,
-    `The browser demo unexpectedly blocked native shortcuts: ${JSON.stringify(results.frontendBrowserShortcuts)}`
-  )
-
-  await cdp.evaluate(`
-    window.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "p",
-      ctrlKey: true,
-      bubbles: true
-    }))
-  `)
-  await delay(60)
-  results.commandPalette = await cdp.evaluate(`Boolean(document.querySelector(".command-palette"))`)
-  assert(results.commandPalette, 'Ctrl+P did not open the command palette')
-
-  await cdp.evaluate(`
-    document.querySelector(".command-palette input")?.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "Escape",
-      bubbles: true
-    }));
-    document.querySelector('button[aria-label="服务器设置"]')?.click()
-  `)
-  await delay(60)
-  results.serverDialog = await cdp.evaluate(`({
-    visible: Boolean(document.querySelector(".server-dialog")),
-    serverUrl: document.querySelector("#lore-server-url")?.value ?? "",
-    hasReadableError: Boolean(document.querySelector(".server-dialog__empty.is-error"))
-  })`)
-  assert(results.serverDialog.visible, 'The server repository panel did not open')
-  assert(
-    results.serverDialog.hasReadableError,
-    'Browser demo mode did not display an explicit server-connection limitation'
-  )
-  /*
-   * 服务器仓库地址是临时浏览草稿。先改成与仓库配置不同的值，后续打开
-   * Shared Store 时验证该草稿不会再通过 App 共享状态泄漏过去。
-   */
-  await cdp.evaluate(`(() => {
-    const input = document.querySelector("#lore-server-url");
-    const setter = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      "value"
-    )?.set;
-    setter?.call(input, "lore://temporary-browser:41337");
-    input?.dispatchEvent(new Event("input", { bubbles: true }));
-  })()`)
-  await cdp.evaluate(`document.querySelector(".server-dialog__header .icon-button")?.click()`)
-  await delay(40)
-
-  await cdp.evaluate(`document.querySelector('button[aria-label="全局搜索"]')?.click()`)
-  await delay(50)
-  results.search = await cdp.evaluate(`(() => {
-    const input = document.querySelector(".search-dialog input");
-    if (!input) return { visible: false, results: 0 };
-    const setter = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      "value"
-    )?.set;
-    setter?.call(input, "lighting");
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    return { visible: true };
-  })()`)
-  await delay(50)
-  results.search.results = await cdp.evaluate(`document.querySelectorAll(".search-results > button").length`)
-  assert(results.search.visible && results.search.results > 0, 'Repository search returned no matching results')
-  await cdp.evaluate(`document.querySelector(".search-dialog__input > button")?.click()`)
-  await delay(40)
-
-  await cdp.evaluate(`document.querySelector('button[aria-label="客户端设置"]')?.click()`)
-  await waitForEvaluatedState(
-    cdp,
-    'Boolean(document.querySelector(".settings-dialog"))',
-    (visible) => visible
-  )
-  results.settings = await cdp.evaluate(`({
-    visible: Boolean(document.querySelector(".settings-dialog")),
-    categories: document.querySelectorAll(
-      ".settings-categories > button[role=\\"tab\\"]"
-    ).length,
-    activePanel: document.querySelector(
-      '.settings-page[role="tabpanel"]:not([hidden])'
-    )?.id ?? null,
-    themeOptions: document.querySelectorAll(
-      ".theme-options:not(.language-options) button"
-    ).length
-  })`)
-  assert(
-    results.settings.visible &&
-      results.settings.categories === 5 &&
-      results.settings.activePanel === 'settings-panel-general' &&
-      results.settings.themeOptions === 3,
-    `The settings panel category workspace is invalid: ${JSON.stringify(results.settings)}`
-  )
-  await cdp.evaluate(`(() => {
-    const activeTab = document.querySelector(
-      '.settings-categories > button[aria-selected="true"]'
-    );
-    activeTab?.focus();
-    activeTab?.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "ArrowDown",
-      bubbles: true
-    }));
-  })()`)
-  await delay(40)
-  Object.assign(
-    results.settings,
-    await cdp.evaluate(`({
-    identityPanelVisible: !document.querySelector(
-      "#settings-panel-identity"
-    )?.hidden,
-    defaultIdentityAuthor: Boolean(
-      document.querySelector('input[aria-label="默认提交作者名"]')
-    ),
-    defaultIdentityEmail: Boolean(
-      document.querySelector('input[aria-label="默认提交邮箱"]')
-    ),
-    defaultIdentityAvatar: Boolean(
-      document.querySelector(
-        "#settings-panel-identity .revision-author-avatar"
-      )
-    )
-  })`)
-  )
-  assert(
-    results.settings.identityPanelVisible &&
-      results.settings.defaultIdentityAuthor &&
-      results.settings.defaultIdentityEmail &&
-      results.settings.defaultIdentityAvatar,
-    `The settings panel cannot switch to default commit identity: ${JSON.stringify(results.settings)}`
-  )
-  await cdp.evaluate(`Array.from(document.querySelectorAll(".settings-categories > button"))
-    .find((button) => button.textContent.includes("集成"))
-    ?.click()`)
-  await delay(40)
-  Object.assign(
-    results.settings,
-    await cdp.evaluate(`(() => {
-      const panel = document.querySelector("#settings-panel-integrations");
-      return {
-        integrationsPanelVisible: panel instanceof HTMLElement && !panel.hidden,
-        externalToolGroups: panel?.querySelectorAll(".settings-external-tools").length ?? 0,
-        configuredToolRows: panel?.querySelectorAll(".settings-external-tools__list > button").length ?? 0
-      };
-    })()`)
-  )
-  await delay(40)
-  Object.assign(
-    results.settings,
-    await cdp.evaluate(`({
-      externalDiffNameInput: Boolean(
-        document.querySelector("#settings-panel-integrations .settings-external-diff__field input")
-      ),
-      externalDiffExecutableInput: document.querySelectorAll(
-        "#settings-panel-integrations .settings-external-diff__field input"
-      ).length >= 2,
-      externalDiffArgumentTemplate:
-        document.querySelectorAll("#settings-panel-integrations textarea").length >= 2
-    })`)
-  )
-  assert(
-    results.settings.integrationsPanelVisible &&
-      results.settings.externalToolGroups === 2 &&
-      results.settings.configuredToolRows >= 8 &&
-      results.settings.externalDiffNameInput &&
-      results.settings.externalDiffExecutableInput &&
-      results.settings.externalDiffArgumentTemplate,
-    `The external Diff integration editor is incomplete: ${JSON.stringify(results.settings)}`
-  )
-  await cdp.evaluate(`Array.from(document.querySelectorAll(".settings-categories > button"))
-    .find((button) => button.textContent.includes("存储"))
-    ?.click()`)
-  await delay(40)
-  results.sharedStoreEndpointRoles = await cdp.evaluate(`(() => {
-    const panel = document.querySelector("#settings-panel-storage");
-    const input = panel?.querySelector(".settings-shared-store__create input");
-    const label = input?.closest("label");
-    return {
-      visible: panel instanceof HTMLElement && !panel.hidden,
-      value: input instanceof HTMLInputElement ? input.value : "",
-      label: label?.querySelector(":scope > span")?.textContent?.trim() ?? "",
-      hint: label?.querySelector(":scope > small")?.textContent?.trim() ?? ""
-    };
-  })()`)
-  assert(
-    results.sharedStoreEndpointRoles.visible &&
-      results.sharedStoreEndpointRoles.value === results.serverDialog.serverUrl &&
-      results.sharedStoreEndpointRoles.value !== 'lore://temporary-browser:41337' &&
-      results.sharedStoreEndpointRoles.label === 'Shared Store 目标服务器' &&
-      results.sharedStoreEndpointRoles.hint.includes('仅用于本次创建'),
-    `Shared Store unexpectedly reused the temporary server-browser draft: ${JSON.stringify(results.sharedStoreEndpointRoles)}`
-  )
-  await cdp.evaluate(`Array.from(document.querySelectorAll(".settings-categories > button"))
-    .find((button) => button.textContent.includes("维护"))
-    ?.click()`)
-  await delay(40)
-  results.automaticUpdateCheck = await cdp.evaluate(`(() => {
-    const panel = document.querySelector("#settings-panel-maintenance");
-    const preference = panel?.querySelector(".settings-update-preference");
-    const preferenceCopy = preference?.querySelector(":scope > span");
-    const checkbox = panel?.querySelector(
-      '.settings-update-preference input[type="checkbox"]'
-    );
-    const updateRow = panel?.querySelector(".settings-update");
-    const manualButton = Array.from(panel?.querySelectorAll(".settings-update button") ?? [])
-      .find((button) => button.textContent?.includes("检查更新"));
-    if (
-      !(preference instanceof HTMLElement) ||
-      !(preferenceCopy instanceof HTMLElement) ||
-      !(checkbox instanceof HTMLInputElement)
-    ) {
-      return { visible: false };
-    }
-    const checkboxRect = checkbox.getBoundingClientRect();
-    const preferenceCopyRect = preferenceCopy.getBoundingClientRect();
-    const preferenceRect = preference.getBoundingClientRect();
-    const initiallyChecked = checkbox.checked;
-    checkbox.click();
-    const checkedAfterDisable = checkbox.checked;
-    checkbox.click();
-    return {
-      visible: panel instanceof HTMLElement && !panel.hidden,
-      initiallyChecked,
-      checkedAfterDisable,
-      checkedAfterRestore: checkbox.checked,
-      manualActionPresent: Boolean(manualButton),
-      checkboxAfterCopy: Boolean(
-        preferenceCopy.compareDocumentPosition(checkbox) & Node.DOCUMENT_POSITION_FOLLOWING
-      ),
-      checkboxAtRowEnd:
-        checkboxRect.left > preferenceCopyRect.right &&
-        Math.abs(preferenceRect.right - checkboxRect.right) <= 1,
-      decorativeUpdateIconRemoved: !updateRow?.querySelector(".settings-update__icon")
-    };
-  })()`)
-  assert(
-    results.automaticUpdateCheck.visible &&
-      results.automaticUpdateCheck.initiallyChecked &&
-      !results.automaticUpdateCheck.checkedAfterDisable &&
-      results.automaticUpdateCheck.checkedAfterRestore &&
-      results.automaticUpdateCheck.manualActionPresent &&
-      results.automaticUpdateCheck.checkboxAfterCopy &&
-      results.automaticUpdateCheck.checkboxAtRowEnd &&
-      results.automaticUpdateCheck.decorativeUpdateIconRemoved,
-    `Automatic update preference is not wired to the settings UI: ${JSON.stringify(results.automaticUpdateCheck)}`
-  )
-  await cdp.evaluate(`(() => {
-    const authorInput = document.querySelector(
-      'input[aria-label="默认提交作者名"]'
-    );
-    const emailInput = document.querySelector(
-      'input[aria-label="默认提交邮箱"]'
-    );
-    const setter = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      "value"
-    )?.set;
-    setter?.call(authorInput, "Client Default");
-    authorInput?.dispatchEvent(new Event("input", { bubbles: true }));
-    setter?.call(emailInput, "client-default@example.com");
-    emailInput?.dispatchEvent(new Event("input", { bubbles: true }));
-  })()`)
-  await cdp.evaluate(`document.querySelector(".settings-dialog .task-dialog__header > button")?.click()`)
-  await delay(40)
+  await runWorkflow('settings', runSettingsWorkflow, context)
 
   await cdp.evaluate(`Array.from(document.querySelectorAll(".tree-row"))
     .find((button) => button.textContent.includes("账户"))
@@ -5080,106 +4626,121 @@ try {
     })}`
   )
 
-  /*
-   * 设置弹层的懒加载 chunk 在本文档内尚未加载，Fetch 拦截只作用于它。失败必须显示可关闭的错误
-   * 而不是空白区域。浏览器会缓存失败的模块请求，同一文档内的重试可能仍然失败，因此只断言
-   * 结果不是空白，并记录重试是否恢复；重新加载页面后必须能正常打开。
-   */
-  await openFreshApplicationDocument(cdp, () => cdp.send('Page.navigate', { url: applicationUrl }))
-  let failSettingsChunk = true
-  let blockedSettingsRequests = 0
-  cdp.on('Fetch.requestPaused', (params) => {
-    const command = failSettingsChunk ? 'Fetch.failRequest' : 'Fetch.continueRequest'
-    if (failSettingsChunk) blockedSettingsRequests += 1
-    cdp
-      .send(command, failSettingsChunk ? { requestId: params.requestId, errorReason: 'Failed' } : { requestId: params.requestId })
-      .catch(() => {})
-  })
-  await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*SettingsDialog*', requestStage: 'Request' }] })
-  await cdp.evaluate(`document.querySelector('button[aria-label="客户端设置"]')?.click()`)
-  const lazyFailure = await waitForEvaluatedState(
-    cdp,
-    `(() => {
-      const alert = document.querySelector('[role="alertdialog"]')
-      return {
-        visible: Boolean(alert),
-        title: alert?.querySelector('h2')?.textContent?.trim() ?? '',
-        hasRetry: Array.from(alert?.querySelectorAll('button') ?? []).some((button) => button.textContent?.trim() === '重试'),
-        settingsDialogVisible: Boolean(document.querySelector('.settings-dialog'))
-      }
-    })()`,
-    (state) => state.visible
-  )
-  assert(
-    lazyFailure.visible &&
-      lazyFailure.title === '此视图暂时无法显示。' &&
-      lazyFailure.hasRetry &&
-      !lazyFailure.settingsDialogVisible,
-    `A failed lazy dialog did not show the localized retryable error: ${JSON.stringify(lazyFailure)}`
-  )
-  await captureScreenshot(cdp, 'cdp-lazy-view-failure.png')
+  await runWorkflow('lazy-view-recovery', runLazyViewRecoveryWorkflow, context)
+}
 
-  failSettingsChunk = false
-  await cdp.send('Fetch.disable')
-  await cdp.evaluate(`Array.from(document.querySelectorAll('[role="alertdialog"] button'))
-    .find((button) => button.textContent?.trim() === '重试')?.click()`)
-  await delay(300)
-  const afterRetry = await waitForEvaluatedState(
-    cdp,
-    `({
-      errorVisible: Boolean(document.querySelector('[role="alertdialog"]')),
-      settingsDialogVisible: Boolean(document.querySelector('.settings-dialog'))
-    })`,
-    (state) => state.errorVisible !== state.settingsDialogVisible
-  )
-  assert(
-    afterRetry.errorVisible !== afterRetry.settingsDialogVisible,
-    `The lazy dialog region was blank after retry: ${JSON.stringify(afterRetry)}`
-  )
+function readOptions() {
+  const args = process.argv.slice(2)
+  if (args.length !== 0 && (args.length !== 2 || args[0] !== '--suite' || !['full', 'core'].includes(args[1]))) {
+    throw new Error('Usage: bun scripts/cdp-smoke.mjs [--suite full|core]')
+  }
+  suite = args[1] ?? 'full'
+  const requestedPort = process.env.LORE_CDP_PORT ?? '1420'
+  if (!/^\d+$/.test(requestedPort) || Number(requestedPort) < 1 || Number(requestedPort) > 65535) {
+    throw new Error('LORE_CDP_PORT must be an integer between 1 and 65535')
+  }
+  applicationPort = Number(requestedPort)
+  applicationUrl = `http://127.0.0.1:${applicationPort}/`
+}
 
-  await openFreshApplicationDocument(cdp, () => cdp.send('Page.reload'))
-  await cdp.evaluate(`document.querySelector('button[aria-label="客户端设置"]')?.click()`)
-  const recoveredAfterReload = await waitForEvaluatedState(
-    cdp,
-    `Boolean(document.querySelector('.settings-dialog'))`,
-    (visible) => visible
-  )
-  assert(recoveredAfterReload === true, 'Reloading the page did not restore the settings dialog after a failed chunk load')
-  results.lazyViewFailure = {
-    blockedSettingsRequests,
-    failure: lazyFailure,
-    retryOutcome: afterRetry.settingsDialogVisible ? 'recovered' : 'error-still-shown',
-    recoveredAfterReload
+let failure = null
+const cleanupErrors = []
+try {
+  readOptions()
+  await launchBrowser()
+  const target = await waitForDebugTarget()
+  cdp = createCdpClient(target.webSocketDebuggerUrl)
+  await cdp.send('Runtime.enable')
+  await cdp.send('Page.enable')
+  await cdp.send('Page.navigate', { url: applicationUrl })
+  await waitForApplication(cdp)
+  const context = {
+    cdp, results, assert, delay, waitForEvaluatedState,
+    openFreshApplicationDocument, captureScreenshot, applicationUrl
   }
 
+  if (suite === 'core') {
+    for (const [name, run] of [
+      ['startup', runStartupWorkflow],
+      ['revision-navigation', runRevisionNavigationWorkflow],
+      ['settings', runSettingsWorkflow],
+      ['lazy-view-recovery', runLazyViewRecoveryWorkflow]
+    ]) {
+      activeWorkflow = `${name}:reset`
+      // Every core workflow starts with a new document and empty preferences;
+      // it must not depend on state left by an earlier workflow in the full run.
+      await cdp.send('Storage.clearDataForOrigin', {
+        origin: new URL(applicationUrl).origin,
+        storageTypes: 'local_storage,indexeddb'
+      })
+      await openFreshApplicationDocument(cdp, () => cdp.send('Page.navigate', {
+        url: `${applicationUrl}?cdp-workflow=${name}`
+      }))
+      await runWorkflow(name, run, context)
+    }
+  } else {
+    activeWorkflow = 'full-suite'
+    await runFullSuite(context)
+  }
+  activeWorkflow = 'runtime-errors'
   assert(cdp.runtimeErrors.length === 0, 'Runtime errors were captured during interaction')
-
-  console.log(
-    JSON.stringify(
-      {
-        passed: true,
-        checks: results,
-        runtimeErrors: cdp.runtimeErrors
-      },
-      null,
-      2
-    )
-  )
-  cdp.socket.close()
 } catch (error) {
-  if (browserDiagnostic) {
-    console.error(`Browser diagnostic:\n${browserDiagnostic}`)
+  failure = error instanceof Error ? error : new Error(String(error))
+  if (cdp) {
+    try {
+      await captureScreenshot(cdp, 'failure.png')
+    } catch (screenshotError) {
+      console.error(`Failure screenshot unavailable: ${screenshotError.message}`)
+    }
   }
-  throw error
 } finally {
-  await terminateOwnedProcess(browserProcess)
-  // 只关闭本脚本启动的 Vite；复用用户现有开发服务时不得改变其生命周期。
-  await closeOwnedApplicationServer()
-  // 清理失败必须可见，否则连续运行会在系统临时目录中累积浏览器资料。
+  cdp?.socket.close()
+  try {
+    await terminateOwnedProcess(browserProcess)
+    if (browserProcess?.pid && browserProcess.exitCode === null && browserProcess.signalCode === null) {
+      throw new Error('The owned browser did not exit before the cleanup timeout')
+    }
+  } catch (error) {
+    cleanupErrors.push(`Browser cleanup failed: ${error.message}`)
+  }
+  try {
+    // A developer's existing Vite instance remains running.
+    await closeOwnedApplicationServer()
+  } catch (error) {
+    cleanupErrors.push(`UI server cleanup failed: ${error.message}`)
+  }
   try {
     await removeOwnedTemporaryDirectory(profilePath)
   } catch (error) {
-    console.error(`Temporary browser profile cleanup failed: ${error.message}`)
-    process.exitCode = 1
+    cleanupErrors.push(`Temporary browser profile cleanup failed: ${error.message}`)
   }
+}
+
+const summary = {
+  passed: failure === null && cleanupErrors.length === 0,
+  suite,
+  completedWorkflows,
+  durationMilliseconds: Date.now() - startedAt,
+  checks: results,
+  runtimeErrors: cdp?.runtimeErrors ?? [],
+  ...(failure ? {
+    failedWorkflow: activeWorkflow,
+    error: failure instanceof Error ? failure.message : String(failure),
+    browserDiagnostic
+  } : {}),
+  ...(cleanupErrors.length ? { cleanupErrors } : {})
+}
+if (artifactDirectory) {
+  try {
+    await mkdir(artifactDirectory, { recursive: true })
+    await writeFile(resolve(artifactDirectory, 'summary.json'), JSON.stringify(summary, null, 2) + '\n')
+  } catch (error) {
+    summary.passed = false
+    summary.artifactError = error.message
+  }
+}
+console.log(JSON.stringify(summary, null, 2))
+if (!summary.passed) {
+  if (failure) console.error(failure)
+  process.exitCode = 1
 }

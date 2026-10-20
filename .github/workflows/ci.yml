@@ -70,6 +70,25 @@ jobs:
       - name: Build frontend
         run: bun run build
 
+      - name: Run core browser workflows
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        env:
+          LORE_CDP_ARTIFACT_DIR: ${{ github.workspace }}/artifacts/browser-core
+        run: |
+          mkdir -p "$LORE_CDP_ARTIFACT_DIR"
+          set -o pipefail
+          bun run test:ui:core 2>&1 | tee "$LORE_CDP_ARTIFACT_DIR/run.log"
+
+      - name: Upload browser workflow evidence
+        if: always() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-core-${{ github.run_attempt }}
+          path: artifacts/browser-core
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Check Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 

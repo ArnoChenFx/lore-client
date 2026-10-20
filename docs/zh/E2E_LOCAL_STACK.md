@@ -252,13 +252,18 @@ node scripts/e2e/packaged-app-check.mjs    # 截图保存到 $E2E_EVIDENCE_DIR
 
 ## 浏览器驱动检查（CDP 冒烟，仅前端）
 
-`bun run test:ui` 运行 `scripts/cdp-smoke.mjs`。它驱动无头 Chrome 访问端口 1420 上的 Vite 开发服务器，只覆盖前端行为，不包含 Tauri 后端。其断言期望中文界面文本，因此请使用 zh_CN 区域设置运行：
+`bun run test:ui` 运行完整的 `scripts/cdp-smoke.mjs` 冒烟检查，只覆盖前端行为，不包含 Tauri 后端。脚本驱动无头 Chrome，显式使用简体中文，不依赖宿主区域设置。
 
 ```bash
-LANG=zh_CN.UTF-8 LC_ALL=zh_CN.UTF-8 bun run test:ui
+bun run test:ui
+bun run test:ui:core
 ```
 
-设置 `LORE_CLIENT_BROWSER_PATH` 可指定特定的 Chrome 或 Chromium。设置 `LORE_CDP_SCREENSHOT_DIR` 后，失败的懒加载视图状态会保存为 `cdp-lazy-view-failure.png`。
+核心套件与完整套件共享启动与历史首屏、修订单击/双击、命令与设置、懒加载失败恢复这四个工作流。核心套件为每个工作流创建新文档并清空测试资料中的偏好，避免依赖前序步骤；Linux CI 运行此套件并上传摘要、日志与失败截图。完整套件继续覆盖全部交互和视觉断言。
+
+脚本默认使用端口 1420：已有 Vite 服务会被复用，否则自动启动并在结束时关闭。设置 `LORE_CDP_PORT` 可为独立检出或并行运行选择另一端口；脚本不会关闭被复用的服务。每次运行使用独立的临时浏览器资料，结束后清理。
+
+设置 `LORE_CLIENT_BROWSER_PATH` 可指定 Chrome 或 Chromium；未指定时自动发现系统浏览器。设置 `LORE_CDP_ARTIFACT_DIR` 后，成功和失败都会写入 `summary.json`；交互失败时尽力保存 `failure.png`，预期的懒加载失败场景保存为 `cdp-lazy-view-failure.png`。`LORE_CDP_SCREENSHOT_DIR` 可单独指定截图目录。浏览器启动失败也会返回非零退出码并写入失败摘要。
 
 ## `LORE_E2E_HOME` 的目录结构
 
