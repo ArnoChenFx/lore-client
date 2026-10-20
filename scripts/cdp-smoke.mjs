@@ -150,24 +150,40 @@ async function launchBrowser() {
 }
 
 async function waitForDebugTarget() {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
+  // A cold CI runner can expose DevTools before its initial page target is ready.
+  // Bound elapsed time rather than request count: refused and pending probes
+  // take different amounts of time across Chromium versions and platforms.
+  const timeoutMilliseconds = 30_000
+  const deadline = performance.now() + timeoutMilliseconds
+  let lastTargets = []
+  let lastProbeError = ''
+  while (performance.now() < deadline) {
     if (browserLaunchError) throw browserLaunchError
     if (browserProcess.exitCode !== null || browserProcess.signalCode !== null) {
       throw new Error('The browser exited before its debugging target was ready')
     }
     try {
-      const targets = await fetch(`${debugBaseUrl}/json/list`, { signal: AbortSignal.timeout(500) }).then((response) => response.json())
+      const response = await fetch(`${debugBaseUrl}/json/list`, {
+        signal: AbortSignal.timeout(Math.max(1, Math.min(500, Math.ceil(deadline - performance.now()))))
+      })
+      if (!response.ok) throw new Error(`DevTools target probe returned HTTP ${response.status}`)
+      const targets = await response.json()
+      lastTargets = targets.map(({ type, url, title }) => ({ type, url, title }))
+      lastProbeError = ''
       const applicationTarget = targets.find((target) => target.url?.startsWith(applicationUrl))
       if (applicationTarget) {
         return applicationTarget
       }
-    } catch {
-      // Chrome 启动初期端口尚未监听，短暂重试即可。
+    } catch (error) {
+      // Chrome can still be starting; preserve the final probe for CI diagnostics.
+      lastProbeError = error instanceof Error ? error.message : String(error)
     }
-    await delay(100)
+    await delay(Math.max(0, Math.min(100, deadline - performance.now())))
   }
 
-  throw new Error('No Lore Client debugging target appeared before the timeout')
+  throw new Error(
+    `No Lore Client debugging target appeared within ${timeoutMilliseconds}ms; last targets: ${JSON.stringify(lastTargets)}${lastProbeError ? `; last probe error: ${lastProbeError}` : ''}`
+  )
 }
 
 function assert(condition, message) {
