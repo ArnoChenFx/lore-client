@@ -9,8 +9,9 @@ import {
   refreshRepositoryAuthenticationContexts,
   subscribeRemoteAuthenticationRequired
 } from '../../services/lore'
+import { createOperationContext, withOperationRequest } from '../../services/operationRequests'
 import { readErrorMessage, repositoryPathKey } from '../../shared/lib'
-import type { ApplicationMode, Repository, RepositorySnapshot } from '../../types'
+import type { ApplicationMode, OperationContext, Repository, RepositorySnapshot } from '../../types'
 import { type RepositorySessionRequest, type RepositorySessionRequests } from './repositorySessionRequests'
 
 export interface RemoteAuthenticationTarget {
@@ -24,8 +25,8 @@ export interface AuthenticationRefreshResult {
 }
 
 interface AuthenticationRefreshDependencies {
-  refreshContexts: (repositoryPaths: string[]) => Promise<void>
-  loadSnapshot: (repositoryPath: string) => Promise<RepositorySnapshot>
+  refreshContexts: (repositoryPaths: string[], context: OperationContext) => Promise<void>
+  loadSnapshot: (repositoryPath: string, context: OperationContext) => Promise<RepositorySnapshot>
 }
 
 interface UseRemoteAuthenticationRecoveryOptions {
@@ -167,26 +168,32 @@ export async function refreshRepositoryAuthenticationState(
   dependencies: AuthenticationRefreshDependencies = {
     refreshContexts: refreshRepositoryAuthenticationContexts,
     loadSnapshot: loadRepositorySnapshot
-  }
+  },
+  operationContext?: OperationContext
 ): Promise<AuthenticationRefreshResult> {
-  try {
-    await dependencies.refreshContexts(snapshots.map((snapshot) => snapshot.repository.path))
-  } catch {
-    // 继续读取真实 Status，由各仓库的新快照明确呈现仍未恢复的状态。
-  }
-  const results = await Promise.allSettled(
-    snapshots.map((snapshot) => dependencies.loadSnapshot(snapshot.repository.path))
-  )
-  const refreshedSnapshots: RepositorySnapshot[] = []
-  let failedCount = 0
-  for (const result of results) {
-    if (result.status === 'fulfilled') {
-      if (upsertSnapshot(result.value) !== false) refreshedSnapshots.push(result.value)
-    } else {
-      failedCount += 1
+  return withOperationRequest(operationContext ?? createOperationContext(null), async (context) => {
+    try {
+      await dependencies.refreshContexts(
+        snapshots.map((snapshot) => snapshot.repository.path),
+        context
+      )
+    } catch {
+      // 继续读取真实 Status，由各仓库的新快照明确呈现仍未恢复的状态。
     }
-  }
-  return { snapshots: refreshedSnapshots, failedCount }
+    const results = await Promise.allSettled(
+      snapshots.map((snapshot) => dependencies.loadSnapshot(snapshot.repository.path, context))
+    )
+    const refreshedSnapshots: RepositorySnapshot[] = []
+    let failedCount = 0
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        if (upsertSnapshot(result.value) !== false) refreshedSnapshots.push(result.value)
+      } else {
+        failedCount += 1
+      }
+    }
+    return { snapshots: refreshedSnapshots, failedCount }
+  })
 }
 
 /**
@@ -230,7 +237,7 @@ export function useRemoteAuthenticationRecovery({
     requestedTarget && !pausedServerKeys.has(requestedKey) ? requestedTarget : (detectedTargets[0] ?? null)
 
   const refreshAuthenticationState = useCallback(
-    async (serverUrl?: string): Promise<AuthenticationRefreshResult> => {
+    async (serverUrl?: string, operationContext?: OperationContext): Promise<AuthenticationRefreshResult> => {
       const requestedServerKey = serverUrl ? remoteServerKey(serverUrl) : ''
       const relevantSnapshots = snapshots.filter((snapshot) => {
         const key = remoteServerKey(repositoryServerUrl(snapshot.repository))
@@ -256,7 +263,8 @@ export function useRemoteAuthenticationRecovery({
           {
             refreshContexts,
             loadSnapshot
-          }
+          },
+          operationContext
         )
       } finally {
         for (const resume of resumeAuthorLookups) resume()
@@ -301,33 +309,35 @@ export function useRemoteAuthenticationRecovery({
 
   const authenticate = useCallback(async () => {
     if (applicationMode !== 'tauri' || !authenticationTarget || authenticationBusy) return
-    const target = authenticationTarget
-    try {
-      setAuthenticationBusy(true)
-      setAuthenticationError(null)
-      await loginInteractive(target.serverUrl)
-      /*
-       * Auth List 的结果用于推动账户中心刷新；远端是否真正恢复则必须以各仓库 Status
-       * 为准。显示名解析失败不会影响这里的连接验证。
-       */
-      await listIdentities()
-      const refreshed = await refreshAuthenticationState(target.serverUrl)
-      if (refreshed.snapshots.some((snapshot) => snapshot.repository.remoteState === 'unauthorized')) {
-        setAuthenticationError('authentication_still_required')
-        return
+    return withOperationRequest(createOperationContext(null), async (operationContext) => {
+      const target = authenticationTarget
+      try {
+        setAuthenticationBusy(true)
+        setAuthenticationError(null)
+        await loginInteractive(target.serverUrl, operationContext)
+        /*
+         * Auth List 的结果用于推动账户中心刷新；远端是否真正恢复则必须以各仓库 Status
+         * 为准。显示名解析失败不会影响这里的连接验证。
+         */
+        await listIdentities(operationContext)
+        const refreshed = await refreshAuthenticationState(target.serverUrl, operationContext)
+        if (refreshed.snapshots.some((snapshot) => snapshot.repository.remoteState === 'unauthorized')) {
+          setAuthenticationError('authentication_still_required')
+          return
+        }
+        if (target.repositoryNames.length > 0 && refreshed.snapshots.length === 0 && refreshed.failedCount > 0) {
+          setAuthenticationError('authentication_verification_failed')
+          return
+        }
+        setRequestedTarget((current) =>
+          current && remoteServerKey(current.serverUrl) === remoteServerKey(target.serverUrl) ? null : current
+        )
+      } catch (error) {
+        setAuthenticationError(readErrorMessage(error))
+      } finally {
+        setAuthenticationBusy(false)
       }
-      if (target.repositoryNames.length > 0 && refreshed.snapshots.length === 0 && refreshed.failedCount > 0) {
-        setAuthenticationError('authentication_verification_failed')
-        return
-      }
-      setRequestedTarget((current) =>
-        current && remoteServerKey(current.serverUrl) === remoteServerKey(target.serverUrl) ? null : current
-      )
-    } catch (error) {
-      setAuthenticationError(readErrorMessage(error))
-    } finally {
-      setAuthenticationBusy(false)
-    }
+    })
   }, [
     applicationMode,
     authenticationBusy,

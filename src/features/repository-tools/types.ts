@@ -20,6 +20,7 @@ import type {
   LoreRepositoryInstance,
   LoreRevisionInfo,
   NavigationView,
+  OperationContext,
   OperationDetail,
   Repository,
   RepositoryAuthAccountBinding,
@@ -146,7 +147,7 @@ export interface RepositoryToolsDialogProps {
 /** App 提供的统一仓库写入入口；控制器不重复实现串行门闩、冲突分类和快照重读。 */
 export type RepositoryMutationRunner = (
   labelKey: string,
-  task: (repository: Repository) => Promise<unknown>,
+  task: (repository: Repository, context: OperationContext) => Promise<unknown>,
   successDetail: string | OperationDetail,
   nextView?: NavigationView,
   /** 写命令已返回完整局部 DTO 时，可投影快照并跳过昂贵的全仓重读。 */

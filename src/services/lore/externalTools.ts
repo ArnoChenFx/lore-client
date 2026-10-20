@@ -4,6 +4,7 @@ import { open, save } from '@tauri-apps/plugin-dialog'
 
 import { t } from '../../i18n'
 import type {
+  OperationContext,
   AvailableExternalTool,
   ExternalDiffLaunchResult,
   ExternalDiffRequest,
@@ -18,24 +19,37 @@ import { invokeCommand } from './core'
  * 请求中的参数模板保持结构化数组；Rust 负责校验仓库路径、物化不可变版本并
  * 直接启动进程，前端不拼接命令行或 Shell 文本。
  */
-export async function openExternalDiff(request: ExternalDiffRequest): Promise<ExternalDiffLaunchResult> {
-  return invokeCommand<ExternalDiffLaunchResult>('lore_open_external_diff', {
-    repositoryPath: request.repositoryPath,
-    tool: request.tool,
-    before: request.before,
-    after: request.after
-  })
+export async function openExternalDiff(
+  request: ExternalDiffRequest,
+  operationContext?: OperationContext
+): Promise<ExternalDiffLaunchResult> {
+  return invokeCommand<ExternalDiffLaunchResult>(
+    'lore_open_external_diff',
+    {
+      repositoryPath: request.repositoryPath,
+      tool: request.tool,
+      before: request.before,
+      after: request.after
+    },
+    operationContext
+  )
 }
 
 /** 由 Rust 使用与启动阶段相同的规则探测显式路径和系统 PATH。 */
-export async function detectExternalTools(tools: ExternalDiffToolPreference[]): Promise<AvailableExternalTool[]> {
+export async function detectExternalTools(
+  tools: ExternalDiffToolPreference[],
+  operationContext?: OperationContext
+): Promise<AvailableExternalTool[]> {
   if (!isTauri()) return []
-  return invokeCommand<AvailableExternalTool[]>('lore_detect_external_tools', { tools })
+  return invokeCommand<AvailableExternalTool[]>('lore_detect_external_tools', { tools }, operationContext)
 }
 
 /** 启动四路外部 Merge；共同祖先解析与历史内容物化全部留在 Rust 边界。 */
-export async function openExternalMerge(request: ExternalMergeRequest): Promise<ExternalDiffLaunchResult> {
-  return invokeCommand<ExternalDiffLaunchResult>('lore_open_external_merge', { ...request })
+export async function openExternalMerge(
+  request: ExternalMergeRequest,
+  operationContext?: OperationContext
+): Promise<ExternalDiffLaunchResult> {
+  return invokeCommand<ExternalDiffLaunchResult>('lore_open_external_merge', { ...request }, operationContext)
 }
 
 /**
@@ -61,7 +75,11 @@ export function resolvePatchDestination(selectedPath: string): PatchDestination 
 }
 
 /** 通过原生保存对话框选择位置，并由 Rust 完成补丁写入。 */
-export async function savePatchFile(suggestedName: string, patch: string): Promise<string | null> {
+export async function savePatchFile(
+  suggestedName: string,
+  patch: string,
+  operationContext?: OperationContext
+): Promise<string | null> {
   const selectedPath = await save({
     title: t('saveWorkspacePatch'),
     defaultPath: suggestedName.endsWith('.patch') ? suggestedName : `${suggestedName}.patch`,
@@ -71,7 +89,7 @@ export async function savePatchFile(suggestedName: string, patch: string): Promi
     return null
   }
   const { destinationPath, replaceExisting } = resolvePatchDestination(selectedPath)
-  await invokeCommand<void>('lore_write_patch_file', { destinationPath, patch, replaceExisting })
+  await invokeCommand<void>('lore_write_patch_file', { destinationPath, patch, replaceExisting }, operationContext)
   return destinationPath
 }
 

@@ -1,5 +1,11 @@
 import { afterAll, describe, expect, it, vi } from 'bun:test'
 
+import type {
+  cloneRepository,
+  initializeRepository,
+  probeRepositoryDirectory,
+  loadRepositorySnapshot
+} from '../../services/lore'
 import type { RemoteRepository, RepositorySnapshot, Revision } from '../../types'
 import { RepositorySessionRequests } from './repositorySessionRequests'
 
@@ -417,7 +423,18 @@ function directoryFixture() {
     listRemoteRepositories: vi.fn<() => Promise<RemoteRepository[]>>(),
     hydrateRemoteRepositoryDetails: vi.fn(async () => undefined),
     loadRemoteRepositoryInfo: vi.fn(async () => ({ id: 'repo', name: 'repo' })),
-    cloneRepository: vi.fn(() => new Promise<never>(() => undefined))
+    cloneRepository: vi.fn<typeof cloneRepository>(() => new Promise(() => undefined)),
+    selectRepositoryDirectory: vi.fn(async () => '/picked/alias'),
+    probeRepositoryDirectory: vi.fn<typeof probeRepositoryDirectory>(async () => ({
+      kind: 'repository',
+      selectedPath: '/picked/alias',
+      repositoryPath: '/canonical/repo'
+    })),
+    loadRepositorySnapshot: vi.fn<typeof loadRepositorySnapshot>(async (path) => snapshot(path)),
+    initializeRepository: vi.fn<typeof initializeRepository>(async () => ({
+      repositoryPath: '/created/repo',
+      result: { requestId: 'fixture', workspaceKey: null, operation: 'create', status: 0, durationMs: 0, events: [] }
+    }))
   }
   const notify = vi.fn()
   const render = harness(() =>
@@ -432,7 +449,11 @@ function directoryFixture() {
       setServerDialogOpen: vi.fn(),
       tryBeginRepositoryMutation: () => true,
       finishRepositoryMutation: vi.fn(),
-      beginOperation: () => ({ id: 1, startedAt: 0 }),
+      beginOperation: () => ({
+        context: { requestId: crypto.randomUUID(), workspaceKey: null },
+        startedAt: 0,
+        release: () => undefined
+      }),
       finishOperation: vi.fn(),
       refreshSharedStores: async () => undefined,
       notify,
@@ -445,6 +466,45 @@ function directoryFixture() {
   )
   return { render, services, notify }
 }
+
+describe('entry workflow ownership', () => {
+  it('keeps a manually selected alias global through canonical probing and the initial snapshot', async () => {
+    const { render, services } = directoryFixture()
+    await render().openRepository()
+    const context = services.probeRepositoryDirectory.mock.calls[0][1]
+    expect(context).toEqual({ requestId: expect.any(String), workspaceKey: null })
+    expect(services.loadRepositorySnapshot).toHaveBeenCalledWith('/canonical/repo', context)
+  })
+
+  it('does not change initialization ownership after the new repository path becomes available', async () => {
+    const { render, services } = directoryFixture()
+    services.probeRepositoryDirectory.mockResolvedValueOnce({ kind: 'unmanaged', selectedPath: '/picked/alias' })
+    await render().openRepository()
+    render().initializationDialog!.onConfirm('new', '', '', { useSharedStore: false })
+    await flushRestore()
+    const context = services.initializeRepository.mock.calls[0][6]
+    expect(context).toEqual({ requestId: expect.any(String), workspaceKey: null })
+    expect(services.loadRepositorySnapshot).toHaveBeenCalledWith('/created/repo', context)
+  })
+
+  it('keeps Clone and its first repository snapshot in one global request', async () => {
+    const { render, services } = directoryFixture()
+    const remote = { id: 'repo', name: 'repo' }
+    services.listRemoteRepositories.mockResolvedValueOnce([remote])
+    services.cloneRepository.mockResolvedValueOnce({
+      destinationPath: '/cloned/repo',
+      result: { requestId: 'fixture', workspaceKey: null, operation: 'clone', status: 0, durationMs: 0, events: [] }
+    })
+    await render().openServer()
+    render().serverDialog.onClone(remote)
+    await flushRestore()
+    render().cloneDialog!.onConfirm('/cloned', 'repo', '', { useSharedStore: false })
+    await flushRestore()
+    const context = services.cloneRepository.mock.calls[0][7]
+    expect(context).toEqual({ requestId: expect.any(String), workspaceKey: null })
+    expect(services.loadRepositorySnapshot).toHaveBeenCalledWith('/cloned/repo', context)
+  })
+})
 
 describe('server directory publication races', () => {
   it('rejects a stale row event after another server directory has been published', async () => {
@@ -535,7 +595,8 @@ describe('server directory publication races', () => {
       'clone',
       '',
       { useSharedStore: false },
-      'queried-user'
+      'queried-user',
+      { requestId: expect.any(String), workspaceKey: null }
     )
   })
 })

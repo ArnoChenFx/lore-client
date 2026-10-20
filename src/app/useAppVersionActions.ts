@@ -220,14 +220,15 @@ export function useAppVersionActions({
 
       const created = await runRepositoryMutation(
         'createBranch',
-        (repository) =>
+        (repository, operationContext) =>
           createBranchFromSource(
             repository.path,
             name,
             source.branch,
             source.revision,
             repository.branch,
-            previousRevision
+            previousRevision,
+            operationContext
           ),
         operationMessage('status.createdBranchAttached', {
           source: source.branch,
@@ -294,7 +295,8 @@ export function useAppVersionActions({
 
       const created = await runRepositoryMutation(
         'createTag',
-        (repository) => createTag(repository.path, name, source.branch, source.revision, message),
+        (repository, operationContext) =>
+          createTag(repository.path, name, source.branch, source.revision, message, operationContext),
         operationMessage('status.tagWrittenToMetadata', { name })
       )
       if (created) closeTagDialog()
@@ -321,7 +323,7 @@ export function useAppVersionActions({
 
       const updated = await runRepositoryMutation(
         'editTag',
-        (repository) => updateTag(repository.path, editingTag.id, name, message),
+        (repository, operationContext) => updateTag(repository.path, editingTag.id, name, message, operationContext),
         operationMessage('status.tagUpdatedTo', { from: editingTag.name, to: name })
       )
       if (updated) closeTagDialog()
@@ -407,7 +409,7 @@ export function useAppVersionActions({
       if (!confirmed) return
       await runRepositoryMutation(
         'deleteTag',
-        (repository) => deleteTag(repository.path, tag.id),
+        (repository, operationContext) => deleteTag(repository.path, tag.id, operationContext),
         operationMessage('status.tagDeletedFromMetadata', { name: tag.name })
       )
     },
@@ -486,7 +488,8 @@ export function useAppVersionActions({
 
       await runRepositoryMutation(
         'checkOutRevision',
-        (repository) => checkoutRevision(repository.path, checkoutBranch, revision.id),
+        (repository, operationContext) =>
+          checkoutRevision(repository.path, checkoutBranch, revision.id, operationContext),
         operationMessage('status.branchSyncedToRevision', { branch: checkoutBranch, revision: revision.shortId }),
         'history'
       )
@@ -515,7 +518,7 @@ export function useAppVersionActions({
 
       await runRepositoryMutation(
         'cherryPickRevision',
-        (repository) => cherryPickRevision(repository.path, revision.id),
+        (repository, operationContext) => cherryPickRevision(repository.path, revision.id, operationContext),
         operationMessage('status.revisionAppliedTo', {
           revision: revision.shortId,
           branch: activeRepository.branch
@@ -547,7 +550,7 @@ export function useAppVersionActions({
 
       await runRepositoryMutation(
         'revertRevision',
-        (repository) => revertRevision(repository.path, revision.id),
+        (repository, operationContext) => revertRevision(repository.path, revision.id, operationContext),
         operationMessage('status.revertRevisionCreated', { revision: revision.shortId }),
         'history'
       )
@@ -573,7 +576,7 @@ export function useAppVersionActions({
       }
       await runRepositoryMutation(
         branch.remote ? 'attachRemoteBranch' : 'switchBranch',
-        (repository) => switchBranch(repository.path, branch.name, branch.latest),
+        (repository, operationContext) => switchBranch(repository.path, branch.name, branch.latest, operationContext),
         branch.remote
           ? operationMessage('status.workspaceAttachedRemote', { name: branch.name })
           : operationMessage('status.workspaceSwitchedTo', { name: branch.name }),
@@ -591,7 +594,7 @@ export function useAppVersionActions({
       }
       await runRepositoryMutation(
         'pushBranch',
-        (repository) => pushBranch(repository.path, branch.name),
+        (repository, operationContext) => pushBranch(repository.path, branch.name, operationContext),
         operationMessage('status.pushedToRemote', { name: branch.name }),
         'branches'
       )
@@ -620,7 +623,7 @@ export function useAppVersionActions({
 
       await runRepositoryMutation(
         'mergeBranch',
-        (repository) => mergeBranch(repository.path, branch.name),
+        (repository, operationContext) => mergeBranch(repository.path, branch.name, operationContext),
         operationMessage('status.mergedInto', { source: branch.name, target: activeRepository.branch }),
         'history'
       )
@@ -646,7 +649,7 @@ export function useAppVersionActions({
       if (applicationMode !== 'tauri') return
       const succeeded = await runRepositoryMutation(
         'archiveBranch',
-        (repository) => archiveBranch(repository.path, branch.name, includeLayers),
+        (repository, operationContext) => archiveBranch(repository.path, branch.name, includeLayers, operationContext),
         operationMessage(includeLayers ? 'status.archivedWithLayers' : 'status.archived', { name: branch.name }),
         'branches'
       )

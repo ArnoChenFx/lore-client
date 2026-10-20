@@ -1,6 +1,7 @@
 /** 修订的查询、修改、历史、变更列表与文件历史。 */
 import { parseCommitIdentity } from '../../shared/lib'
 import type {
+  OperationContext,
   Branch,
   ChangeFile,
   ChangeStatus,
@@ -19,6 +20,7 @@ import type {
   RevisionHistoryQuery,
   WorkingTreeDiff
 } from '../../types'
+import { createOperationContext, withOperationRequest } from '../operationRequests'
 import { LoreOperationError, invokeCommand, runOperation } from './core'
 import {
   ZERO_HASH_PATTERN,
@@ -33,24 +35,40 @@ import {
 import { parseWorkingTreeDiffs } from './workspace'
 
 /** 读取 Revision 信息、父节点、Delta 与元数据。 */
-export async function loadRevisionInfo(repositoryPath: string, revision: string): Promise<LoreRevisionInfo> {
-  const result = await runOperation('lore_revision_info', {
-    repositoryPath,
-    revision,
-    includeDelta: true,
-    includeMetadata: true
-  })
+export async function loadRevisionInfo(
+  repositoryPath: string,
+  revision: string,
+  operationContext?: OperationContext
+): Promise<LoreRevisionInfo> {
+  const result = await runOperation(
+    'lore_revision_info',
+    {
+      repositoryPath,
+      revision,
+      includeDelta: true,
+      includeMetadata: true
+    },
+    operationContext
+  )
   return parseRevisionInfo(result.events)
 }
 
 /** 在当前 Branch 上按 Revision 编号查找精确签名。 */
-export async function findRevisionByNumber(repositoryPath: string, revisionNumber: number): Promise<string> {
-  const result = await runOperation('lore_revision_find', {
-    repositoryPath,
-    metadataKey: null,
-    metadataValue: null,
-    revisionNumber
-  })
+export async function findRevisionByNumber(
+  repositoryPath: string,
+  revisionNumber: number,
+  operationContext?: OperationContext
+): Promise<string> {
+  const result = await runOperation(
+    'lore_revision_find',
+    {
+      repositoryPath,
+      metadataKey: null,
+      metadataValue: null,
+      revisionNumber
+    },
+    operationContext
+  )
   return parseRevisionFind(result.events)
 }
 
@@ -58,14 +76,19 @@ export async function findRevisionByNumber(repositoryPath: string, revisionNumbe
 export async function findRevisionByMetadata(
   repositoryPath: string,
   metadataKey: string,
-  metadataValue?: string
+  metadataValue?: string,
+  operationContext?: OperationContext
 ): Promise<string> {
-  const result = await runOperation('lore_revision_find', {
-    repositoryPath,
-    metadataKey,
-    metadataValue: metadataValue?.trim() || null,
-    revisionNumber: null
-  })
+  const result = await runOperation(
+    'lore_revision_find',
+    {
+      repositoryPath,
+      metadataKey,
+      metadataValue: metadataValue?.trim() || null,
+      revisionNumber: null
+    },
+    operationContext
+  )
   return parseRevisionFind(result.events)
 }
 
@@ -73,32 +96,39 @@ export async function amendCurrentRevision(
   repositoryPath: string,
   branch: string,
   expectedRevision: string,
-  message: string
+  message: string,
+  operationContext?: OperationContext
 ): Promise<LoreOperationResult> {
-  return runOperation('lore_revision_amend', { repositoryPath, branch, expectedRevision, message })
+  return runOperation('lore_revision_amend', { repositoryPath, branch, expectedRevision, message }, operationContext)
 }
 
 export async function bisectRevisionRange(
   repositoryPath: string,
   start: string,
   end: string,
-  expectedRevision: string
+  expectedRevision: string,
+  operationContext?: OperationContext
 ): Promise<{ operation: LoreOperationResult; result: LoreRevisionBisectResult }> {
-  const operation = await runOperation('lore_revision_bisect', {
-    repositoryPath,
-    start,
-    end,
-    expectedRevision
-  })
+  const operation = await runOperation(
+    'lore_revision_bisect',
+    {
+      repositoryPath,
+      start,
+      end,
+      expectedRevision
+    },
+    operationContext
+  )
   return { operation, result: parseRevisionBisect(operation.events) }
 }
 
 export async function restoreCurrentRevision(
   repositoryPath: string,
   expectedRevision: string,
-  message: string
+  message: string,
+  operationContext?: OperationContext
 ): Promise<LoreOperationResult> {
-  return runOperation('lore_revision_restore', { repositoryPath, expectedRevision, message })
+  return runOperation('lore_revision_restore', { repositoryPath, expectedRevision, message }, operationContext)
 }
 
 /**
@@ -116,17 +146,22 @@ export async function loadRevisionDiff(
     contextLines: number
     ignoreWhitespaceEol: boolean
     ignoreWhitespaceInline: boolean
-  } = { contextLines: 3, ignoreWhitespaceEol: false, ignoreWhitespaceInline: false }
+  } = { contextLines: 3, ignoreWhitespaceEol: false, ignoreWhitespaceInline: false },
+  operationContext?: OperationContext
 ): Promise<WorkingTreeDiff[]> {
-  const result = await runOperation('lore_revision_diff', {
-    repositoryPath,
-    sourceRevision,
-    targetRevision,
-    paths,
-    contextLines: options.contextLines,
-    ignoreWhitespaceEol: options.ignoreWhitespaceEol,
-    ignoreWhitespaceInline: options.ignoreWhitespaceInline
-  })
+  const result = await runOperation(
+    'lore_revision_diff',
+    {
+      repositoryPath,
+      sourceRevision,
+      targetRevision,
+      paths,
+      contextLines: options.contextLines,
+      ignoreWhitespaceEol: options.ignoreWhitespaceEol,
+      ignoreWhitespaceInline: options.ignoreWhitespaceInline
+    },
+    operationContext
+  )
   return parseWorkingTreeDiffs(result.events)
 }
 
@@ -147,13 +182,18 @@ interface LoreRevisionChangeResult {
 export async function loadRevisionChanges(
   repositoryPath: string,
   sourceRevision: string | null,
-  targetRevision: string
+  targetRevision: string,
+  operationContext?: OperationContext
 ): Promise<ChangeFile[]> {
-  const changes = await invokeCommand<LoreRevisionChangeResult[]>('lore_revision_changes', {
-    repositoryPath,
-    sourceRevision,
-    targetRevision
-  })
+  const changes = await invokeCommand<LoreRevisionChangeResult[]>(
+    'lore_revision_changes',
+    {
+      repositoryPath,
+      sourceRevision,
+      targetRevision
+    },
+    operationContext
+  )
   return changes.map((change, index) => {
     const fullPath = change.path.replaceAll('\\', '/')
     const separatorIndex = fullPath.lastIndexOf('/')
@@ -195,11 +235,19 @@ interface LoreRevisionFileResult {
  * 与 `loadRevisionDiff` 分离后，“文件树”不会再错误复用本次变更列表，也不会
  * 从当前工作区状态补文件。路径在此转换为稳定前端 DTO，组件不依赖 Lore Node。
  */
-export async function loadRevisionFiles(repositoryPath: string, revision: string): Promise<RevisionFile[]> {
-  const files = await invokeCommand<LoreRevisionFileResult[]>('lore_revision_files', {
-    repositoryPath,
-    revision
-  })
+export async function loadRevisionFiles(
+  repositoryPath: string,
+  revision: string,
+  operationContext?: OperationContext
+): Promise<RevisionFile[]> {
+  const files = await invokeCommand<LoreRevisionFileResult[]>(
+    'lore_revision_files',
+    {
+      repositoryPath,
+      revision
+    },
+    operationContext
+  )
   return files.map((file, index) => {
     const fullPath = file.path.replaceAll('\\', '/')
     const separatorIndex = fullPath.lastIndexOf('/')
@@ -265,20 +313,25 @@ export async function loadFileHistory(
   start?: {
     branch?: string
     revision?: string
-  }
+  },
+  operationContext?: OperationContext
 ): Promise<FileHistoryEntry[]> {
   /*
    * Lore 明确禁止同时指定 revision 与 branch。历史 Inspector 优先使用精确
    * Revision；只有工作区文件历史没有 Revision 起点时才从当前 Branch latest 查询。
    */
   const revision = start?.revision?.trim() || null
-  const result = await runOperation('lore_file_history', {
-    repositoryPath,
-    path,
-    branch: revision ? null : start?.branch?.trim() || null,
-    revision,
-    length: 100
-  })
+  const result = await runOperation(
+    'lore_file_history',
+    {
+      repositoryPath,
+      path,
+      branch: revision ? null : start?.branch?.trim() || null,
+      revision,
+      length: 100
+    },
+    operationContext
+  )
   return parseFileHistory(result.events)
 }
 
@@ -291,28 +344,38 @@ export async function loadFileHistory(
 export async function checkoutRevision(
   repositoryPath: string,
   branch: string,
-  revision: string
+  revision: string,
+  operationContext?: OperationContext
 ): Promise<LoreOperationResult> {
-  return runOperation('lore_revision_checkout', {
-    repositoryPath,
-    branch,
-    revision
-  })
+  return runOperation(
+    'lore_revision_checkout',
+    {
+      repositoryPath,
+      branch,
+      revision
+    },
+    operationContext
+  )
 }
 
 /** 历史条目由原生解释一次；非零状态仍保留原有 Lore 错误和认证诊断。 */
 export async function loadRevisionHistoryEntries(
   repositoryPath: string,
-  query: RevisionHistoryQuery
+  query: RevisionHistoryQuery,
+  operationContext?: OperationContext
 ): Promise<LoreRevisionHistoryEntry[]> {
-  const result = await invokeCommand<LoreRevisionHistoryResult>('lore_revision_history', {
-    repositoryPath,
-    limit: Math.max(1, Math.min(1_000, query.limit)),
-    revision: query.revision?.trim() || null,
-    branch: query.branch?.trim() || null,
-    date: query.beforeDate || null,
-    onlyBranch: query.onlyBranch
-  })
+  const result = await invokeCommand<LoreRevisionHistoryResult>(
+    'lore_revision_history',
+    {
+      repositoryPath,
+      limit: Math.max(1, Math.min(1_000, query.limit)),
+      revision: query.revision?.trim() || null,
+      branch: query.branch?.trim() || null,
+      date: query.beforeDate || null,
+      onlyBranch: query.onlyBranch
+    },
+    operationContext
+  )
   if (result.status !== 0) throw new LoreOperationError(result)
   return result.entries
 }
@@ -321,10 +384,13 @@ export async function loadRevisionHistoryEntries(
 export async function loadRevisionHistory(
   repository: Repository,
   branches: Branch[],
-  query: RevisionHistoryQuery
+  query: RevisionHistoryQuery,
+  operationContext?: OperationContext
 ): Promise<Revision[]> {
-  const entries = await loadRevisionHistoryEntries(repository.path, query)
-  return projectRevisionHistory(entries, repository, branches)
+  return withOperationRequest(operationContext ?? createOperationContext(repository.path), async (requestContext) => {
+    const entries = await loadRevisionHistoryEntries(repository.path, query, requestContext)
+    return projectRevisionHistory(entries, repository, branches)
+  })
 }
 
 export function parseRevisionInfo(events: LoreEvent[]): LoreRevisionInfo {

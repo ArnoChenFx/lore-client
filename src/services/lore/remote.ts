@@ -1,6 +1,7 @@
 /** 远端服务器的仓库列表、详情与克隆。 */
 import { t } from '../../i18n'
-import type { LoreCloneOptions, LoreCloneResult, LoreEvent, RemoteRepository } from '../../types'
+import type { OperationContext, LoreCloneOptions, LoreCloneResult, LoreEvent, RemoteRepository } from '../../types'
+import { createOperationContext, withOperationRequest } from '../operationRequests'
 import { LoreOperationError, invokeCommand, runOperation } from './core'
 import { compareStableText, normalizeDisplayPath, readNumber, readString } from './utils'
 
@@ -9,8 +10,16 @@ import { compareStableText, normalizeDisplayPath, readNumber, readString } from 
  *
  * 该调用只发送列表请求，不会创建仓库、克隆内容或修改远端状态。
  */
-export async function listRemoteRepositories(serverUrl: string, userId?: string): Promise<RemoteRepository[]> {
-  const result = await runOperation('lore_repository_list', { serverUrl, userId: userId?.trim() || null })
+export async function listRemoteRepositories(
+  serverUrl: string,
+  userId?: string,
+  operationContext?: OperationContext
+): Promise<RemoteRepository[]> {
+  const result = await runOperation(
+    'lore_repository_list',
+    { serverUrl, userId: userId?.trim() || null },
+    operationContext
+  )
   /*
    * 目录首屏只消费 List 事件，不能再为每个仓库等待一次 Info 请求。认证端点离线、
    * 权限不足或网络尾延迟都会让单个详情请求等到超时，而 Promise.all 会把这种延迟
@@ -24,13 +33,18 @@ export async function listRemoteRepositories(serverUrl: string, userId?: string)
 export async function loadRemoteRepositoryInfo(
   serverUrl: string,
   repositoryName: string,
-  userId?: string
+  userId?: string,
+  operationContext?: OperationContext
 ): Promise<RemoteRepository> {
-  const result = await runOperation('lore_repository_info_remote', {
-    serverUrl,
-    repositoryName,
-    userId: userId?.trim() || null
-  })
+  const result = await runOperation(
+    'lore_repository_info_remote',
+    {
+      serverUrl,
+      repositoryName,
+      userId: userId?.trim() || null
+    },
+    operationContext
+  )
   const event = result.events.find((candidate) => candidate.tagName === 'repositoryData')
   if (!event) {
     throw new Error(t('remoteRepositoryInfoMissing'))
@@ -62,28 +76,31 @@ export async function hydrateRemoteRepositoryDetails(
   repositories: RemoteRepository[],
   onRepositoryResolved: (repository: RemoteRepository, details: RemoteRepository) => void,
   userId?: string,
-  shouldContinue: () => boolean = () => true
+  shouldContinue: () => boolean = () => true,
+  operationContext?: OperationContext
 ): Promise<void> {
-  // 目录条目通常不多，三个并发请求既能快速呈现说明，也不会让认证端点被批量请求淹没。
-  const workerCount = Math.min(3, repositories.length)
-  let nextIndex = 0
+  return withOperationRequest(operationContext ?? createOperationContext(null), async (requestContext) => {
+    // 目录条目通常不多，三个并发请求既能快速呈现说明，也不会让认证端点被批量请求淹没。
+    const workerCount = Math.min(3, repositories.length)
+    let nextIndex = 0
 
-  const runWorker = async () => {
-    while (shouldContinue() && nextIndex < repositories.length) {
-      const repository = repositories[nextIndex]
-      nextIndex += 1
-      try {
-        const details = await loadRemoteRepositoryInfo(serverUrl, repository.name, userId)
-        // 当前批次已被刷新替换时，不再触发 UI 回调或派发下一条详情请求。
-        if (!shouldContinue()) return
-        onRepositoryResolved(repository, details)
-      } catch {
-        // 单仓库详情不可用时仍保留 List 返回的名称，其他条目继续正常补全。
+    const runWorker = async () => {
+      while (shouldContinue() && nextIndex < repositories.length) {
+        const repository = repositories[nextIndex]
+        nextIndex += 1
+        try {
+          const details = await loadRemoteRepositoryInfo(serverUrl, repository.name, userId, requestContext)
+          // 当前批次已被刷新替换时，不再触发 UI 回调或派发下一条详情请求。
+          if (!shouldContinue()) return
+          onRepositoryResolved(repository, details)
+        } catch {
+          // 单仓库详情不可用时仍保留 List 返回的名称，其他条目继续正常补全。
+        }
       }
     }
-  }
 
-  await Promise.all(Array.from({ length: workerCount }, () => runWorker()))
+    await Promise.all(Array.from({ length: workerCount }, () => runWorker()))
+  })
 }
 
 /** 将远端仓库克隆到用户选择的位置，并返回实际创建的目录。 */
@@ -94,27 +111,32 @@ export async function cloneRepository(
   directoryName: string,
   viewPath?: string,
   options: LoreCloneOptions = { useSharedStore: false },
-  userId?: string
+  userId?: string,
+  operationContext?: OperationContext
 ): Promise<LoreCloneResult> {
-  const cloneResult = await invokeCommand<LoreCloneResult>('lore_repository_clone', {
-    serverUrl,
-    repositoryName,
-    destinationParent,
-    directoryName,
-    viewPath: viewPath || null,
-    targetRevision: options.revision?.trim() || null,
-    bare: options.bare ?? false,
-    directFileWrite: options.directFileWrite ?? false,
-    layerRepository: options.layer?.repository.trim() || null,
-    layerMetadataKey: options.layer?.metadataKey?.trim() || null,
-    useSharedStore: options.useSharedStore,
-    sharedStorePath: options.sharedStorePath || null,
-    dependencyRootFiles: options.dependency?.rootFiles ?? [],
-    dependencyTags: options.dependency?.tags ?? [],
-    dependencyRecursive: options.dependency?.recursive ?? false,
-    dependencyDepthLimit: options.dependency?.depthLimit ?? 0,
-    userId: userId?.trim() || null
-  })
+  const cloneResult = await invokeCommand<LoreCloneResult>(
+    'lore_repository_clone',
+    {
+      serverUrl,
+      repositoryName,
+      destinationParent,
+      directoryName,
+      viewPath: viewPath || null,
+      targetRevision: options.revision?.trim() || null,
+      bare: options.bare ?? false,
+      directFileWrite: options.directFileWrite ?? false,
+      layerRepository: options.layer?.repository.trim() || null,
+      layerMetadataKey: options.layer?.metadataKey?.trim() || null,
+      useSharedStore: options.useSharedStore,
+      sharedStorePath: options.sharedStorePath || null,
+      dependencyRootFiles: options.dependency?.rootFiles ?? [],
+      dependencyTags: options.dependency?.tags ?? [],
+      dependencyRecursive: options.dependency?.recursive ?? false,
+      dependencyDepthLimit: options.dependency?.depthLimit ?? 0,
+      userId: userId?.trim() || null
+    },
+    operationContext
+  )
   if (cloneResult.result.status !== 0) {
     throw new LoreOperationError(cloneResult.result)
   }

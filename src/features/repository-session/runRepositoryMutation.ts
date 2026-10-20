@@ -3,6 +3,7 @@ import { readErrorMessage } from '../../shared/lib'
 import type {
   ChangeFile,
   NavigationView,
+  OperationContext,
   OperationDetail,
   Repository,
   RepositorySnapshot,
@@ -20,19 +21,19 @@ import { classifyRepositoryMutationOutcome } from './repositoryMutationOutcome'
 interface RepositoryMutationLifecycle {
   activeSnapshot: RepositorySnapshot
   labelKey: string
-  task: (repository: Repository) => Promise<unknown>
+  task: (repository: Repository, context: OperationContext) => Promise<unknown>
   /** 写命令已返回权威局部 DTO 时，用它投影快照并跳过昂贵的全仓重读。 */
   projectSnapshot?: (activeSnapshot: RepositorySnapshot, mutationResult: unknown) => RepositorySnapshot
   successDetail: string | OperationDetail
   nextView?: NavigationView
-  loadSnapshot: (repositoryPath: string) => Promise<RepositorySnapshot>
+  loadSnapshot: (repositoryPath: string, context: OperationContext) => Promise<RepositorySnapshot>
   applySnapshot: (snapshot: RepositorySnapshot) => void
   ownsActiveView?: () => boolean
   selectView: (view: NavigationView) => void
   focusConflictFile: (file: ChangeFile) => void
   conflictTitle: (snapshot: RepositorySnapshot) => string
   notify: (title: string, detail: string, tone?: ToastMessage['tone']) => void
-  beginOperation: (labelKey: string, detail: string | OperationDetail) => ActiveOperation
+  beginOperation: (labelKey: string, detail: string | OperationDetail, workspaceKey: string | null) => ActiveOperation
   finishOperation: (operation: ActiveOperation, succeeded: boolean, detail: string | OperationDetail) => void
 }
 
@@ -62,13 +63,13 @@ export async function runRepositoryMutationLifecycle({
   const label = t(labelKey as never)
   const detail = normalizeOperationDetail(successDetail)
   const detailText = resolveOperationDetail(detail)
-  const operation = beginOperation(labelKey, activeSnapshot.repository.name)
+  const operation = beginOperation(labelKey, activeSnapshot.repository.name, activeSnapshot.repository.path)
 
   try {
-    const mutationResult = await task(activeSnapshot.repository)
+    const mutationResult = await task(activeSnapshot.repository, operation.context)
     const snapshot = projectSnapshot
       ? projectSnapshot(activeSnapshot, mutationResult)
-      : await loadSnapshot(activeSnapshot.repository.path)
+      : await loadSnapshot(activeSnapshot.repository.path, operation.context)
     applySnapshot(snapshot)
     const outcome = classifyRepositoryMutationOutcome(activeSnapshot, snapshot, nextView)
     if (outcome.nextView && ownsActiveView()) selectView(outcome.nextView)
@@ -107,12 +108,14 @@ export async function runRepositoryMutationLifecycle({
      * 尽力重读快照；重读失败不能覆盖更有价值的原始写操作错误。
      */
     try {
-      applySnapshot(await loadSnapshot(activeSnapshot.repository.path))
+      applySnapshot(await loadSnapshot(activeSnapshot.repository.path, operation.context))
     } catch {
       // 下一次显式刷新会再次暴露快照读取失败。
     }
     notify(t('status.failed', { action: label }), message, 'warning')
     finishOperation(operation, false, message)
     return false
+  } finally {
+    operation.release()
   }
 }

@@ -120,7 +120,11 @@ function registry(instancesRequested: boolean): LoreSharedStoreRegistry {
 }
 
 function fixture() {
-  const beginOperation = vi.fn(() => ({ id: 1, startedAt: 1 }))
+  const beginOperation = vi.fn(() => ({
+    context: { requestId: crypto.randomUUID(), workspaceKey: null },
+    startedAt: 1,
+    release: vi.fn()
+  }))
   const finishOperation = vi.fn()
   const notify = vi.fn()
   const component = harness(() =>
@@ -371,6 +375,28 @@ describe('Settings storage category loading', () => {
       })
     )
   }
+
+  it('does not pass a button event to the operation context of a storage refresh', () => {
+    const refresh = vi.fn()
+    const dialog = settings(refresh, 'storage')
+    const findRefresh = (node: unknown): ReactElement<Record<string, unknown>> | undefined => {
+      if (Array.isArray(node)) return node.map(findRefresh).find(Boolean)
+      if (!node || typeof node !== 'object' || !('props' in node)) return undefined
+      const element = node as ReactElement<Record<string, unknown>>
+      if (
+        element.props.onClick &&
+        Array.isArray(element.props.children) &&
+        element.props.children.includes(t('refresh'))
+      ) {
+        return element
+      }
+      return findRefresh(element.props.children)
+    }
+    const button = findRefresh(dialog.render())
+    expect(button).toBeDefined()
+    ;(button!.props.onClick as (event: unknown) => void)({ type: 'click', nativeEvent: {} })
+    expect(refresh).toHaveBeenCalledWith()
+  })
 
   it('loads only when storage becomes active and does not repeat on ordinary rerenders', async () => {
     const refresh = vi.fn()

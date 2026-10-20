@@ -96,6 +96,7 @@ import type {
   BinaryFilePreview,
   ChangeFile,
   NavigationView,
+  OperationContext,
   OperationDetail,
   Repository,
   RepositorySnapshot
@@ -442,7 +443,7 @@ function App() {
   const runRepositoryMutation = useCallback(
     async (
       labelKey: string,
-      task: (repository: Repository) => Promise<unknown>,
+      task: (repository: Repository, context: OperationContext) => Promise<unknown>,
       successDetail: string | OperationDetail,
       nextView?: NavigationView,
       projectSnapshot?: (activeSnapshot: RepositorySnapshot, mutationResult: unknown) => RepositorySnapshot
@@ -615,13 +616,14 @@ function App() {
       // 在闭包外固定操作类型，避免回调内重新读取属性时丢失 unknown 收窄。
       await runRepositoryMutation(
         'markConflictResolved',
-        (repository) =>
+        (repository, operationContext) =>
           writeConflictResolution(
             repository.path,
             session,
             changeFilePath(file),
             result.expectedContent,
-            result.resolvedContent
+            result.resolvedContent,
+            operationContext
           ),
         operationMessage('status.conflictFilesUpdated', { count: 1 }),
         'changes'
@@ -648,7 +650,7 @@ function App() {
     }
     await runRepositoryMutation(
       'pushBranch',
-      (repository) => pushBranch(repository.path, repository.branch),
+      (repository, operationContext) => pushBranch(repository.path, repository.branch, operationContext),
       operationMessage('status.pushedToRemote', {
         name: activeSnapshot.repository.branch
       })

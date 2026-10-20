@@ -1,5 +1,5 @@
 /** 修订与分支创建者的显示名解析，以及带缓存的作者名读写。 */
-import type { Repository } from '../../types'
+import type { OperationContext, Repository } from '../../types'
 import { invokeLogged } from '../logging'
 import { runOperation } from './core'
 import { readKnownLoreLabel, readString } from './utils'
@@ -56,9 +56,10 @@ function requestedAuthorNames(names: ReadonlyMap<string, string>, identities: re
 async function loadAuthAuthorNames(
   repositoryPath: string,
   identities: readonly string[],
-  command: 'lore_auth_user_info' | 'lore_auth_repository_local_user_info'
+  command: 'lore_auth_user_info' | 'lore_auth_repository_local_user_info',
+  operationContext?: OperationContext
 ): Promise<Map<string, string>> {
-  const result = await runOperation(command, { repositoryPath, userIds: identities })
+  const result = await runOperation(command, { repositoryPath, userIds: identities }, operationContext)
   return requestedAuthorNames(
     new Map(
       result.events
@@ -254,12 +255,20 @@ type AuthorCacheEntry = {
 }
 
 /** 独立缓存文件损坏或不可读不能阻断历史读取；失败时退回 Revision 原始 identity。 */
-async function loadCachedAuthorNames(repositoryId: string, userIds: readonly string[]): Promise<Map<string, string>> {
+async function loadCachedAuthorNames(
+  repositoryId: string,
+  userIds: readonly string[],
+  operationContext?: OperationContext
+): Promise<Map<string, string>> {
   try {
-    const entries = await invokeLogged<AuthorCacheEntry[]>('lore_revision_author_cache_get', {
-      repositoryId,
-      userIds
-    })
+    const entries = await invokeLogged<AuthorCacheEntry[]>(
+      'lore_revision_author_cache_get',
+      {
+        repositoryId,
+        userIds
+      },
+      operationContext
+    )
     return new Map(entries.map((entry) => [entry.userId, entry.displayName]))
   } catch {
     return new Map()
@@ -267,13 +276,21 @@ async function loadCachedAuthorNames(repositoryId: string, userIds: readonly str
 }
 
 /** 只把 Auth 已确认的显示名交给 Rust；Token、JWT 与头像地址从不进入该 IPC。 */
-async function rememberAuthorNames(repositoryId: string, resolvedNames: ReadonlyMap<string, string>): Promise<void> {
+async function rememberAuthorNames(
+  repositoryId: string,
+  resolvedNames: ReadonlyMap<string, string>,
+  operationContext?: OperationContext
+): Promise<void> {
   if (resolvedNames.size === 0) return
   try {
-    await invokeLogged('lore_revision_author_cache_store', {
-      repositoryId,
-      authors: [...resolvedNames].map(([userId, displayName]) => ({ userId, displayName }))
-    })
+    await invokeLogged(
+      'lore_revision_author_cache_store',
+      {
+        repositoryId,
+        authors: [...resolvedNames].map(([userId, displayName]) => ({ userId, displayName }))
+      },
+      operationContext
+    )
   } catch {
     // 显示缓存属于尽力增强；写盘失败不能把成功的在线作者查询降级为操作失败。
   }

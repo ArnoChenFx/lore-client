@@ -47,6 +47,12 @@ function snapshot(conflict = false): RepositorySnapshot {
   }
 }
 
+const testOperation = {
+  context: { requestId: 'test-operation', workspaceKey: 'C:/repository' },
+  startedAt: 0,
+  release: () => undefined
+}
+
 function dependencies() {
   return {
     applySnapshot: vi.fn(),
@@ -54,7 +60,7 @@ function dependencies() {
     focusConflictFile: vi.fn(),
     conflictTitle: vi.fn(() => 'Merge conflict'),
     notify: vi.fn(),
-    beginOperation: vi.fn(() => ({ id: 1, startedAt: 0 })),
+    beginOperation: vi.fn(() => testOperation),
     finishOperation: vi.fn()
   }
 }
@@ -96,7 +102,7 @@ describe('repository mutation lifecycle', () => {
     expect(result).toBe(true)
     expect(callbacks.applySnapshot).toHaveBeenCalledWith(after)
     expect(callbacks.selectView).toHaveBeenCalledWith('changes')
-    expect(callbacks.finishOperation).toHaveBeenCalledWith({ id: 1, startedAt: 0 }, true, {
+    expect(callbacks.finishOperation).toHaveBeenCalledWith(testOperation, true, {
       kind: 'text',
       text: 'Repository synchronized'
     })
@@ -169,7 +175,7 @@ describe('repository mutation lifecycle', () => {
     expect(callbacks.focusConflictFile).toHaveBeenCalledWith(after.changes[0])
     expect(callbacks.notify).toHaveBeenCalledWith('Merge conflict', expect.any(String), 'warning')
     expect(callbacks.finishOperation).toHaveBeenCalledWith(
-      { id: 1, startedAt: 0 },
+      testOperation,
       true,
       expect.objectContaining({ kind: 'i18n', key: 'status.conflictFilesNeedResolution' })
     )
@@ -194,6 +200,6 @@ describe('repository mutation lifecycle', () => {
     expect(result).toBe(false)
     expect(callbacks.applySnapshot).toHaveBeenCalledWith(recovered)
     expect(callbacks.notify).toHaveBeenCalledWith(expect.any(String), 'Push failed', 'warning')
-    expect(callbacks.finishOperation).toHaveBeenCalledWith({ id: 1, startedAt: 0 }, false, 'Push failed')
+    expect(callbacks.finishOperation).toHaveBeenCalledWith(testOperation, false, 'Push failed')
   })
 })

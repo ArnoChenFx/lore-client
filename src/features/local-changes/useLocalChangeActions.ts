@@ -207,8 +207,8 @@ export function useLocalChangeActions({
 
       await runRepositoryMutation(
         staged ? 'stageFiles' : 'unstageFiles',
-        async (repository) => {
-          if (!staged) return unstagePaths(repository.path, paths)
+        async (repository, operationContext) => {
+          if (!staged) return unstagePaths(repository.path, paths, operationContext)
 
           const plan = createChangeStagePlan(files)
 
@@ -218,11 +218,11 @@ export function useLocalChangeActions({
            * React 中伪造部分成功状态。
            */
           if (plan.regularPaths.length > 0) {
-            await stagePaths(repository.path, plan.regularPaths)
+            await stagePaths(repository.path, plan.regularPaths, operationContext)
           }
           let result = null
           for (const move of plan.moves) {
-            result = await stageMove(repository.path, move.sourcePath, move.targetPath)
+            result = await stageMove(repository.path, move.sourcePath, move.targetPath, operationContext)
           }
           return result
         },
@@ -246,7 +246,10 @@ export function useLocalChangeActions({
 
       await runRepositoryMutation(
         staged ? 'stageAll' : 'unstageAll',
-        (repository) => (staged ? stagePaths(repository.path, []) : unstagePaths(repository.path, [])),
+        (repository, operationContext) =>
+          staged
+            ? stagePaths(repository.path, [], operationContext)
+            : unstagePaths(repository.path, [], operationContext),
         operationMessage('status.workspaceFilesReloaded', { count: activeSnapshot.changes.length }),
         'changes'
       )
@@ -288,7 +291,8 @@ export function useLocalChangeActions({
       const operation = session.kind
       await runRepositoryMutation(
         conflictActionLabelKey(action),
-        (repository) => runConflictAction(repository.path, operation, action, paths),
+        (repository, operationContext) =>
+          runConflictAction(repository.path, operation, action, paths, operationContext),
         operationMessage('status.conflictFilesUpdated', { count: paths.length }),
         'changes'
       )
@@ -321,7 +325,8 @@ export function useLocalChangeActions({
     const operation = session.kind
     await runRepositoryMutation(
       'abortConflictOperation',
-      (repository) => runConflictAction(repository.path, operation, 'abort'),
+      (repository, operationContext) =>
+        runConflictAction(repository.path, operation, 'abort', undefined, operationContext),
       operationMessage('status.conflictOperationAborted'),
       'changes'
     )
@@ -501,7 +506,8 @@ export function useLocalChangeActions({
       }
       await runRepositoryMutation(
         'discardLocalChanges',
-        (repository) => discardWorkspaceFiles(repository.path, paths, currentRevision),
+        (repository, operationContext) =>
+          discardWorkspaceFiles(repository.path, paths, currentRevision, operationContext),
         operationMessage('status.filesRestoredTo', { count: files.length, target: currentRevision.slice(0, 8) }),
         'changes'
       )
@@ -523,7 +529,7 @@ export function useLocalChangeActions({
       }
       await runRepositoryMutation(
         byExtension ? 'ignoreFileExtension' : 'ignoreFilePath',
-        (repository) => ignoreWorkspacePaths(repository.path, paths, byExtension),
+        (repository, operationContext) => ignoreWorkspacePaths(repository.path, paths, byExtension, operationContext),
         operationMessage('loreignoreUpdatedTrackedFilesStill_c80a'),
         'changes'
       )
@@ -592,7 +598,7 @@ export function useLocalChangeActions({
        */
       await runRepositoryMutation(
         'createRevision',
-        (repository) => commitRevision(repository.path, message, defaultIdentity),
+        (repository, operationContext) => commitRevision(repository.path, message, defaultIdentity, operationContext),
         message
       )
     },
