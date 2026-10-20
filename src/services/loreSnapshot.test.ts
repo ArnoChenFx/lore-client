@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'bun:test'
 
 import i18n from '../i18n'
-import type { Repository } from '../types'
+import type { LoreRevisionHistoryEntry, LoreRevisionHistoryResult, Repository } from '../types'
 
 /*
  * 被测服务通过动态导入加载，保证 vi.mock 注册在前，且工厂函数引用的 invokeMock 等变量
@@ -43,6 +43,8 @@ const {
   cloneRepository,
   hydrateRemoteRepositoryDetails,
   initializeRepository,
+  isAuthenticationRequiredError,
+  LoreOperationError,
   loadFileHistory,
   loadRepositorySnapshot,
   RepositoryAuthorNameResolver,
@@ -63,6 +65,20 @@ const {
   writeConflictResolution
 } = await import('./lore')
 const { parseRepository } = await import('./lore/repositories')
+
+function historyEntry(
+  revision: string,
+  fields: Partial<Omit<LoreRevisionHistoryEntry, 'revision'>> = {}
+): LoreRevisionHistoryEntry {
+  return { revision, revisionNumber: 1, parentIds: [], message: '', authorIdentity: '', committedAt: null, ...fields }
+}
+
+function historyResult(
+  entries: LoreRevisionHistoryEntry[],
+  fields: Partial<Omit<LoreRevisionHistoryResult, 'entries'>> = {}
+): LoreRevisionHistoryResult {
+  return { operation: 'revision.history', status: 0, durationMs: 1, events: [], entries, ...fields }
+}
 
 async function hydrateAuthors(repository: Repository, identities: readonly string[]): Promise<Map<string, string>> {
   const resolver = new RepositoryAuthorNameResolver(repository, 'snapshot-test-auth-scope')
@@ -114,20 +130,10 @@ describe('repository snapshot branch loading', () => {
         }
       }
       if (command === 'lore_revision_history') {
-        return {
-          operation: 'revision.history',
-          status: 0,
-          events: [
-            {
-              tagName: 'revisionHistoryEntry',
-              data: { revision: 'main-tip', revisionNumber: 2, parent: ['old-revision'] }
-            },
-            {
-              tagName: 'revisionHistoryEntry',
-              data: { revision: 'old-revision', revisionNumber: 1, parent: [] }
-            }
-          ]
-        }
+        return historyResult([
+          historyEntry('main-tip', { revisionNumber: 2, parentIds: ['old-revision'] }),
+          historyEntry('old-revision')
+        ])
       }
       if (command === 'lore_conflict_session') {
         return conflictSessionResponse
@@ -376,14 +382,7 @@ describe('repository snapshot branch loading', () => {
       invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
         if (command.includes('author_cache') || command.startsWith('lore_auth_')) return blocked
         if (command === 'lore_revision_history') {
-          return {
-            operation: 'revision.history',
-            status: 0,
-            events: [
-              { tagName: 'revisionHistoryEntry', data: { revision: 'tip', revisionNumber: 1, parent: [] } },
-              { tagName: 'metadata', data: { key: 'committed-by', value: { tagName: 'string', data: 'user-42' } } }
-            ]
-          }
+          return historyResult([historyEntry('tip', { authorIdentity: 'user-42' })])
         }
         if (!fallbackInvoke) throw new Error(`The test does not handle command: ${command}`)
         return fallbackInvoke(command, args)
@@ -497,7 +496,10 @@ describe('repository snapshot branch loading', () => {
     expect(invokeMock).toHaveBeenCalledWith('lore_revision_history', {
       repositoryPath: 'E:\\Worlds\\RealLore',
       limit: 100,
-      revision: 'main-tip'
+      revision: 'main-tip',
+      branch: null,
+      date: null,
+      onlyBranch: false
     })
     expect(snapshot.repository.revision).toBe('old-revision')
     expect(snapshot.revisions[0]?.branchPointers).toEqual([{ id: 'local:main-id', name: 'main', kind: 'local' }])
@@ -512,7 +514,10 @@ describe('repository snapshot branch loading', () => {
     expect(invokeMock).toHaveBeenCalledWith('lore_revision_history', {
       repositoryPath: 'E:\\Worlds\\RealLore',
       limit: 100,
-      revision: 'main-tip'
+      revision: 'main-tip',
+      branch: null,
+      date: null,
+      onlyBranch: false
     })
   })
 
@@ -534,11 +539,7 @@ describe('repository snapshot branch loading', () => {
       if (command === 'lore_revision_history' && args.revision === zeroRevision) {
         throw new Error(`revision not found: ${zeroRevision}`)
       }
-      return {
-        operation: 'revision.history',
-        status: 0,
-        events: []
-      }
+      return historyResult([])
     })
 
     await expect(loadRepositorySnapshot('E:\\Worlds\\NewLore')).resolves.toMatchObject({
@@ -550,7 +551,10 @@ describe('repository snapshot branch loading', () => {
     expect(invokeMock).toHaveBeenCalledWith('lore_revision_history', {
       repositoryPath: 'E:\\Worlds\\NewLore',
       limit: 100,
-      revision: null
+      revision: null,
+      branch: null,
+      date: null,
+      onlyBranch: false
     })
   })
 
@@ -654,6 +658,93 @@ describe('repository snapshot branch loading', () => {
     )
   })
 
+  for (const readKind of ['snapshot', 'history'] as const) {
+    for (const source of ['primary history', 'merge parent side-2']) {
+      it(`preserves ${source} authentication diagnostics when loading ${readKind}`, async () => {
+        const repository = parseRepository('E:\\Worlds\\RealLore', repositoryStatusEvents)
+        const detail = `Unable to read ${source}`
+        const events = [
+          { tagName: 'error', data: { errorInner: detail } },
+          {
+            tagName: 'complete',
+            data: { error: { message: 'The request does not have valid authentication credentials' } }
+          }
+        ]
+        const fallbackInvoke = invokeMock.getMockImplementation()
+        invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
+          if (command === 'lore_revision_history') {
+            return historyResult([], { status: 17, events })
+          }
+          if (!fallbackInvoke) throw new Error(`The test does not handle command: ${command}`)
+          return fallbackInvoke(command, args)
+        })
+
+        const request =
+          readKind === 'snapshot'
+            ? loadRepositorySnapshot(repository.path)
+            : loadRevisionHistory(repository, [], { onlyBranch: false, limit: 100 })
+        const error: unknown = await request.then(
+          () => {
+            throw new Error('A failed history query must not resolve with a successful result')
+          },
+          (cause: unknown) => cause
+        )
+
+        expect(error).toBeInstanceOf(LoreOperationError)
+        expect(error).toMatchObject({ status: 17, operation: 'revision.history', events, message: detail })
+        expect(isAuthenticationRequiredError(error)).toBe(true)
+      })
+    }
+  }
+
+  it('rejects a failed history result with completion details instead of projecting partial entries', async () => {
+    const repository = parseRepository('E:\\Worlds\\RealLore', repositoryStatusEvents)
+    const events = [
+      { tagName: 'complete', data: { error: { message: 'The secondary revision is unavailable in the Store' } } }
+    ]
+    invokeMock.mockResolvedValue(
+      historyResult([historyEntry('partial-history-must-not-be-displayed')], { status: -1, events })
+    )
+    const error: unknown = await loadRevisionHistory(repository, [], { onlyBranch: false, limit: 100 }).then(
+      () => {
+        throw new Error('Partial history must not replace the last complete history')
+      },
+      (cause: unknown) => cause
+    )
+
+    expect(error).toBeInstanceOf(LoreOperationError)
+    expect(error).toMatchObject({
+      status: -1,
+      operation: 'revision.history',
+      events,
+      message: 'The secondary revision is unavailable in the Store'
+    })
+    expect(isAuthenticationRequiredError(error)).toBe(false)
+  })
+
+  it.each([false, true])(
+    'consumes only typed history entries even with misleading raw events: populated=%p',
+    async (populated) => {
+      const repository = parseRepository('E:\\Worlds\\RealLore', repositoryStatusEvents)
+      const entries = populated
+        ? [historyEntry('typed-revision', { message: 'Typed message', authorIdentity: 'Typed Author' })]
+        : []
+      invokeMock.mockResolvedValue(
+        historyResult(entries, {
+          events: [
+            { tagName: 'revisionHistoryEntry', data: { revision: 'obsolete-raw-revision', revisionNumber: 99 } },
+            { tagName: 'metadata', data: { key: 'message', value: { tagName: 'string', data: 'Wrong raw message' } } }
+          ]
+        })
+      )
+
+      const revisions = await loadRevisionHistory(repository, [], { onlyBranch: false, limit: 100 })
+
+      expect(revisions.map((revision) => revision.id)).toEqual(populated ? ['typed-revision'] : [])
+      if (populated) expect(revisions[0]).toMatchObject({ title: 'Typed message', author: 'Typed Author' })
+    }
+  )
+
   it('passes the stable Revision, Branch, date, only-branch, and limit history filters to Lore', async () => {
     const snapshot = await loadRepositorySnapshot('E:\\Worlds\\RealLore')
     invokeMock.mockClear()
@@ -692,32 +783,10 @@ describe('repository snapshot branch loading', () => {
     ])
     invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
       if (command === 'lore_revision_history') {
-        return {
-          operation: 'revision.history',
-          status: 0,
-          events: [
-            {
-              tagName: 'revisionHistoryEntry',
-              data: { revision: 'tip', revisionNumber: 2, parent: ['base'] }
-            },
-            {
-              tagName: 'metadata',
-              data: { key: 'committed-by', value: { tagName: 'string', data: 'user-42' } }
-            },
-            {
-              tagName: 'metadata',
-              data: { key: 'created-by', value: { tagName: 'string', data: 'creator-fallback' } }
-            },
-            {
-              tagName: 'revisionHistoryEntry',
-              data: { revision: 'base', revisionNumber: 1, parent: [] }
-            },
-            {
-              tagName: 'metadata',
-              data: { key: 'created-by', value: { tagName: 'string', data: 'Artist Team' } }
-            }
-          ]
-        }
+        return historyResult([
+          historyEntry('tip', { revisionNumber: 2, parentIds: ['base'], authorIdentity: 'user-42' }),
+          historyEntry('base', { authorIdentity: 'Artist Team' })
+        ])
       }
       if (command === 'lore_auth_user_info') {
         expect(args).toEqual({
@@ -781,20 +850,7 @@ describe('repository snapshot branch loading', () => {
     ])
     invokeMock.mockImplementation(async (command: string) => {
       if (command === 'lore_revision_history') {
-        return {
-          operation: 'revision.history',
-          status: 0,
-          events: [
-            {
-              tagName: 'revisionHistoryEntry',
-              data: { revision: 'tip', revisionNumber: 1, parent: [] }
-            },
-            {
-              tagName: 'metadata',
-              data: { key: 'committed-by', value: { tagName: 'string', data: 'user-42' } }
-            }
-          ]
-        }
+        return historyResult([historyEntry('tip', { authorIdentity: 'user-42' })])
       }
       if (command === 'lore_auth_user_info') {
         throw new Error('Auth service unavailable')
@@ -818,17 +874,7 @@ describe('repository snapshot branch loading', () => {
     ])
     invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
       if (command === 'lore_revision_history') {
-        return {
-          operation: 'revision.history',
-          status: 0,
-          events: [
-            { tagName: 'revisionHistoryEntry', data: { revision: 'tip', revisionNumber: 1, parent: [] } },
-            {
-              tagName: 'metadata',
-              data: { key: 'committed-by', value: { tagName: 'string', data: 'user-42' } }
-            }
-          ]
-        }
+        return historyResult([historyEntry('tip', { authorIdentity: 'user-42' })])
       }
       if (command === 'lore_auth_user_info') throw new Error('Offline history must not query the remote Auth service')
       if (command === 'lore_revision_author_cache_get') return []
@@ -865,17 +911,7 @@ describe('repository snapshot branch loading', () => {
     ])
     invokeMock.mockImplementation(async (command: string, args: Record<string, unknown>) => {
       if (command === 'lore_revision_history') {
-        return {
-          operation: 'revision.history',
-          status: 0,
-          events: [
-            { tagName: 'revisionHistoryEntry', data: { revision: 'tip', revisionNumber: 1, parent: [] } },
-            {
-              tagName: 'metadata',
-              data: { key: 'committed-by', value: { tagName: 'string', data: 'user-42' } }
-            }
-          ]
-        }
+        return historyResult([historyEntry('tip', { authorIdentity: 'user-42' })])
       }
       if (command === 'lore_revision_author_cache_get') {
         expect(args).toEqual({

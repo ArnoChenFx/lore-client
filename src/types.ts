@@ -639,6 +639,21 @@ export interface LoreOperationResult {
   events: LoreEvent[]
 }
 
+/** 原生历史边界已解释完成的事实；消息、作者与时间不含界面本地化。 */
+export interface LoreRevisionHistoryEntry {
+  revision: string
+  revisionNumber: number
+  parentIds: string[]
+  message: string
+  authorIdentity: string
+  committedAt: number | null
+}
+
+/** 成功条目只通过 entries 传输；events 保留诊断，失败时 entries 为空。 */
+export interface LoreRevisionHistoryResult extends LoreOperationResult {
+  entries: LoreRevisionHistoryEntry[]
+}
+
 /** Rust 适配层实时发出的单个操作生命周期或 Lore 事件。 */
 export interface LoreOperationStreamEvent {
   operationId: string

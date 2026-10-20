@@ -172,6 +172,9 @@ export async function invokeCommand<T>(command: string, args: Record<string, unk
  * 这里仅覆盖客户端能够给出明确恢复建议的错误；其余错误继续保留上游详情。
  */
 function localizeCommandError(error: Partial<LoreCommandError>, command: string): string {
+  if (error.code === 'revision_history_invalid_identity') {
+    return t('revisionHistoryInvalidIdentity')
+  }
   if (error.code === 'auth_required') {
     return t('remoteAuthenticationRequired')
   }

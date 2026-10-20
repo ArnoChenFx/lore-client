@@ -4,86 +4,164 @@
 //! 父模块统一管理，避免模块化重构改变现有 IPC 契约或 Lore 调用行为。
 
 use super::*;
-/// 一个 Revision Entry 及其隐式关联的全部 Metadata 事件。
+/// 已解析的历史事实与首次发现顺序；拓扑处理不再搬运协议事件。
 #[derive(Debug)]
-pub(super) struct RevisionHistoryEventGroup {
-    revision: String,
-    revision_number: u64,
-    parent_ids: Vec<String>,
-    events: Vec<Value>,
+pub(super) struct RevisionHistoryGroup {
+    entry: LoreRevisionHistoryEntry,
     discovery_order: usize,
 }
 
-/// 把 Lore 的线性事件流拆成不可分割的 Revision 事件组。
-///
-/// Metadata 在协议中没有重复携带 Revision ID，而是隐式归属于它前面的 Entry；
-/// 因此聚合和排序必须移动完整事件组，不能分别处理 Entry 与 Metadata。
-pub(super) fn parse_revision_history_event_groups(
+fn history_metadata_text(value: Option<&Value>) -> String {
+    match value {
+        Some(Value::String(value)) => value.clone(),
+        Some(Value::Number(value)) => value.to_string(),
+        _ => String::new(),
+    }
+}
+
+fn history_committed_at(value: Option<&Value>) -> Option<u64> {
+    let timestamp = value?.as_u64()?;
+    // Lore 现行时间单位为毫秒；早期仓库存下的秒值仍属于有效历史事实。
+    let milliseconds = if timestamp < 100_000_000_000 {
+        timestamp.checked_mul(1_000)?
+    } else {
+        timestamp
+    };
+    // 前端 Date 能表达的范围比 u64 小；缺失或非法时间统一使用 null。
+    (milliseconds > 0 && milliseconds <= 8_640_000_000_000_000).then_some(milliseconds)
+}
+
+fn history_identity(value: &Value) -> Result<String, LoreCommandError> {
+    let identity = value.as_str().filter(|value| {
+        !value.is_empty()
+            && !is_zero_hash(value)
+            && !value
+                .chars()
+                .any(|character| character.is_whitespace() || character.is_control())
+    });
+    identity.map(str::to_owned).ok_or_else(|| {
+        LoreCommandError::new(
+            "revision_history_invalid_identity",
+            "Lore history entry is missing a valid revision ID",
+        )
+    })
+}
+
+fn history_parent_ids(value: &Value, revision: &str) -> Result<Vec<String>, LoreCommandError> {
+    let invalid = || {
+        LoreCommandError::new(
+            "invalid_revision_history_entry",
+            format!("Revision {revision} has an invalid parent list"),
+        )
+    };
+    let parents = value.as_array().ok_or_else(invalid)?;
+    let mut seen = BTreeSet::new();
+    let mut parent_ids = Vec::with_capacity(parents.len());
+    for parent in parents {
+        let parent = parent.as_str().ok_or_else(invalid)?;
+        if parent.is_empty() || is_zero_hash(parent) || parent == revision {
+            continue;
+        }
+        if parent
+            .chars()
+            .any(|character| character.is_whitespace() || character.is_control())
+        {
+            return Err(invalid());
+        }
+        // 第一父节点有语义，去重只能保留首次出现顺序，不能排序。
+        if seen.insert(parent.to_owned()) {
+            parent_ids.push(parent.to_owned());
+        }
+    }
+    Ok(parent_ids)
+}
+
+/// 在原生边界关联 Entry 与随后 Metadata，产出不依赖事件顺序的应用事实。
+fn parse_revision_history_groups(
     events: &[Value],
     next_discovery_order: &mut usize,
-) -> Result<Vec<RevisionHistoryEventGroup>, LoreCommandError> {
+) -> Result<Vec<RevisionHistoryGroup>, LoreCommandError> {
     let mut groups = Vec::new();
-    let mut current: Option<RevisionHistoryEventGroup> = None;
+    let mut current: Option<RevisionHistoryGroup> = None;
+    let mut metadata: BTreeMap<String, Value> = BTreeMap::new();
+    let finish = |mut group: RevisionHistoryGroup, metadata: &mut BTreeMap<String, Value>| {
+        group.entry.message = history_metadata_text(metadata.get("message"));
+        group.entry.author_identity = history_metadata_text(
+            metadata
+                .get("committed-by")
+                .filter(|value| !value.is_null())
+                .or_else(|| metadata.get("created-by")),
+        );
+        group.entry.committed_at = history_committed_at(metadata.get("timestamp"));
+        metadata.clear();
+        group
+    };
 
     for event in events {
         match event.get("tagName").and_then(Value::as_str) {
             Some("revisionHistoryEntry") => {
                 if let Some(group) = current.take() {
-                    groups.push(group);
+                    groups.push(finish(group, &mut metadata));
                 }
-                let revision = event
-                    .pointer("/data/revision")
-                    .and_then(Value::as_str)
-                    .filter(|value| !value.is_empty())
-                    .ok_or_else(|| {
-                        LoreCommandError::new(
-                            "invalid_revision_history_entry",
-                            "Lore history entry is missing a valid revision ID",
-                        )
-                    })?
-                    .to_owned();
-                let revision_number = event
-                    .pointer("/data/revisionNumber")
-                    .and_then(Value::as_u64)
-                    .ok_or_else(|| {
+                let revision = history_identity(&event["data"]["revision"])?;
+                let revision_number =
+                    event["data"]["revisionNumber"].as_u64().ok_or_else(|| {
                         LoreCommandError::new(
                             "invalid_revision_history_entry",
                             format!("Revision {revision} is missing a valid sequence number"),
                         )
                     })?;
-                let parent_ids = event
-                    .pointer("/data/parent")
-                    .and_then(Value::as_array)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Value::as_str)
-                    .filter(|parent| {
-                        !parent.is_empty() && !is_zero_hash(parent) && *parent != revision
-                    })
-                    .map(str::to_owned)
-                    .collect();
-                current = Some(RevisionHistoryEventGroup {
-                    revision,
-                    revision_number,
-                    parent_ids,
-                    events: vec![event.clone()],
+                let parent_ids = history_parent_ids(&event["data"]["parent"], &revision)?;
+                current = Some(RevisionHistoryGroup {
+                    entry: LoreRevisionHistoryEntry {
+                        revision,
+                        revision_number,
+                        parent_ids,
+                        message: String::new(),
+                        author_identity: String::new(),
+                        committed_at: None,
+                    },
                     discovery_order: *next_discovery_order,
                 });
                 *next_discovery_order += 1;
             }
-            Some("metadata") => {
-                if let Some(group) = current.as_mut() {
-                    group.events.push(event.clone());
+            Some("metadata") if current.is_some() => {
+                if let Some(key @ ("message" | "committed-by" | "created-by" | "timestamp")) =
+                    event["data"]["key"].as_str()
+                {
+                    metadata.insert(key.to_owned(), event["data"]["value"]["data"].clone());
                 }
             }
             _ => {}
         }
     }
-
     if let Some(group) = current {
-        groups.push(group);
+        groups.push(finish(group, &mut metadata));
     }
     Ok(groups)
+}
+
+fn history_result(
+    result: LoreOperationResult,
+    entries: Vec<LoreRevisionHistoryEntry>,
+) -> LoreRevisionHistoryResult {
+    LoreRevisionHistoryResult {
+        operation: result.operation,
+        status: result.status,
+        duration_ms: result.duration_ms,
+        // 应用条目只传一次；保留 error、complete、log 等原始诊断，不暴露部分历史。
+        events: result
+            .events
+            .into_iter()
+            .filter(|event| {
+                !matches!(
+                    event["tagName"].as_str(),
+                    Some("revisionHistory" | "revisionHistoryEntry" | "metadata")
+                )
+            })
+            .collect(),
+        entries,
+    }
 }
 
 /// 收录新的 Revision 事件组，并把尚未加载的第二及后续父节点加入补查队列。
@@ -91,21 +169,21 @@ pub(super) fn parse_revision_history_event_groups(
 /// 第一父链已经由单次 Lore History 查询线性返回；不继续追逐被分页截断的第一父节点，
 /// 可以避免无 Merge 的长历史为了得到同一页结果额外读取数倍数据。
 pub(super) fn insert_revision_history_groups(
-    groups: &mut HashMap<String, RevisionHistoryEventGroup>,
+    groups: &mut HashMap<String, RevisionHistoryGroup>,
     pending_secondary_parents: &mut VecDeque<String>,
-    candidates: Vec<RevisionHistoryEventGroup>,
+    candidates: Vec<RevisionHistoryGroup>,
     candidate_limit: usize,
 ) {
     for group in candidates {
-        if groups.len() >= candidate_limit || groups.contains_key(&group.revision) {
+        if groups.len() >= candidate_limit || groups.contains_key(&group.entry.revision) {
             continue;
         }
-        for parent in group.parent_ids.iter().skip(1) {
+        for parent in group.entry.parent_ids.iter().skip(1) {
             if !groups.contains_key(parent) {
                 pending_secondary_parents.push_back(parent.clone());
             }
         }
-        groups.insert(group.revision.clone(), group);
+        groups.insert(group.entry.revision.clone(), group);
     }
 }
 
@@ -114,14 +192,14 @@ pub(super) fn insert_revision_history_groups(
 /// 同时可用的节点优先选择较大的 Revision Number；序号相同则保持首次发现顺序，
 /// 使 main 与来源 Branch 在同一代际交错显示，而不是先走完整条 main 再回到来源分支。
 pub(super) fn topologically_order_revision_history(
-    mut groups: HashMap<String, RevisionHistoryEventGroup>,
-) -> Result<Vec<RevisionHistoryEventGroup>, LoreCommandError> {
+    mut groups: HashMap<String, RevisionHistoryGroup>,
+) -> Result<Vec<RevisionHistoryGroup>, LoreCommandError> {
     let mut visible_child_counts = groups
         .keys()
         .map(|revision| (revision.clone(), 0_usize))
         .collect::<HashMap<_, _>>();
     for group in groups.values() {
-        for parent in &group.parent_ids {
+        for parent in &group.entry.parent_ids {
             if let Some(child_count) = visible_child_counts.get_mut(parent) {
                 *child_count += 1;
             }
@@ -133,7 +211,7 @@ pub(super) fn topologically_order_revision_history(
         if *child_count == 0 {
             let group = &groups[revision];
             ready.push((
-                group.revision_number,
+                group.entry.revision_number,
                 Reverse(group.discovery_order),
                 revision.clone(),
             ));
@@ -149,7 +227,7 @@ pub(super) fn topologically_order_revision_history(
                 format!("Revision history topology processed node {revision} more than once"),
             )
         })?;
-        for parent in &group.parent_ids {
+        for parent in &group.entry.parent_ids {
             let Some(child_count) = visible_child_counts.get_mut(parent) else {
                 continue;
             };
@@ -157,7 +235,7 @@ pub(super) fn topologically_order_revision_history(
             if *child_count == 0 {
                 if let Some(parent_group) = groups.get(parent) {
                     ready.push((
-                        parent_group.revision_number,
+                        parent_group.entry.revision_number,
                         Reverse(parent_group.discovery_order),
                         parent.clone(),
                     ));
@@ -184,7 +262,7 @@ pub(super) fn collect_revision_history_with(
     limit: u32,
     primary_revision: Option<String>,
     mut fetch: impl FnMut(Option<String>, u32) -> Result<LoreOperationResult, LoreCommandError>,
-) -> Result<LoreOperationResult, LoreCommandError> {
+) -> Result<LoreRevisionHistoryResult, LoreCommandError> {
     const HISTORY_EXPANSION_FACTOR: usize = 4;
 
     /*
@@ -197,37 +275,13 @@ pub(super) fn collect_revision_history_with(
      * 成功后才开始组合额外查询，避免把原始错误改写成另一个聚合错误。
      */
     if primary.status != 0 {
-        return Ok(primary);
+        return Ok(history_result(primary, Vec::new()));
     }
 
     let output_limit = limit as usize;
     let candidate_limit = output_limit.saturating_mul(HISTORY_EXPANSION_FACTOR);
-    let header = primary
-        .events
-        .iter()
-        .find(|event| event.get("tagName").and_then(Value::as_str) == Some("revisionHistory"))
-        .cloned();
-    let completion = primary
-        .events
-        .iter()
-        .rev()
-        .find(|event| event.get("tagName").and_then(Value::as_str) == Some("complete"))
-        .cloned();
-    let passthrough_events = primary
-        .events
-        .iter()
-        .filter(|event| {
-            !matches!(
-                event.get("tagName").and_then(Value::as_str),
-                Some("revisionHistory" | "revisionHistoryEntry" | "metadata" | "complete")
-            )
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-
     let mut next_discovery_order = 0;
-    let primary_groups =
-        parse_revision_history_event_groups(&primary.events, &mut next_discovery_order)?;
+    let primary_groups = parse_revision_history_groups(&primary.events, &mut next_discovery_order)?;
     let mut groups = HashMap::new();
     let mut pending_secondary_parents = VecDeque::new();
     insert_revision_history_groups(
@@ -248,14 +302,13 @@ pub(super) fn collect_revision_history_with(
         }
         let remaining_capacity = candidate_limit - groups.len();
         let supplemental = fetch(Some(parent.clone()), remaining_capacity as u32)?;
-        let parent_hint = parent.chars().take(8).collect::<String>();
-        ensure_operation_success(
-            &supplemental,
-            &format!("Read merge parent revision {parent_hint}"),
-        )?;
+        if supplemental.status != 0 {
+            // 补查失败与主查询失败使用相同语义；认证和原始诊断不能变成树读取错误。
+            return Ok(history_result(supplemental, Vec::new()));
+        }
         duration_ms = duration_ms.saturating_add(supplemental.duration_ms);
         let supplemental_groups =
-            parse_revision_history_event_groups(&supplemental.events, &mut next_discovery_order)?;
+            parse_revision_history_groups(&supplemental.events, &mut next_discovery_order)?;
         insert_revision_history_groups(
             &mut groups,
             &mut pending_secondary_parents,
@@ -265,24 +318,14 @@ pub(super) fn collect_revision_history_with(
     }
 
     let ordered = topologically_order_revision_history(groups)?;
-    let mut events = Vec::new();
-    if let Some(header) = header {
-        events.push(header);
-    }
-    events.extend(passthrough_events);
-    for group in ordered.into_iter().take(output_limit) {
-        events.extend(group.events);
-    }
-    if let Some(completion) = completion {
-        events.push(completion);
-    }
-
-    Ok(LoreOperationResult {
-        operation: primary.operation,
-        status: primary.status,
-        duration_ms,
-        events,
-    })
+    let mut result = primary;
+    result.duration_ms = duration_ms;
+    let entries = ordered
+        .into_iter()
+        .take(output_limit)
+        .map(|group| group.entry)
+        .collect();
+    Ok(history_result(result, entries))
 }
 
 /// 读取当前 Branch 的 Revision 历史，并补齐 Merge Revision 的其他父链。
@@ -311,7 +354,7 @@ pub async fn lore_revision_history(
     branch: Option<String>,
     date: Option<u64>,
     only_branch: Option<bool>,
-) -> Result<LoreOperationResult, LoreCommandError> {
+) -> Result<LoreRevisionHistoryResult, LoreCommandError> {
     let revision = revision
         .filter(|revision| !revision.trim().is_empty())
         .map(|revision| validate_revision(&revision))
@@ -595,3 +638,7 @@ pub async fn lore_revision_restore(
     })
     .await
 }
+
+#[cfg(test)]
+#[path = "history_tests.rs"]
+mod dto_tests;
