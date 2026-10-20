@@ -22,13 +22,18 @@ interface HookState {
 }
 let currentHooks: HookState
 const reactActual = { ...(await import('react')) }
-const loreActual = { ...(await import('../../services/lore')) }
+const tauriActual = { ...(await import('@tauri-apps/api/core')) }
+const eventsActual = { ...(await import('@tauri-apps/api/event')) }
 let streamListener: ((event: LoreOperationStreamEvent) => void) | undefined
 const nativeUnlisten = vi.fn()
-vi.mock('../../services/lore', () => ({
-  ...loreActual,
-  subscribeLoreOperationStream: async (listener: (event: LoreOperationStreamEvent) => void) => {
-    streamListener = listener
+// Exercise the real service subscription and shared listener even if another test
+// imported useOperationHistory before this file. Only the native IPC boundary is mocked.
+vi.mock('@tauri-apps/api/core', () => ({ ...tauriActual, isTauri: () => true }))
+vi.mock('@tauri-apps/api/event', () => ({
+  ...eventsActual,
+  listen: async (name: string, listener: (event: { payload: LoreOperationStreamEvent }) => void) => {
+    expect(name).toBe('lore://operation-stream')
+    streamListener = (payload) => listener({ payload })
     return nativeUnlisten
   }
 }))
@@ -118,7 +123,8 @@ afterEach(async () => {
 })
 afterAll(() => {
   vi.mock('react', () => reactActual)
-  vi.mock('../../services/lore', () => loreActual)
+  vi.mock('@tauri-apps/api/core', () => tauriActual)
+  vi.mock('@tauri-apps/api/event', () => eventsActual)
 })
 
 describe('operation history hook lifecycle', () => {
