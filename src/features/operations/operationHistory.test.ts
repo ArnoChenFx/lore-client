@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 
 import type { LoreOperationStreamRecord, OperationRecord } from '../../types'
-import { limitRecentOperationRecords, MAX_OPERATION_HISTORY, selectRecentOperationHistory } from './operationHistory'
+import { MAX_OPERATION_HISTORY, selectRecentOperationHistory } from './operationHistory'
 
 function operation(id: number, startedAt = id): OperationRecord {
   return {
@@ -30,7 +30,7 @@ describe('operation history limit', () => {
       operation(MAX_OPERATION_HISTORY + 5 - index)
     )
 
-    const limited = limitRecentOperationRecords(records)
+    const limited = selectRecentOperationHistory(records, []).operations
 
     expect(limited).toHaveLength(MAX_OPERATION_HISTORY)
     expect(limited[0]?.id).toBe(MAX_OPERATION_HISTORY + 5)
@@ -47,5 +47,17 @@ describe('operation history limit', () => {
     expect(selected.operations[0]?.id).toBe(51)
     expect(selected.streams).toHaveLength(100)
     expect(selected.operations.length + selected.streams.length).toBe(MAX_OPERATION_HISTORY)
+  })
+
+  it('preserves active records outside the completed-history budget in both sources', () => {
+    const active = { ...operation(0), status: 'running' as const }
+    const queued = { ...stream(0), phase: 'queued' as const }
+    const completed = Array.from({ length: MAX_OPERATION_HISTORY + 5 }, (_, index) => operation(index + 1))
+    const selected = selectRecentOperationHistory([active, ...completed], [queued])
+
+    expect(selected.operations).toContain(active)
+    expect(selected.streams).toEqual([queued])
+    expect(selected.operations.filter((record) => record.status !== 'running')).toHaveLength(MAX_OPERATION_HISTORY)
+    expect(selected.operations.map((record) => record.id)).not.toContain(5)
   })
 })

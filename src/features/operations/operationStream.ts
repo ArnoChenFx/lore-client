@@ -1,5 +1,5 @@
 import type { LoreOperationStreamEvent, LoreOperationStreamRecord } from '../../types'
-import { limitRecentOperationRecords } from './operationHistory'
+import { selectRecentOperationHistory } from './operationHistory'
 import { nextProgressRate, parseOperationProgress } from './operationProgress'
 
 /**
@@ -38,5 +38,8 @@ export function mergeLoreOperationStream(
       : existing?.progressRate,
     cancellable: incoming.cancellable
   }
-  return limitRecentOperationRecords([next, ...records.filter((record) => record.operationId !== incoming.operationId)])
+  return selectRecentOperationHistory(
+    [],
+    [next, ...records.filter((record) => record.operationId !== incoming.operationId)]
+  ).streams
 }
