@@ -250,13 +250,18 @@ node scripts/e2e/packaged-app-check.mjs    # screenshots go to $E2E_EVIDENCE_DIR
 
 ## Browser-driven check (CDP smoke, frontend only)
 
-`bun run test:ui` runs `scripts/cdp-smoke.mjs`. It drives headless Chrome against the Vite dev server on port 1420 and covers frontend behavior only, with no Tauri backend. Its assertions expect Chinese UI strings, so run it with a zh_CN locale:
+`bun run test:ui` runs the full `scripts/cdp-smoke.mjs` check. It covers frontend behavior only, with no Tauri backend. The script drives headless Chrome with an explicit Simplified Chinese language setting, independently of the host locale.
 
 ```bash
-LANG=zh_CN.UTF-8 LC_ALL=zh_CN.UTF-8 bun run test:ui
+bun run test:ui
+bun run test:ui:core
 ```
 
-Set `LORE_CLIENT_BROWSER_PATH` to use a specific Chrome or Chromium. Set `LORE_CDP_SCREENSHOT_DIR` to save a PNG of the failed-lazy-view state as `cdp-lazy-view-failure.png`.
+The core and full suites share four workflows: startup and initial history, revision single/double-click navigation, commands and settings, and failed lazy-view recovery. Each core workflow starts in a new document with empty test preferences, so it cannot depend on an earlier workflow. Linux CI runs this suite and uploads its summary, log, and failure screenshots. The full suite retains all interaction and visual assertions.
+
+The script uses port 1420 by default. It reuses an existing Vite server or starts and closes its own server. Set `LORE_CDP_PORT` to use another port for an independent checkout or parallel run; a reused server is never closed. Each run uses and cleans up an isolated temporary browser profile.
+
+Set `LORE_CLIENT_BROWSER_PATH` to select Chrome or Chromium; otherwise the script discovers the system browser. With `LORE_CDP_ARTIFACT_DIR`, both successful and failed runs write `summary.json`. Interaction failures also attempt to save `failure.png`; the expected failed-lazy-view scenario saves `cdp-lazy-view-failure.png`. `LORE_CDP_SCREENSHOT_DIR` can override the screenshot directory separately. Browser startup failures also produce a nonzero exit code and a failure summary.
 
 ## Layout of `LORE_E2E_HOME`
 
