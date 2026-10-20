@@ -600,6 +600,44 @@ describe('Lore event adapter', () => {
     ])
   })
 
+  it.each([undefined, null, '', '  ', ' revision-id ', 12, ZERO_HASH])(
+    'rejects invalid history identities instead of inventing an actionable revision ID: %p',
+    (revision) => {
+      const repository = loreEventParsers.parseRepository(repositoryPath, [])
+      expect(() =>
+        loreEventParsers.parseRevisions([{ tagName: 'revisionHistoryEntry', data: { revision } }], repository)
+      ).toThrow(
+        expect.objectContaining({
+          code: 'revision_history_invalid_identity',
+          command: 'lore_revision_history'
+        })
+      )
+    }
+  )
+
+  it('keeps raw history facts independent of the language used while loading', async () => {
+    const repository = loreEventParsers.parseRepository(repositoryPath, [])
+    const events: LoreEvent[] = [
+      { tagName: 'revisionHistoryEntry', data: { revision: 'opaque-revision-id', revisionNumber: 12 } },
+      { tagName: 'metadata', data: { key: 'timestamp', value: { tagName: 'numeric', data: 1_753_392_600 } } }
+    ]
+    const english = loreEventParsers.parseRevisions(events, repository)
+    await i18n.changeLanguage('zh-CN')
+    const chinese = loreEventParsers.parseRevisions(events, repository)
+
+    expect(chinese).toEqual(english)
+    expect(english[0]).toMatchObject({
+      id: 'opaque-revision-id',
+      revisionNumber: 12,
+      committedAt: 1_753_392_600_000,
+      title: '',
+      author: ''
+    })
+    expect(english[0]?.description).toBeUndefined()
+    expect(english[0]?.timestamp).toBeUndefined()
+    expect(english[0]?.relativeTime).toBeUndefined()
+  })
+
   it('attaches every active branch pointer to its exact latest revision', () => {
     const repository = loreEventParsers.parseRepository(repositoryPath, [
       {
@@ -975,10 +1013,11 @@ describe('Lore event adapter', () => {
       repository
     )
 
-    expect(revisions[0]?.timestamp).toMatch(/^2025-/)
+    expect(revisions[0]?.committedAt).toBe(1_753_392_600_000)
+    expect(revisions[0]?.timestamp).toBeUndefined()
   })
 
-  it('keeps an unknown author when history metadata is missing instead of using the current identity', () => {
+  it('preserves a missing historical author instead of using the current identity or a translated label', () => {
     const repository = {
       ...loreEventParsers.parseRepository(repositoryPath, [
         {
@@ -1003,7 +1042,7 @@ describe('Lore event adapter', () => {
         ],
         repository
       )[0]?.author
-    ).toBe('Unknown author')
+    ).toBe('')
   })
 
   it('removes the Windows extended path prefix from displayed repository paths', () => {

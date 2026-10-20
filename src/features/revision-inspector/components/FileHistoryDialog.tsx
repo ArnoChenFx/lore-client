@@ -3,8 +3,8 @@ import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 
-import { t } from '../../../i18n'
-import { changeFilePath } from '../../../shared/lib'
+import { useCurrentTime } from '../../../hooks/useCurrentTime'
+import { changeFilePath, revisionPresentation } from '../../../shared/lib'
 import type { FileHistoryEntry, RepositoryFileReference, Revision } from '../../../types'
 
 interface FileHistoryDialogProps {
@@ -22,13 +22,6 @@ interface FileHistoryDialogProps {
 interface FileHistoryActionLabels {
   [action: string]: string
 }
-const actionLabels: FileHistoryActionLabels = {
-  add: t('added'),
-  delete: t('delete'),
-  move: t('moved'),
-  copy: t('copy'),
-  keep: t('modified')
-}
 
 /** 文件时间线与历史列表共享 Lore `file::history` 数据，只改变标题语义。 */
 export function FileHistoryDialog({
@@ -42,6 +35,14 @@ export function FileHistoryDialog({
   onClose
 }: FileHistoryDialogProps) {
   const { t } = useTranslation()
+  const now = useCurrentTime()
+  const actionLabels: FileHistoryActionLabels = {
+    add: t('added'),
+    delete: t('delete'),
+    move: t('moved'),
+    copy: t('copy'),
+    keep: t('modified')
+  }
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
@@ -102,6 +103,7 @@ export function FileHistoryDialog({
             <div className="file-history-list">
               {entries.map((entry) => {
                 const revision = revisions.find((candidate) => candidate.id === entry.revision)
+                const presentation = revision ? revisionPresentation(revision, t, now) : null
                 return (
                   <button
                     key={`${entry.revision}:${entry.path}`}
@@ -116,10 +118,13 @@ export function FileHistoryDialog({
                       <i />
                     </span>
                     <span>
-                      <strong>{revision?.title ?? `Revision #${entry.revisionNumber}`}</strong>
+                      <strong>
+                        {presentation?.title ??
+                          t('status.revisionLabel', { number: entry.revisionNumber, id: entry.revision.slice(0, 8) })}
+                      </strong>
                       <small>
-                        {revision?.author ?? t('authorInformationUnavailable')} ·{' '}
-                        {revision?.relativeTime ?? entry.revision.slice(0, 8)}
+                        {presentation?.author ?? t('authorInformationUnavailable')} ·{' '}
+                        {presentation?.relativeTime ?? entry.revision.slice(0, 8)}
                       </small>
                       {/* 只有 Lore 真实报告来源路径的移动/重命名才展示旧 → 新。 */}
                       {entry.fromPath && entry.fromPath !== entry.path && (

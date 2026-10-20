@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useAdjustFromProps } from '../../../hooks/useAdjustFromProps'
+import { revisionPresentation } from '../../../shared/lib'
 import { SelectInput } from '../../../shared/ui'
 import type { LoreRevisionInfo, Revision } from '../../../types'
 
@@ -128,7 +129,7 @@ export function RevisionRecoveryPanel({
             <SelectInput value={selectedRevision} onChange={(event) => setSelectedRevision(event.target.value)}>
               {revisions.map((revision) => (
                 <option key={revision.id} value={revision.id}>
-                  {revision.shortId} · {revision.title}
+                  {revision.shortId} · {revisionPresentation(revision, t).title}
                 </option>
               ))}
             </SelectInput>
@@ -292,7 +293,7 @@ export function RevisionRecoveryPanel({
               <SelectInput value={goodRevision} onChange={(event) => setGoodRevision(event.target.value)}>
                 {revisions.map((revision) => (
                   <option key={revision.id} value={revision.id}>
-                    {revision.shortId} · {revision.title}
+                    {revision.shortId} · {revisionPresentation(revision, t).title}
                   </option>
                 ))}
               </SelectInput>
@@ -302,7 +303,7 @@ export function RevisionRecoveryPanel({
               <SelectInput value={badRevision} onChange={(event) => setBadRevision(event.target.value)}>
                 {revisions.map((revision) => (
                   <option key={revision.id} value={revision.id}>
-                    {revision.shortId} · {revision.title}
+                    {revision.shortId} · {revisionPresentation(revision, t).title}
                   </option>
                 ))}
               </SelectInput>

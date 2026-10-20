@@ -571,6 +571,7 @@ const zhCNStatic = {
   historyLimit: '最大条数',
   applyHistoryFilter: '应用历史筛选',
   unableToLoadRevisionHistory: '无法读取修订历史',
+  revisionHistoryInvalidIdentity: '修订历史包含无效的修订 ID，请刷新历史后重试。',
   manageLayers: '管理 Layers',
   maximizeOrRestoreWindow: '最大化或还原窗口',
   maximizeRestore: '最大化 / 还原',
