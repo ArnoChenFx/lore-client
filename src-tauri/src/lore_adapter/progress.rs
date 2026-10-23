@@ -452,68 +452,17 @@ pub(super) fn retain_in_result(event: &LoreEvent) -> bool {
 mod tests {
     use super::*;
 
-    fn event(json: &str) -> LoreEvent {
-        serde_json::from_str(json).unwrap_or_else(|error| panic!("bad fixture {json}: {error}"))
-    }
+    // 夹具构造见 test_events：Lore 0.11 起事件类型不再实现 Deserialize，
+    // 录制的 JSON 文本改为逐项对应的类型化构造，数值仍是实测原值。
+    use crate::lore_adapter::test_events::{
+        clone_event, commit_discovering, commit_end, commit_running, metadata_context_event,
+        push_begin, push_end, push_start, push_tick, real_clone, real_sync_from_remote,
+        real_two_round_push, revision_done, stage_begin, stage_count_event, stage_end, stage_file,
+        stage_tick, sync_discovering, sync_running,
+    };
 
     fn at(base: Instant, ms: u64) -> Instant {
         base + Duration::from_millis(ms)
-    }
-
-    fn stage_file(path: &str) -> LoreEvent {
-        event(&format!(
-            r#"{{"tagName":"fileStageFile","data":{{"action":"add","fromPath":"","path":"{path}"}}}}"#
-        ))
-    }
-
-    fn stage_counts(tag: &str, added: u64) -> LoreEvent {
-        let count = json!({
-            "directoryAddCount": 0, "directoryDeleteCount": 0, "directoryModifyCount": 0,
-            "directoryMoveCount": 0, "fileAddCount": added, "fileDeleteCount": 0,
-            "fileModifyCount": 0, "fileMoveCount": 0, "totalCount": added
-        });
-        event(&json!({ "tagName": tag, "data": { "count": count } }).to_string())
-    }
-
-    // 以下 JSON 均来自真实本地仓库的实测事件。
-    const STAGE_BEGIN: &str = r#"{"data":{"pathCount":1},"tagName":"fileStageBegin"}"#;
-    const STAGE_TICK: &str = r#"{"data":{"count":{"directoryAddCount":1,"directoryDeleteCount":0,"directoryModifyCount":0,"directoryMoveCount":0,"fileAddCount":3,"fileDeleteCount":0,"fileModifyCount":0,"fileMoveCount":0,"totalCount":4}},"tagName":"fileStageProgress"}"#;
-    const STAGE_END: &str = r#"{"data":{"count":{"directoryAddCount":41,"directoryDeleteCount":0,"directoryModifyCount":0,"directoryMoveCount":0,"fileAddCount":4003,"fileDeleteCount":0,"fileModifyCount":0,"fileMoveCount":0,"totalCount":4044}},"tagName":"fileStageEnd"}"#;
-    const COMMIT_DISCOVERING: &str = r#"{"data":{"count":{"bytesTotal":168701592,"bytesTransferred":0,"directoryCount":38,"directoryDeleteCount":0,"directoryTotal":38,"discoveryComplete":false,"fileCount":0,"fileDeleteCount":0,"fileModifyCount":0,"fileTotal":3906}},"tagName":"revisionCommitProgress"}"#;
-    const COMMIT_RUNNING: &str = r#"{"data":{"count":{"bytesTotal":169144370,"bytesTransferred":46681,"directoryCount":41,"directoryDeleteCount":0,"directoryTotal":41,"discoveryComplete":true,"fileCount":11,"fileDeleteCount":0,"fileModifyCount":11,"fileTotal":4003}},"tagName":"revisionCommitProgress"}"#;
-    const COMMIT_END: &str = r#"{"data":{"count":{"bytesTotal":169144370,"bytesTransferred":169144370,"directoryCount":41,"directoryDeleteCount":0,"directoryTotal":41,"discoveryComplete":true,"fileCount":4003,"fileDeleteCount":0,"fileModifyCount":4003,"fileTotal":4003}},"tagName":"revisionCommitEnd"}"#;
-    const SYNC_DISCOVERING: &str = r#"{"data":{"bytesUpdate":0,"bytesUpdateTotal":0,"discoveryComplete":false,"fileAutomerge":0,"fileConflict":0,"fileDelete":12,"fileDeleteTotal":500,"fileUpdate":0,"fileUpdateTotal":0},"tagName":"revisionSyncProgress"}"#;
-    const SYNC_RUNNING: &str = r#"{"data":{"bytesUpdate":2246789,"bytesUpdateTotal":52580830,"discoveryComplete":true,"fileAutomerge":0,"fileConflict":0,"fileDelete":500,"fileDeleteTotal":500,"fileUpdate":499,"fileUpdateTotal":501},"tagName":"revisionSyncProgress"}"#;
-
-    // 合成推送序列用的构造函数，字段名取自上游 branch/push.rs；真实录制的推送与克隆事件见 REAL_*。
-    fn push_start(local_history: u64, already: bool) -> LoreEvent {
-        event(&format!(
-            r#"{{"tagName":"branchPush","data":{{"remote":"quic://example","repository":"01a133b39ff976f2a32b7cb4d54202f8","branch":"e726318bbc3fd75ac8733a7e030cc35b","branchName":"main","remoteRevision":"{z}","localRevision":"{z}","remoteHistory":0,"localHistory":{local_history},"flagAlreadyPushed":{already},"flagDefault":true,"flagLink":false,"flagLayer":false}}}}"#,
-            z = "0".repeat(64),
-            already = if already { "true" } else { "false" }
-        ))
-    }
-    fn push_begin(fragments: u64) -> LoreEvent {
-        event(&format!(
-            r#"{{"tagName":"branchPushFragmentBegin","data":{{"fragments":{fragments},"bytesTotal":0}}}}"#
-        ))
-    }
-    fn push_tick(complete: u64, count: u64, transferred: u64, queued: u64) -> LoreEvent {
-        event(&format!(
-            r#"{{"tagName":"branchPushFragmentProgress","data":{{"complete":{complete},"count":{count},"bytesTransferred":{transferred},"bytesTotal":{queued}}}}}"#
-        ))
-    }
-    fn push_end(fragments: u64, transferred: u64) -> LoreEvent {
-        event(&format!(
-            r#"{{"tagName":"branchPushFragmentEnd","data":{{"fragments":{fragments},"bytesTransferred":{transferred}}}}}"#
-        ))
-    }
-    fn revision_done() -> LoreEvent {
-        event(&format!(
-            r#"{{"tagName":"branchPushRevisionPushEnd","data":{{"repository":"{id}","branch":"{id}","oldRemoteRevision":"{hash}","newRemoteRevision":"{hash}","newRemoteRevisionNumber":2,"message":"","fastForwardMerged":false}}}}"#,
-            id = "0".repeat(32),
-            hash = "0".repeat(64)
-        ))
     }
 
     fn data(value: &Value) -> &Value {
@@ -521,18 +470,23 @@ mod tests {
     }
 
     #[test]
-    fn real_fixtures_deserialize_as_typed_events() {
-        for json in [
-            STAGE_BEGIN,
-            STAGE_TICK,
-            STAGE_END,
-            COMMIT_DISCOVERING,
-            COMMIT_RUNNING,
-            COMMIT_END,
-            SYNC_DISCOVERING,
-            SYNC_RUNNING,
+    fn fixtures_serialize_with_the_recorded_tag_names() {
+        // 夹具由类型直接构造，构造本身即保证形状成立；这里只守住序列化后的
+        // tagName 与录制时一致，避免上游改名变体时前端映射静默失效。
+        for (fixture, tag) in [
+            (stage_begin(), "fileStageBegin"),
+            (stage_tick(), "fileStageProgress"),
+            (stage_end(), "fileStageEnd"),
+            (commit_discovering(), "revisionCommitProgress"),
+            (commit_running(), "revisionCommitProgress"),
+            (commit_end(), "revisionCommitEnd"),
+            (sync_discovering(), "revisionSyncProgress"),
+            (sync_running(), "revisionSyncProgress"),
         ] {
-            event(json);
+            assert_eq!(
+                crate::lore_adapter::operation_support::serialize_lore_event(&fixture)["tagName"],
+                tag,
+            );
         }
     }
 
@@ -540,9 +494,7 @@ mod tests {
     fn stage_is_indeterminate_until_end_and_counts_files_itself() {
         let base = Instant::now();
         let mut aggregator = ProgressAggregator::new(base);
-        assert!(aggregator
-            .observe(&event(STAGE_BEGIN), at(base, 1))
-            .is_none());
+        assert!(aggregator.observe(&stage_begin(), at(base, 1)).is_none());
         // 300 ms 之前只累积状态，不开流。
         for index in 0..200 {
             assert!(aggregator
@@ -570,7 +522,7 @@ mod tests {
         assert_eq!(data(&later)["current"], 203);
         // 结束事件立即定稿，且以上游 End 的总数为准。
         let end = aggregator
-            .observe(&event(STAGE_END), at(base, 610))
+            .observe(&stage_end(), at(base, 610))
             .expect("end bypasses throttle");
         assert_eq!(data(&end)["current"], 4003);
         assert_eq!(data(&end)["total"], 4003);
@@ -583,11 +535,11 @@ mod tests {
         // 不能在快照之上再加一次。
         let base = Instant::now();
         let mut aggregator = ProgressAggregator::new(base);
-        aggregator.observe(&event(STAGE_BEGIN), at(base, 1));
+        aggregator.observe(&stage_begin(), at(base, 1));
         aggregator.observe(&stage_file("a/0"), at(base, 2));
         aggregator.observe(&stage_file("a/1"), at(base, 3));
         let tick = aggregator
-            .observe(&stage_counts("fileStageProgress", 3), at(base, 400))
+            .observe(&stage_count_event(false, 3), at(base, 400))
             .expect("opens after the delay");
         assert_eq!(data(&tick)["current"], 3);
         aggregator.observe(&stage_file("a/2"), at(base, 500));
@@ -596,7 +548,7 @@ mod tests {
             .expect("after the interval");
         assert_eq!(data(&next)["current"], 4);
         let end = aggregator
-            .observe(&stage_counts("fileStageEnd", 4), at(base, 810))
+            .observe(&stage_count_event(true, 4), at(base, 810))
             .expect("end bypasses throttle");
         assert_eq!(data(&end)["current"], 4);
         assert_eq!(data(&end)["total"], 4);
@@ -606,8 +558,8 @@ mod tests {
     fn fast_operations_never_open_a_stream() {
         let base = Instant::now();
         let mut aggregator = ProgressAggregator::new(base);
-        for json in [STAGE_BEGIN, STAGE_TICK, STAGE_END] {
-            assert!(aggregator.observe(&event(json), at(base, 40)).is_none());
+        for fixture in [stage_begin(), stage_tick(), stage_end()] {
+            assert!(aggregator.observe(&fixture, at(base, 40)).is_none());
         }
     }
 
@@ -616,7 +568,7 @@ mod tests {
         let base = Instant::now();
         let mut aggregator = ProgressAggregator::new(base);
         let discovering = aggregator
-            .observe(&event(COMMIT_DISCOVERING), at(base, 320))
+            .observe(&commit_discovering(), at(base, 320))
             .unwrap();
         assert_eq!(data(&discovering)["unit"], "files");
         assert_eq!(data(&discovering)["total"], 3906);
@@ -627,7 +579,7 @@ mod tests {
         );
         // 总量定稿是离散变化：即使距上次不足 250 ms 也立即发出。
         let running = aggregator
-            .observe(&event(COMMIT_RUNNING), at(base, 330))
+            .observe(&commit_running(), at(base, 330))
             .unwrap();
         assert_eq!(data(&running)["unit"], "bytes");
         assert_eq!(data(&running)["current"], 46681);
@@ -635,9 +587,7 @@ mod tests {
         assert_eq!(data(&running)["totalFinal"], true);
         assert_eq!(data(&running)["files"], 11);
         assert_eq!(data(&running)["filesTotal"], 4003);
-        let end = aggregator
-            .observe(&event(COMMIT_END), at(base, 340))
-            .unwrap();
+        let end = aggregator.observe(&commit_end(), at(base, 340)).unwrap();
         assert_eq!(data(&end)["current"], 169144370);
     }
 
@@ -646,14 +596,12 @@ mod tests {
         let base = Instant::now();
         let mut aggregator = ProgressAggregator::new(base);
         let discovering = aggregator
-            .observe(&event(SYNC_DISCOVERING), at(base, 400))
+            .observe(&sync_discovering(), at(base, 400))
             .unwrap();
         assert_eq!(data(&discovering)["current"], 12);
         assert_eq!(data(&discovering)["total"], 500);
         assert_eq!(data(&discovering)["totalFinal"], false);
-        let running = aggregator
-            .observe(&event(SYNC_RUNNING), at(base, 410))
-            .unwrap();
+        let running = aggregator.observe(&sync_running(), at(base, 410)).unwrap();
         assert_eq!(data(&running)["unit"], "bytes");
         assert_eq!(data(&running)["total"], 52580830);
         assert_eq!(data(&running)["filesTotal"], 1001);
@@ -777,9 +725,7 @@ mod tests {
     fn unrelated_events_are_ignored() {
         let base = Instant::now();
         let mut aggregator = ProgressAggregator::new(base);
-        let metadata = event(
-            r#"{"tagName":"metadata","data":{"key":"branch","value":{"data":"e726318bbc3fd75ac8733a7e030cc35b","tagName":"context"}}}"#,
-        );
+        let metadata = metadata_context_event();
         assert!(aggregator.observe(&metadata, at(base, 1000)).is_none());
     }
 
@@ -788,11 +734,11 @@ mod tests {
         let base = Instant::now();
         let mut aggregator = ProgressAggregator::new(base);
         assert!(aggregator
-            .observe(&event(COMMIT_RUNNING), at(base, 400))
+            .observe(&commit_running(), at(base, 400))
             .is_some());
         assert!(
             aggregator
-                .observe(&event(COMMIT_RUNNING), at(base, 900))
+                .observe(&commit_running(), at(base, 900))
                 .is_none(),
             "a stalled operation sends nothing"
         );
@@ -801,33 +747,10 @@ mod tests {
     #[test]
     fn bulk_events_are_not_kept_in_the_result() {
         assert!(!retain_in_result(&stage_file("a")));
-        assert!(!retain_in_result(&event(STAGE_TICK)));
-        assert!(retain_in_result(&event(STAGE_END)));
-        assert!(retain_in_result(&event(COMMIT_END)));
+        assert!(!retain_in_result(&stage_tick()));
+        assert!(retain_in_result(&stage_end()));
+        assert!(retain_in_result(&commit_end()));
         assert!(retain_in_result(&push_end(1, 1)));
-    }
-
-    fn clone_event(
-        tag: &str,
-        complete: u64,
-        count: u64,
-        transferred: u64,
-        total: u64,
-        done: bool,
-    ) -> LoreEvent {
-        let counts = format!(
-            r#"{{"fileComplete":{complete},"fileRetain":0,"fileReplace":0,"fileCount":{count},"fileInflight":0,"fragmentInflight":0,"bytesTransferred":{transferred},"bytesTotal":{total},"discoveryComplete":{done}}}"#
-        );
-        if tag == "repositoryCloneEnd" {
-            event(&format!(
-                r#"{{"tagName":"{tag}","data":{{"branch":"main","revision":"{z}","count":{counts}}}}}"#,
-                z = "0".repeat(64)
-            ))
-        } else {
-            event(&format!(
-                r#"{{"tagName":"{tag}","data":{{"count":{counts}}}}}"#
-            ))
-        }
     }
 
     #[test]
@@ -836,7 +759,7 @@ mod tests {
         let mut aggregator = ProgressAggregator::new(base);
         let discovering = aggregator
             .observe(
-                &clone_event("repositoryCloneProgress", 3, 40, 1_000, 9_000, false),
+                &clone_event(false, 3, 40, 1_000, 9_000, false),
                 at(base, 400),
             )
             .unwrap();
@@ -849,7 +772,7 @@ mod tests {
 
         let running = aggregator
             .observe(
-                &clone_event("repositoryCloneProgress", 10, 40, 4_500, 9_000, true),
+                &clone_event(false, 10, 40, 4_500, 9_000, true),
                 at(base, 410),
             )
             .unwrap();
@@ -867,7 +790,7 @@ mod tests {
         let mut aggregator = ProgressAggregator::new(base);
         let end = aggregator
             .observe(
-                &clone_event("repositoryCloneEnd", 40, 40, 5_700, 9_000, true),
+                &clone_event(true, 40, 40, 5_700, 9_000, true),
                 at(base, 900),
             )
             .unwrap();
@@ -883,7 +806,7 @@ mod tests {
         let base = Instant::now();
         let mut aggregator = ProgressAggregator::new(base);
         let file = stage_file("Content/Hero.png");
-        aggregator.observe(&event(STAGE_BEGIN), at(base, 0));
+        aggregator.observe(&stage_begin(), at(base, 0));
         let mut emitted = Vec::new();
         for index in 0..100_000u64 {
             assert!(!retain_in_result(&file));
@@ -892,7 +815,7 @@ mod tests {
             }
         }
         let end = aggregator
-            .observe(&event(STAGE_END), at(base, 6_000))
+            .observe(&stage_end(), at(base, 6_000))
             .expect("end bypasses the throttle");
 
         assert!(
@@ -910,148 +833,20 @@ mod tests {
         assert_eq!(data(&end)["totalFinal"], true);
     }
 
-    // 以下三段事件录自上游自带的 `loreserver`（本机回环、未开认证）：真实的推送、克隆与同步事件，
-    // 字段、顺序和节奏都是实测的。每条前面的数字是相对操作开始的毫秒。
-    // 推送两个版本：第一轮 3595 个片段，第二轮 269 个（节选，中间的 tick 已略去）。
-    const REAL_TWO_ROUND_PUSH: &[(u64, &str)] = &[
-        (
-            23,
-            r#"{"data":{"branch":"e726318bbc3fd75ac8733a7e030cc35b","branchName":"main","flagAlreadyPushed":false,"flagDefault":true,"flagLayer":false,"flagLink":false,"localHistory":2,"localRevision":"54a5a01ca1fcf7a96c0f74e284160c9834b809e67a805b03389ed5150eeddcba","remote":"lore://127.0.0.1:41337","remoteHistory":0,"remoteRevision":"eb08a7a5754e62db5eacca07ad2a546f75fdac4c11d0873752f061115da79e48","repository":"01a1344baf3377dc9bedfb65bd0911a4"},"tagName":"branchPush"}"#,
-        ),
-        (
-            33,
-            r#"{"data":{"bytesTotal":0,"fragments":3595},"tagName":"branchPushFragmentBegin"}"#,
-        ),
-        (
-            34,
-            r#"{"data":{"bytesTotal":412645,"bytesTransferred":0,"complete":0,"count":3595},"tagName":"branchPushFragmentProgress"}"#,
-        ),
-        (
-            133,
-            r#"{"data":{"bytesTotal":168279676,"bytesTransferred":2124645,"complete":32,"count":3595},"tagName":"branchPushFragmentProgress"}"#,
-        ),
-        (
-            346,
-            r#"{"data":{"bytesTotal":270978532,"bytesTransferred":69080678,"complete":944,"count":3595},"tagName":"branchPushFragmentProgress"}"#,
-        ),
-        (
-            933,
-            r#"{"data":{"bytesTotal":270978532,"bytesTransferred":235066392,"complete":3142,"count":3595},"tagName":"branchPushFragmentProgress"}"#,
-        ),
-        (
-            1032,
-            r#"{"data":{"bytesTotal":270978532,"bytesTransferred":270978532,"complete":3595,"count":3595},"tagName":"branchPushFragmentProgress"}"#,
-        ),
-        (
-            1032,
-            r#"{"data":{"bytesTransferred":270978532,"fragments":3595},"tagName":"branchPushFragmentEnd"}"#,
-        ),
-        (
-            1032,
-            r#"{"data":{"branch":"e726318bbc3fd75ac8733a7e030cc35b","localRevision":"08de68f62342f4b4f009c3737ff203dc6a8ba729fded42440562533b2b05ab80","remoteRevision":"eb08a7a5754e62db5eacca07ad2a546f75fdac4c11d0873752f061115da79e48","repository":"01a1344baf3377dc9bedfb65bd0911a4"},"tagName":"branchPushRevisionPushBegin"}"#,
-        ),
-        (
-            1046,
-            r#"{"data":{"branch":"e726318bbc3fd75ac8733a7e030cc35b","fastForwardMerged":false,"message":"","newRemoteRevision":"08de68f62342f4b4f009c3737ff203dc6a8ba729fded42440562533b2b05ab80","newRemoteRevisionNumber":2,"oldRemoteRevision":"eb08a7a5754e62db5eacca07ad2a546f75fdac4c11d0873752f061115da79e48","repository":"01a1344baf3377dc9bedfb65bd0911a4"},"tagName":"branchPushRevisionPushEnd"}"#,
-        ),
-        (
-            1050,
-            r#"{"data":{"bytesTotal":0,"fragments":269},"tagName":"branchPushFragmentBegin"}"#,
-        ),
-        (
-            1050,
-            r#"{"data":{"bytesTotal":196040,"bytesTransferred":0,"complete":0,"count":269},"tagName":"branchPushFragmentProgress"}"#,
-        ),
-        (
-            1063,
-            r#"{"data":{"bytesTotal":1333221,"bytesTransferred":1333221,"complete":269,"count":269},"tagName":"branchPushFragmentProgress"}"#,
-        ),
-        (
-            1063,
-            r#"{"data":{"bytesTransferred":1333221,"fragments":269},"tagName":"branchPushFragmentEnd"}"#,
-        ),
-    ];
-
-    // 克隆 2752 个文件 / 524 MiB：两个 256 MiB 的大文件先到，其余的随后一起到（节选）。
-    const REAL_CLONE: &[(u64, &str)] = &[
-        (
-            419,
-            r#"{"data":{"branch":"main","path":"/work/clone","repository":"01a1344baf3377dc9bedfb65bd0911a4","revision":"54a5a01ca1fcf7a96c0f74e284160c9834b809e67a805b03389ed5150eeddcba"},"tagName":"repositoryCloneBegin"}"#,
-        ),
-        (
-            420,
-            r#"{"data":{"count":{"bytesTotal":0,"bytesTransferred":0,"discoveryComplete":false,"fileComplete":0,"fileCount":0,"fileInflight":0,"fileReplace":0,"fileRetain":0,"fragmentInflight":1}},"tagName":"repositoryCloneProgress"}"#,
-        ),
-        (
-            521,
-            r#"{"data":{"count":{"bytesTotal":536870912,"bytesTransferred":0,"discoveryComplete":false,"fileComplete":0,"fileCount":2,"fileInflight":2,"fileReplace":0,"fileRetain":0,"fragmentInflight":6163}},"tagName":"repositoryCloneProgress"}"#,
-        ),
-        (
-            720,
-            r#"{"data":{"count":{"bytesTotal":540143769,"bytesTransferred":0,"discoveryComplete":false,"fileComplete":0,"fileCount":702,"fileInflight":476,"fileReplace":0,"fileRetain":0,"fragmentInflight":6472}},"tagName":"repositoryCloneProgress"}"#,
-        ),
-        (
-            869,
-            r#"{"data":{"count":{"bytesTotal":549396907,"bytesTransferred":0,"discoveryComplete":true,"fileComplete":0,"fileCount":2752,"fileInflight":476,"fileReplace":0,"fileRetain":0,"fragmentInflight":6164}},"tagName":"repositoryCloneProgress"}"#,
-        ),
-        (
-            2820,
-            r#"{"data":{"count":{"bytesTotal":549396907,"bytesTransferred":268435456,"discoveryComplete":true,"fileComplete":1,"fileCount":2752,"fileInflight":2153,"fileReplace":0,"fileRetain":0,"fragmentInflight":654}},"tagName":"repositoryCloneProgress"}"#,
-        ),
-        (
-            2920,
-            r#"{"data":{"count":{"bytesTotal":549396907,"bytesTransferred":268435456,"discoveryComplete":true,"fileComplete":1,"fileCount":2752,"fileInflight":2751,"fileReplace":0,"fileRetain":0,"fragmentInflight":163}},"tagName":"repositoryCloneProgress"}"#,
-        ),
-        (
-            3124,
-            r#"{"data":{"count":{"bytesTotal":549396907,"bytesTransferred":268812508,"discoveryComplete":true,"fileComplete":87,"fileCount":2752,"fileInflight":2665,"fileReplace":0,"fileRetain":0,"fragmentInflight":173}},"tagName":"repositoryCloneProgress"}"#,
-        ),
-        (
-            3417,
-            r#"{"data":{"count":{"bytesTotal":549396907,"bytesTransferred":549396907,"discoveryComplete":true,"fileComplete":2752,"fileCount":2752,"fileInflight":0,"fileReplace":0,"fileRetain":0,"fragmentInflight":0}},"tagName":"repositoryCloneProgress"}"#,
-        ),
-        (
-            3449,
-            r#"{"data":{"branch":"main","count":{"bytesTotal":549396907,"bytesTransferred":549396907,"discoveryComplete":true,"fileComplete":2752,"fileCount":2752,"fileInflight":0,"fileReplace":0,"fileRetain":0,"fragmentInflight":0},"revision":"54a5a01ca1fcf7a96c0f74e284160c9834b809e67a805b03389ed5150eeddcba"},"tagName":"repositoryCloneEnd"}"#,
-        ),
-    ];
-
-    // 拉取两个版本（361 个文件 / 130 MB）：最后一个 128 MB 的大文件落盘前，上游重复同一个 tick（节选）。
-    const REAL_SYNC_FROM_REMOTE: &[(u64, &str)] = &[
-        (
-            28,
-            r#"{"data":{"bytesUpdate":0,"bytesUpdateTotal":1192804,"discoveryComplete":false,"fileAutomerge":0,"fileConflict":0,"fileDelete":0,"fileDeleteTotal":0,"fileUpdate":0,"fileUpdateTotal":257},"tagName":"revisionSyncProgress"}"#,
-        ),
-        (
-            33,
-            r#"{"data":{"bytesUpdate":12075,"bytesUpdateTotal":135893640,"discoveryComplete":true,"fileAutomerge":0,"fileConflict":0,"fileDelete":0,"fileDeleteTotal":0,"fileUpdate":2,"fileUpdateTotal":361},"tagName":"revisionSyncProgress"}"#,
-        ),
-        (
-            141,
-            r#"{"data":{"bytesUpdate":1675912,"bytesUpdateTotal":135893640,"discoveryComplete":true,"fileAutomerge":0,"fileConflict":0,"fileDelete":0,"fileDeleteTotal":0,"fileUpdate":360,"fileUpdateTotal":361},"tagName":"revisionSyncProgress"}"#,
-        ),
-        (
-            326,
-            r#"{"data":{"bytesUpdate":1675912,"bytesUpdateTotal":135893640,"discoveryComplete":true,"fileAutomerge":0,"fileConflict":0,"fileDelete":0,"fileDeleteTotal":0,"fileUpdate":360,"fileUpdateTotal":361},"tagName":"revisionSyncProgress"}"#,
-        ),
-        (
-            768,
-            r#"{"data":{"bytesUpdate":135893640,"bytesUpdateTotal":135893640,"discoveryComplete":true,"fileAutomerge":0,"fileConflict":0,"fileDelete":0,"fileDeleteTotal":0,"fileUpdate":361,"fileUpdateTotal":361},"tagName":"revisionSyncProgress"}"#,
-        ),
-    ];
-
-    fn replay(events: &[(u64, &str)]) -> Vec<Value> {
+    // 实测序列见 test_events 的 real_* 构造：录自上游自带的 `loreserver`
+    // （本机回环、未开认证），字段、顺序和节奏都是实测的。
+    fn replay(events: Vec<(u64, LoreEvent)>) -> Vec<Value> {
         let base = Instant::now();
         let mut aggregator = ProgressAggregator::new(base);
         events
             .iter()
-            .filter_map(|(ms, json)| aggregator.observe(&event(json), at(base, *ms)))
+            .filter_map(|(ms, fixture)| aggregator.observe(fixture, at(base, *ms)))
             .collect()
     }
 
     #[test]
     fn real_two_round_push_reports_each_round_and_cumulative_bytes() {
-        let snapshots = replay(REAL_TWO_ROUND_PUSH);
+        let snapshots = replay(real_two_round_push());
         let summary = snapshots
             .iter()
             .map(|snapshot| {
@@ -1089,7 +884,7 @@ mod tests {
 
     #[test]
     fn real_clone_switches_from_files_to_bytes_and_ends_on_the_last_tick() {
-        let snapshots = replay(REAL_CLONE);
+        let snapshots = replay(real_clone());
         let summary = snapshots
             .iter()
             .map(|snapshot| {
@@ -1126,7 +921,7 @@ mod tests {
     #[test]
     fn real_sync_from_a_remote_opens_late_and_ends_at_the_full_size() {
         // 前几个 tick 都在 300 ms 之前到达：只累积状态，不开流；开流之后每个快照都带着定稿的总量。
-        let snapshots = replay(REAL_SYNC_FROM_REMOTE);
+        let snapshots = replay(real_sync_from_remote());
         let summary = snapshots
             .iter()
             .map(|snapshot| {
@@ -1161,10 +956,10 @@ mod tests {
         let mut aggregator = ProgressAggregator::new(base);
         let mut emitted = Vec::new();
         for index in 0..10u64 {
-            emitted.extend(aggregator.observe(&event(COMMIT_RUNNING), at(base, 400 + 100 * index)));
+            emitted.extend(aggregator.observe(&commit_running(), at(base, 400 + 100 * index)));
         }
         let end = aggregator
-            .observe(&event(COMMIT_END), at(base, 1_400))
+            .observe(&commit_end(), at(base, 1_400))
             .expect("the end is a new snapshot");
         assert_eq!(emitted.len(), 1);
         assert_eq!(data(&end)["current"], data(&end)["total"]);
@@ -1221,13 +1016,9 @@ mod tests {
     fn every_snapshot_matches_the_shape_the_frontend_parses() {
         let base = Instant::now();
         let sequences: [Vec<LoreEvent>; 5] = [
-            vec![event(STAGE_BEGIN), event(STAGE_TICK), event(STAGE_END)],
-            vec![
-                event(COMMIT_DISCOVERING),
-                event(COMMIT_RUNNING),
-                event(COMMIT_END),
-            ],
-            vec![event(SYNC_DISCOVERING), event(SYNC_RUNNING)],
+            vec![stage_begin(), stage_tick(), stage_end()],
+            vec![commit_discovering(), commit_running(), commit_end()],
+            vec![sync_discovering(), sync_running()],
             vec![
                 push_start(2, false),
                 push_begin(10),
@@ -1235,9 +1026,9 @@ mod tests {
                 push_end(10, 2_000),
             ],
             vec![
-                clone_event("repositoryCloneProgress", 3, 40, 1_000, 9_000, false),
-                clone_event("repositoryCloneProgress", 10, 40, 4_500, 9_000, true),
-                clone_event("repositoryCloneEnd", 40, 40, 9_000, 9_000, true),
+                clone_event(false, 3, 40, 1_000, 9_000, false),
+                clone_event(false, 10, 40, 4_500, 9_000, true),
+                clone_event(true, 40, 40, 9_000, 9_000, true),
             ],
         ];
         let mut checked = 0;

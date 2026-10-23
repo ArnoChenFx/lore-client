@@ -21,20 +21,20 @@
     "format:check": "oxfmt --config .oxfmtrc.json --check src .zed package.json oxlint.config.ts .oxfmtrc.json"
   },
   "dependencies": {
-    "@pierre/diffs": "^1.5.2",
+    "@pierre/diffs": "^1.6.1",
     "@pierre/theme": "2.0.0",
-    "@tauri-apps/api": "^2.12.3",
-    "@tauri-apps/plugin-dialog": "^2.8.2",
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-dialog": "^2.8.3",
     "@tauri-apps/plugin-log": "^2.10.1",
     "@tauri-apps/plugin-process": "^2.4.0",
-    "@tauri-apps/plugin-updater": "^2.13.3",
-    "i18next": "^26.4.4",
-    "lucide-react": "^1.57.0",
+    "@tauri-apps/plugin-updater": "^2.14.0",
+    "i18next": "^26.5.5",
+    "lucide-react": "^1.61.0",
     "nanoid": "^6.0.2",
     "pdfjs-dist": "^6.4.299",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
-    "react-i18next": "^17.0.16",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-i18next": "^17.1.2",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "three": "^0.185.1"
@@ -43,7 +43,7 @@
     "@babel/core": "^8.0.7",
     "@oxlint/plugins": "1.78.0",
     "@rolldown/plugin-babel": "^0.2.4",
-    "@tauri-apps/cli": "^2.12.2",
+    "@tauri-apps/cli": "^2.12.4",
     "@types/bun": "^1.4.3",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
@@ -52,10 +52,10 @@
     "@vitejs/plugin-react": "^6.1.2",
     "babel-plugin-react-compiler": "^1.0.0",
     "oxfmt": "^0.65.0",
-    "oxlint": "^1.88.0",
+    "oxlint": "^1.89.0",
     "oxlint-tsgolint": "^7.0.2004",
     "typescript": "^7.0.2",
-    "vite": "^8.3.4"
+    "vite": "^8.3.5"
   },
   "overrides": {
     "tinypool": "2.1.2"

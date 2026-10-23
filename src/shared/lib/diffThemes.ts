@@ -16,9 +16,26 @@
  * emphasis 高亮同步降噪，不再刺眼。
  */
 import { registerCustomTheme } from '@pierre/diffs'
-import type { ThemeRegistration } from '@pierre/diffs'
 import pierreDark from '@pierre/theme/pierre-dark'
 import pierreLight from '@pierre/theme/pierre-light'
+
+/**
+ * 本文件实际读写的 TextMate 主题子集。
+ *
+ * @pierre/diffs 1.6 起不再从包根转发 shiki 的 ThemeRegistration 类型；主题在
+ * 运行时仍是同一份 JSON 形状（registerCustomTheme 的 textmate loader 仍按该
+ * 形状接收），这里只声明克隆与改色用到的字段，避免为单个类型引入 shiki
+ * 直接依赖。
+ */
+interface DiffThemeRegistration {
+  name: string
+  colors?: Record<string, string>
+  tokenColors?: Array<{
+    name?: string
+    scope?: string | string[]
+    settings: { foreground?: string; background?: string; fontStyle?: string }
+  }>
+}
 
 /** TextDiffView 传给 Diffs 库的暗色自定义主题名。 */
 export const LORE_DIFF_DARK_THEME = 'lore-diff-dark'
@@ -80,8 +97,8 @@ export function createLoreDiffTheme(
   base: unknown,
   themeName: string,
   adjustments: DiffThemeAdjustments
-): ThemeRegistration {
-  const theme = JSON.parse(JSON.stringify(base)) as ThemeRegistration
+): DiffThemeRegistration {
+  const theme = JSON.parse(JSON.stringify(base)) as DiffThemeRegistration
   const colors = theme.colors ?? {}
   colors['editor.foreground'] = adjustments.foreground
   colors['foreground'] = adjustments.foreground

@@ -254,6 +254,10 @@ pub async fn lore_branch_merge(
                     ignore_links: 0,
                     // 与 Cherry-pick 一致：不继承源 Revision 的自定义元数据。
                     inherit_metadata: to_lore_array(Vec::<String>::new()),
+                    // Lore 0.11 新增的 per-link 合并消息平行数组；桌面端合并没有
+                    // 为单个 Link 指定消息，空数组保持此前的自动提交行为。
+                    link_paths: to_lore_array(Vec::<String>::new()),
+                    link_messages: to_lore_array(Vec::<String>::new()),
                 },
                 callback,
             ))
