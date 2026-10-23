@@ -30,7 +30,7 @@ jobs:
         run: bun run release:prepare --check "${{ github.ref_name }}"
 
       - name: Run frontend tests
-        run: bun test
+        run: bun run test
 
       - name: Build frontend
         run: bun run build
