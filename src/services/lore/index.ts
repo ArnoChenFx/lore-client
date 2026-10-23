@@ -10,9 +10,11 @@ export {
   logoutAuthIdentity,
   refreshRepositoryAuthenticationContexts,
   setRepositoryAuthAccountBinding,
+  subscribeAuthUrl,
+  subscribeAuthUrlDismiss,
   subscribeRemoteAuthenticationRequired
 } from './auth'
-export type { RemoteAuthenticationRequiredEvent } from './auth'
+export type { LoreAuthUrlDismissEvent, LoreAuthUrlEvent, RemoteAuthenticationRequiredEvent } from './auth'
 export { RepositoryAuthorNameResolver } from './authors'
 export type { AuthorNameResolverDependencies } from './authors'
 export {

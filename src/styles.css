@@ -7909,6 +7909,91 @@ body.is-resizing-panes {
   color: var(--danger) !important;
 }
 
+/*
+ * 登录确认代码要盖在重新认证对话框之上：用户正是从那里发起浏览器登录，
+ * 代码迟到一层就等于没展示。代码本身是这页唯一的主角，用等宽大字号呈现，
+ * 与上下文菜单里的小号 mono 字段区分。
+ */
+.auth-url-backdrop {
+  z-index: 150;
+}
+
+.auth-url-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.auth-url-dialog__body > p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.auth-url-dialog__code-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-subtle);
+}
+
+.auth-url-dialog__code {
+  font-family: var(--mono);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.auth-url-dialog__body dl {
+  display: grid;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-subtle);
+}
+
+.auth-url-dialog__body dl > div {
+  display: grid;
+  min-height: 38px;
+  grid-template-columns: 118px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+}
+
+.auth-url-dialog__body dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.auth-url-dialog__body dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.auth-url-dialog__waiting-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auth-url-dialog__waiting-hint svg {
+  flex: none;
+  color: var(--muted);
+}
+
 .task-dialog__footer {
   display: flex;
   min-height: 48px;
