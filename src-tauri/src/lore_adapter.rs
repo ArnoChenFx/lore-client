@@ -113,6 +113,8 @@ mod runtime;
 mod runtime_e2e_tests;
 mod tags;
 #[cfg(test)]
+mod test_events;
+#[cfg(test)]
 mod tests;
 mod view;
 pub(crate) mod workspace;

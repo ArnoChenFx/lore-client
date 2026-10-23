@@ -284,10 +284,9 @@ fn notification_queue_preserves_each_request_owner_across_awaits() {
     assert!(current_operation_context().is_err());
 }
 
-// Captured from the real local staging protocol, including its final aggregate.
-const STAGE_BEGIN: &str = r#"{"data":{"pathCount":1},"tagName":"fileStageBegin"}"#;
-const STAGE_TICK: &str = r#"{"data":{"count":{"directoryAddCount":1,"directoryDeleteCount":0,"directoryModifyCount":0,"directoryMoveCount":0,"fileAddCount":3,"fileDeleteCount":0,"fileModifyCount":0,"fileMoveCount":0,"totalCount":4}},"tagName":"fileStageProgress"}"#;
-const STAGE_END: &str = r#"{"data":{"count":{"directoryAddCount":41,"directoryDeleteCount":0,"directoryModifyCount":0,"directoryMoveCount":0,"fileAddCount":4003,"fileDeleteCount":0,"fileModifyCount":0,"fileMoveCount":0,"totalCount":4044}},"tagName":"fileStageEnd"}"#;
+// 暂存事件夹具见 test_events：数值录自真实本地暂存协议（含最终聚合计数），
+// Lore 0.11 起事件类型不再实现 Deserialize，改为直接构造类型化事件。
+use crate::lore_adapter::test_events::{stage_begin, stage_end, stage_tick};
 
 type CallbackRendezvous = (SyncSender<()>, Receiver<()>);
 
@@ -301,13 +300,13 @@ fn run_two_child_operations(
                 std::thread::spawn(move || {
                     let context_missing = current_operation_context().is_err();
                     let callback = callback.expect("Lore must receive a callback");
-                    callback(&serde_json::from_str::<LoreEvent>(STAGE_BEGIN).unwrap());
+                    callback(&stage_begin());
                     // Both root tasks must have reached this child before progress advances.
                     ready.send(()).unwrap();
                     peer_ready.recv_timeout(Duration::from_secs(10)).unwrap();
                     std::thread::sleep(Duration::from_millis(320));
-                    callback(&serde_json::from_str::<LoreEvent>(STAGE_TICK).unwrap());
-                    callback(&serde_json::from_str::<LoreEvent>(STAGE_END).unwrap());
+                    callback(&stage_tick());
+                    callback(&stage_end());
                     assert!(
                         context_missing,
                         "Callback threads must not inherit a TLS owner"
@@ -417,7 +416,7 @@ fn retained_callback_cannot_open_a_stream_after_its_operation_panics() {
     let retained: Mutex<LoreEventCallback> = Mutex::new(None);
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         run_operation("file.stage", |callback| {
-            callback.as_ref().unwrap()(&serde_json::from_str::<LoreEvent>(STAGE_BEGIN).unwrap());
+            callback.as_ref().unwrap()(&stage_begin());
             *retained.lock().unwrap() = callback;
             panic!("expected Lore operation unwind");
         })
@@ -429,7 +428,7 @@ fn retained_callback_cannot_open_a_stream_after_its_operation_panics() {
         assert!(current_operation_context().is_err());
         std::thread::sleep(Duration::from_millis(320));
         let callback = retained.into_inner().unwrap().unwrap();
-        callback(&serde_json::from_str::<LoreEvent>(STAGE_END).unwrap());
+        callback(&stage_end());
     })
     .join()
     .unwrap();

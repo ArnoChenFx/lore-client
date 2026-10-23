@@ -313,6 +313,10 @@ pub(super) fn is_zero_hash(value: &str) -> bool {
 #[cfg(test)]
 mod operation_stream_lifecycle_tests {
     use super::*;
+    // 夹具构造见 test_events（Lore 0.11 起事件类型不再实现 Deserialize）。
+    use crate::lore_adapter::test_events::{
+        complete_event_with_message, stage_begin, stage_end, stage_tick,
+    };
 
     #[test]
     fn terminal_stream_rejects_late_progress_and_duplicate_completion() {
@@ -350,7 +354,7 @@ mod operation_stream_lifecycle_tests {
         );
         assert!(stream.completion_event(0, 10).is_none());
         assert!(stream
-            .observe(&event(STAGE_END), base + Duration::from_secs(1))
+            .observe(&stage_end(), base + Duration::from_secs(1))
             .is_empty());
     }
 
@@ -397,18 +401,9 @@ mod operation_stream_lifecycle_tests {
         assert_eq!(completed.duration_ms, Some(42));
     }
 
-    fn event(json: &str) -> LoreEvent {
-        serde_json::from_str(json).unwrap_or_else(|error| panic!("bad fixture {json}: {error}"))
-    }
-
     fn phases(events: &[LoreOperationStreamEvent]) -> Vec<&'static str> {
         events.iter().map(|event| event.phase).collect()
     }
-
-    // 来自真实本地仓库暂存 4003 个文件时的事件。
-    const STAGE_BEGIN: &str = r#"{"data":{"pathCount":1},"tagName":"fileStageBegin"}"#;
-    const STAGE_TICK: &str = r#"{"data":{"count":{"directoryAddCount":1,"directoryDeleteCount":0,"directoryModifyCount":0,"directoryMoveCount":0,"fileAddCount":3,"fileDeleteCount":0,"fileModifyCount":0,"fileMoveCount":0,"totalCount":4}},"tagName":"fileStageProgress"}"#;
-    const STAGE_END: &str = r#"{"data":{"count":{"directoryAddCount":41,"directoryDeleteCount":0,"directoryModifyCount":0,"directoryMoveCount":0,"fileAddCount":4003,"fileDeleteCount":0,"fileModifyCount":0,"fileMoveCount":0,"totalCount":4044}},"tagName":"fileStageEnd"}"#;
 
     #[test]
     fn short_operations_never_open_the_global_stream() {
@@ -420,9 +415,9 @@ mod operation_stream_lifecycle_tests {
             base,
         );
 
-        for json in [STAGE_BEGIN, STAGE_TICK, STAGE_END] {
+        for fixture in [stage_begin(), stage_tick(), stage_end()] {
             assert!(stream
-                .observe(&event(json), base + Duration::from_millis(40))
+                .observe(&fixture, base + Duration::from_millis(40))
                 .is_empty());
         }
         assert!(stream.completion_event(0, 40).is_none());
@@ -439,9 +434,9 @@ mod operation_stream_lifecycle_tests {
         );
 
         assert!(stream
-            .observe(&event(STAGE_BEGIN), base + Duration::from_millis(1))
+            .observe(&stage_begin(), base + Duration::from_millis(1))
             .is_empty());
-        let opened = stream.observe(&event(STAGE_TICK), base + Duration::from_millis(320));
+        let opened = stream.observe(&stage_tick(), base + Duration::from_millis(320));
         assert_eq!(phases(&opened), ["queued", "running", "streaming"]);
         assert_eq!(
             opened[2].event,
@@ -452,7 +447,7 @@ mod operation_stream_lifecycle_tests {
         );
 
         // 结束事件是离散变化，不受 250 ms 节流限制；此时流已打开，只补一条 streaming。
-        let finished = stream.observe(&event(STAGE_END), base + Duration::from_millis(330));
+        let finished = stream.observe(&stage_end(), base + Duration::from_millis(330));
         assert_eq!(phases(&finished), ["streaming"]);
         let data = &finished[0].event.as_ref().expect("snapshot")["data"];
         assert_eq!(data["current"], 4003);
@@ -477,9 +472,7 @@ mod operation_stream_lifecycle_tests {
             base,
         );
         let payload = "x".repeat(1024 * 1024);
-        let large = event(&format!(
-            r#"{{"tagName":"complete","data":{{"error":{{"errorCode":0,"message":"{payload}","traceLocations":[]}},"status":0}}}}"#
-        ));
+        let large = complete_event_with_message(payload);
 
         assert!(stream
             .observe(&large, base + Duration::from_secs(5))
