@@ -2,6 +2,7 @@ import type { ComponentProps } from 'react'
 
 import { OperationCenter } from '../features/operations'
 import {
+  AuthUrlDialog,
   CloneDialog,
   InitializeRepositoryDialog,
   RemoteAuthenticationDialog,
@@ -33,6 +34,7 @@ interface AppGlobalOverlaysProps {
   about: ComponentProps<typeof AboutDialog> | null
   update: ComponentProps<typeof UpdateDialog> | null
   remoteAuthentication: ComponentProps<typeof RemoteAuthenticationDialog> | null
+  authUrl: ComponentProps<typeof AuthUrlDialog> | null
 }
 
 /**
@@ -51,7 +53,8 @@ export function AppGlobalOverlays({
   operations,
   about,
   update,
-  remoteAuthentication
+  remoteAuthentication,
+  authUrl
 }: AppGlobalOverlaysProps) {
   return (
     <>
@@ -74,6 +77,7 @@ export function AppGlobalOverlays({
         <LazyViewBoundary load={loadUpdateDialog} viewProps={update} onDismiss={update.onClose} variant="dialog" />
       )}
       {remoteAuthentication && <RemoteAuthenticationDialog {...remoteAuthentication} />}
+      {authUrl && <AuthUrlDialog {...authUrl} />}
     </>
   )
 }

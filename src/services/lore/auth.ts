@@ -15,6 +15,23 @@ export interface RemoteAuthenticationRequiredEvent {
   operation: string
 }
 
+/** Rust 侧实时转发的交互登录确认信息（Lore `AuthUrl` 事件的负载）。 */
+export interface LoreAuthUrlEvent {
+  /** 触发登录的 Lore 操作 ID，与同操作的 dismiss 信号对应。 */
+  operationId: string
+  /** 触发登录的 Lore 操作名，仅用于诊断展示。 */
+  operation: string
+  /** 登录页面地址；浏览器模式下 Lore 已自行打开，这里仅供用户核对。 */
+  url: string
+  /** 用户要在登录页核对或输入的确认代码；本次登录不要求代码时为空字符串。 */
+  userCode: string
+}
+
+/** 某次登录操作结束、对应 AuthUrl 提示应当收起的信号负载。 */
+export interface LoreAuthUrlDismissEvent {
+  operationId: string
+}
+
 /**
  * 订阅“远端需要重新认证”全局信号。
  *
@@ -30,6 +47,24 @@ export async function subscribeRemoteAuthenticationRequired(
   return listen<RemoteAuthenticationRequiredEvent>('lore://remote-authentication-required', (event) =>
     listener(event.payload)
   )
+}
+
+/**
+ * 订阅交互登录的确认代码提示。
+ *
+ * 操作结果里的 AuthUrl 事件要等登录结束才返回，而确认代码必须在登录进行中展示，
+ * 因此由 Rust 在事件回调处实时转发；登录操作没有进度快照、全局操作流不会开流，
+ * 结束信号只能走配对的 dismiss 通道，不能依赖操作流的 terminal 事件。
+ */
+export async function subscribeAuthUrl(listener: (event: LoreAuthUrlEvent) => void): Promise<UnlistenFn> {
+  if (!isTauri()) return () => undefined
+  return listen<LoreAuthUrlEvent>('lore://auth-url', (event) => listener(event.payload))
+}
+
+/** 订阅与 {@link subscribeAuthUrl} 配对的收起信号（按 operationId 对应）。 */
+export async function subscribeAuthUrlDismiss(listener: (event: LoreAuthUrlDismissEvent) => void): Promise<UnlistenFn> {
+  if (!isTauri()) return () => undefined
+  return listen<LoreAuthUrlDismissEvent>('lore://auth-url-dismiss', (event) => listener(event.payload))
 }
 
 /**

@@ -47,6 +47,7 @@ import {
 import {
   RepositoryWelcome,
   conflictOperationLabel,
+  useAuthUrlPrompt,
   runRepositoryMutationLifecycle,
   useRepositoryEntryController,
   useRepositoryRefresh,
@@ -224,6 +225,9 @@ function App() {
     applySnapshot,
     onEnterOfflineMode: enterOfflineMode
   })
+  // 浏览器登录的确认代码提示与发起入口无关：任何入口触发的交互登录都经
+  // 同一广播到达这里，登录结束自动收起（见 useAuthUrlPrompt）。
+  const authUrlPrompt = useAuthUrlPrompt()
   /*
    * 会话仍保存 Lore 返回的原始认证状态；所有界面统一消费离线投影，确保用户跳过后
    * 标题栏、工具栏、状态栏与仓库工具不会显示互相冲突的连接状态。
@@ -825,6 +829,7 @@ function App() {
               }
             : null
         }
+        authUrl={authUrlPrompt.prompt ? { prompt: authUrlPrompt.prompt, onDismiss: authUrlPrompt.dismiss } : null}
       />
       <AppRepositoryOverlays
         branchCreate={
