@@ -286,7 +286,7 @@ fn notification_queue_preserves_each_request_owner_across_awaits() {
 
 // 暂存事件夹具见 test_events：数值录自真实本地暂存协议（含最终聚合计数），
 // Lore 0.11 起事件类型不再实现 Deserialize，改为直接构造类型化事件。
-use crate::lore_adapter::test_events::{stage_begin, stage_end, stage_tick};
+use crate::lore_adapter::test_events::{auth_url_event, stage_begin, stage_end, stage_tick};
 
 type CallbackRendezvous = (SyncSender<()>, Receiver<()>);
 
@@ -437,4 +437,38 @@ fn retained_callback_cannot_open_a_stream_after_its_operation_panics() {
         .unwrap()
         .iter()
         .all(|event| event["requestId"] != context.request_id));
+}
+
+#[test]
+fn auth_url_events_are_broadcast_live_and_dismissed_when_the_operation_ends() {
+    let context = test_operation_context();
+    let _ = take_captured_auth_url();
+    let _ = take_captured_auth_url_dismiss();
+    let result = tauri::async_runtime::block_on(run_lore_task(context, move || {
+        run_operation("auth.login-interactive", move |callback| {
+            let callback = callback.expect("Lore must receive a callback");
+            callback(&auth_url_event("https://auth.example/device", "WDJB-8KQT"));
+            0
+        })
+    }))
+    .unwrap();
+    assert_eq!(result.status, 0);
+
+    // 实时广播携带登录 URL 与 user code，前端据此在登录完成前展示确认代码。
+    let shown = take_captured_auth_url();
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0]["operation"], "auth.login-interactive");
+    assert_eq!(shown[0]["url"], "https://auth.example/device");
+    assert_eq!(shown[0]["userCode"], "WDJB-8KQT");
+
+    // 操作结束恰好发出一次 dismiss，且与广播是同一次操作。
+    let dismissed = take_captured_auth_url_dismiss();
+    assert_eq!(dismissed.len(), 1);
+    assert_eq!(dismissed[0]["operationId"], shown[0]["operationId"]);
+
+    // AuthUrl 仍保留在操作结果中，供调用方在登录结束后读取。
+    assert!(result
+        .events
+        .iter()
+        .any(|event| event["tagName"] == "authUrl" && event["data"]["userCode"] == "WDJB-8KQT"));
 }

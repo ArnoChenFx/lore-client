@@ -322,6 +322,103 @@ fn emit_remote_authentication_required(operation: &'static str) {
     }
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LoreAuthUrlEvent {
+    operation_id: String,
+    operation: &'static str,
+    url: String,
+    user_code: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LoreAuthUrlDismissEvent {
+    operation_id: String,
+}
+
+/**
+ * 向 WebView 实时广播交互登录的 AuthUrl 事件。
+ *
+ * Lore 0.11 的 OIDC 设备授权流经 `LoreEvent::AuthUrl` 给出登录 URL 与 user code。
+ * 浏览器模式下 lore 已自行打开登录页，但页面可能要求用户核对或输入这组代码
+ * （RFC 8628 §3.3.1），只有客户端能把它展示出来；操作结果里的事件要等登录结束
+ * 才返回，太晚了，因此由 `run_operation` 的事件回调这个唯一实时汇聚点转发。
+ * user code 不是凭据——它就是设计给用户看的确认码；URL 可能内嵌同一组代码，
+ * 上游也只禁止把它写日志，展示给用户本人正是它的用途。
+ */
+fn emit_auth_url(
+    operation_id: &str,
+    operation: &'static str,
+    data: &lore_revision::auth::LoreAuthUrlEventData,
+) {
+    let event = LoreAuthUrlEvent {
+        operation_id: operation_id.to_owned(),
+        operation,
+        url: data.url.to_string(),
+        user_code: data.user_code.to_string(),
+    };
+    capture_auth_url_for_tests(&event);
+    if let Some(app_handle) = EVENT_APP_HANDLE.get() {
+        let _ = app_handle.emit("lore://auth-url", event);
+    }
+}
+
+/**
+ * 通知 WebView 结束某次登录的 AuthUrl 提示。
+ *
+ * 登录操作只有 AuthUrl / AuthPending 事件，进度聚合器不会给出快照，全局操作流
+ * 因此从不开流、也没有 terminal 事件可供前端判断登录结束；dismiss 是提示框
+ * 唯一可靠的自动关闭信号，由 `run_operation` 在发出过 AuthUrl 的操作返回后发送。
+ */
+fn emit_auth_url_dismiss(operation_id: &str) {
+    let event = LoreAuthUrlDismissEvent {
+        operation_id: operation_id.to_owned(),
+    };
+    capture_auth_url_dismiss_for_tests(&event);
+    if let Some(app_handle) = EVENT_APP_HANDLE.get() {
+        let _ = app_handle.emit("lore://auth-url-dismiss", event);
+    }
+}
+
+#[cfg(test)]
+static CAPTURED_AUTH_URL: Mutex<Vec<Value>> = Mutex::new(Vec::new());
+
+#[cfg(test)]
+fn capture_auth_url_for_tests(event: &LoreAuthUrlEvent) {
+    if let Ok(mut captured) = CAPTURED_AUTH_URL.lock() {
+        captured.push(serde_json::to_value(event).unwrap_or(Value::Null));
+    }
+}
+
+#[cfg(not(test))]
+fn capture_auth_url_for_tests(_event: &LoreAuthUrlEvent) {}
+
+#[cfg(test)]
+static CAPTURED_AUTH_URL_DISMISS: Mutex<Vec<Value>> = Mutex::new(Vec::new());
+
+#[cfg(test)]
+fn capture_auth_url_dismiss_for_tests(event: &LoreAuthUrlDismissEvent) {
+    if let Ok(mut captured) = CAPTURED_AUTH_URL_DISMISS.lock() {
+        captured.push(serde_json::to_value(event).unwrap_or(Value::Null));
+    }
+}
+
+#[cfg(not(test))]
+fn capture_auth_url_dismiss_for_tests(_event: &LoreAuthUrlDismissEvent) {}
+
+/// Drains the auth-url broadcasts that `emit_auth_url` produced, for tests.
+#[cfg(test)]
+pub(crate) fn take_captured_auth_url() -> Vec<Value> {
+    std::mem::take(&mut *CAPTURED_AUTH_URL.lock().expect("capture lock"))
+}
+
+/// Drains the auth-url dismiss broadcasts that `emit_auth_url_dismiss` produced, for tests.
+#[cfg(test)]
+pub(crate) fn take_captured_auth_url_dismiss() -> Vec<Value> {
+    std::mem::take(&mut *CAPTURED_AUTH_URL_DISMISS.lock().expect("capture lock"))
+}
+
 fn emit_repository_notification(repository_path: &str, event: Value) {
     if let Some(app_handle) = EVENT_APP_HANDLE.get() {
         let _ = app_handle.emit(

@@ -1,4 +1,6 @@
 /** 仓库会话领域的公开 UI、状态控制器与写操作协调入口。 */
+export * from './authUrlPrompt'
+export * from './components/AuthUrlDialog'
 export * from './components/CloneDialog'
 export * from './components/InitializeRepositoryDialog'
 export * from './components/RepositoryTabs'

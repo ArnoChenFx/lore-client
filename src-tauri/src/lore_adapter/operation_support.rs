@@ -3,6 +3,8 @@
 //! 本模块由原 `lore_adapter.rs` 按职责机械迁移而来。共享 DTO、调度与错误语义仍由
 //! 父模块统一管理，避免模块化重构改变现有 IPC 契约或 Lore 调用行为。
 
+use std::sync::atomic::AtomicBool;
+
 use super::progress::{retain_in_result, ProgressAggregator};
 use super::*;
 
@@ -172,7 +174,16 @@ pub(super) fn run_operation(
     )));
     let callback_progress_stream = Arc::clone(&progress_stream);
     let _stream_scope = OperationStreamScope(Arc::clone(&progress_stream));
+    // 交互登录的 AuthUrl 事件要实时展示给用户（见 emit_auth_url 的说明），并在
+    // 操作结束时发 dismiss 收尾；这里记录本次操作是否发出过 AuthUrl。
+    let auth_url_operation_id = operation_id.clone();
+    let auth_url_seen = Arc::new(AtomicBool::new(false));
+    let callback_auth_url_seen = Arc::clone(&auth_url_seen);
     let callback: LoreEventCallback = Some(Box::new(move |event: &LoreEvent| {
+        if let LoreEvent::AuthUrl(data) = event {
+            callback_auth_url_seen.store(true, Ordering::Relaxed);
+            emit_auth_url(&auth_url_operation_id, operation, data);
+        }
         if let Ok(mut stream) = callback_progress_stream.lock() {
             if stream.lifecycle.completed {
                 return;
@@ -215,6 +226,11 @@ pub(super) fn run_operation(
      */
     if status != 0 && operation_failure_indicates_unauthenticated(status, &events) {
         emit_remote_authentication_required(operation);
+    }
+    // 登录提示的自动关闭信号：无论登录成功、失败还是被上游终止，只要本次操作
+    // 展示过 AuthUrl 提示，结束时都通知前端收起（见 emit_auth_url_dismiss）。
+    if auth_url_seen.load(Ordering::Relaxed) {
+        emit_auth_url_dismiss(&operation_id);
     }
     let terminal_event = progress_stream
         .lock()

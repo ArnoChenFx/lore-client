@@ -449,3 +449,12 @@ pub fn complete_event_with_message(message: String) -> LoreEvent {
         },
     })
 }
+
+/// 交互登录的 AuthUrl 事件：Lore 0.11 的 OIDC 设备授权流在浏览器模式下
+/// 也会发出，并同时携带用户要在登录页核对/输入的 user code。
+pub fn auth_url_event(url: &str, user_code: &str) -> LoreEvent {
+    LoreEvent::AuthUrl(lore_revision::auth::LoreAuthUrlEventData {
+        url: url.into(),
+        user_code: user_code.into(),
+    })
+}
