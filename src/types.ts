@@ -1152,7 +1152,6 @@ export interface ClientPreferences {
   workspaceLayout: WorkspaceLayout
   inspectorTab: InspectorTab
   localChangesView: 'flat' | 'tree'
-  /** 本地更改中已暂存分区的视图；未暂存分区使用 `localChangesView`。 */
   localChangesStagedView: 'flat' | 'tree'
   localChangesStageSplit: number
   /** 本地更改工作区最右侧 Diff 面板是否显示。 */

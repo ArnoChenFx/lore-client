@@ -192,7 +192,6 @@ pub struct ClientPreferences {
     pub workspace_layout: WorkspaceLayoutPreference,
     pub inspector_tab: String,
     pub local_changes_view: String,
-    /// 本地更改中已暂存分区的视图；未暂存分区使用 `local_changes_view`。
     pub local_changes_staged_view: String,
     pub local_changes_stage_split: f64,
     /// 本地更改工作区最右侧 Diff 面板是否显示。

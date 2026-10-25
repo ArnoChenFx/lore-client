@@ -148,7 +148,6 @@ interface ChangeViewSwitchProps {
   onChange: (mode: ChangeViewMode) => void
 }
 
-/** 暂存分区工具栏中的树形与平铺视图切换。 */
 function ChangeViewSwitch({ viewMode, onChange }: ChangeViewSwitchProps) {
   return (
     <div className="change-view-switch" role="group" aria-label={t('changeListView')}>
