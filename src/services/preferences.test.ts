@@ -28,6 +28,7 @@ describe('client preferences stored on disk', () => {
       },
       inspectorTab: 'overview',
       localChangesView: 'tree',
+      localChangesCommitMessageHeight: 48,
       localChangesDiffVisible: true,
       revisionChangesView: 'tree',
       revisionChangesDiffVisible: true,

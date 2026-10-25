@@ -40,6 +40,7 @@ export const DEFAULT_CLIENT_PREFERENCES: ClientPreferences = {
   inspectorTab: 'overview',
   localChangesView: 'tree',
   localChangesStageSplit: 0.58,
+  localChangesCommitMessageHeight: 48,
   localChangesDiffVisible: true,
   revisionChangesView: 'tree',
   revisionChangesBrowserWidth: 220,

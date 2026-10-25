@@ -1153,6 +1153,7 @@ export interface ClientPreferences {
   inspectorTab: InspectorTab
   localChangesView: 'flat' | 'tree'
   localChangesStageSplit: number
+  localChangesCommitMessageHeight: number
   /** 本地更改工作区最右侧 Diff 面板是否显示。 */
   localChangesDiffVisible: boolean
   revisionChangesView: 'flat' | 'tree'
