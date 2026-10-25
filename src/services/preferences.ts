@@ -39,6 +39,7 @@ export const DEFAULT_CLIENT_PREFERENCES: ClientPreferences = {
   },
   inspectorTab: 'overview',
   localChangesView: 'tree',
+  localChangesStagedView: 'tree',
   localChangesStageSplit: 0.58,
   localChangesDiffVisible: true,
   revisionChangesView: 'tree',

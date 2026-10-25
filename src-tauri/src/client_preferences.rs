@@ -192,6 +192,8 @@ pub struct ClientPreferences {
     pub workspace_layout: WorkspaceLayoutPreference,
     pub inspector_tab: String,
     pub local_changes_view: String,
+    /// 本地更改中已暂存分区的视图；未暂存分区使用 `local_changes_view`。
+    pub local_changes_staged_view: String,
     pub local_changes_stage_split: f64,
     /// 本地更改工作区最右侧 Diff 面板是否显示。
     pub local_changes_diff_visible: bool,
@@ -227,6 +229,7 @@ impl Default for ClientPreferences {
             workspace_layout: WorkspaceLayoutPreference::default(),
             inspector_tab: "overview".to_owned(),
             local_changes_view: "tree".to_owned(),
+            local_changes_staged_view: "tree".to_owned(),
             local_changes_stage_split: 0.58,
             local_changes_diff_visible: true,
             revision_changes_view: "tree".to_owned(),
@@ -554,6 +557,7 @@ fn validate_preferences(preferences: &ClientPreferences) -> Result<(), LoreComma
         || !valid_language
         || !valid_inspector
         || !valid_view(&preferences.local_changes_view)
+        || !valid_view(&preferences.local_changes_staged_view)
         || !valid_view(&preferences.revision_changes_view)
         || !valid_history_lane_mode
         || !finite_layout
@@ -892,6 +896,7 @@ mod tests {
         assert!(preferences.binary_diff_visible);
         assert_eq!(preferences.binary_preview_limit_mib, 20.0);
         assert_eq!(preferences.revision_history_lane_mode, "flat");
+        assert_eq!(preferences.local_changes_staged_view, "tree");
         // 旧文件缺省启动检查字段时保持既有行为，不因升级静默关闭自动更新。
         assert!(preferences.automatically_check_for_updates);
         // 旧文件缺少前端新增的 Diff 布局字段时按升级前行为回退统一视图，且不自动展开全文。
