@@ -1131,6 +1131,13 @@ export interface RepositoryTabCustomization {
   icon?: RepositoryIconId
 }
 
+/** 单个本地仓库在本地更改树视图中按暂存分区折叠的目录，路径相对仓库根目录。 */
+export interface RepositoryCollapsedDirectories {
+  repositoryPath: string
+  unstaged: string[]
+  staged: string[]
+}
+
 /**
  * 桌面客户端写入应用配置目录的单一偏好文件。
  *
@@ -1154,6 +1161,7 @@ export interface ClientPreferences {
   localChangesView: 'flat' | 'tree'
   localChangesStagedView: 'flat' | 'tree'
   localChangesStageSplit: number
+  localChangesCollapsedDirectories: RepositoryCollapsedDirectories[]
   /** 本地更改工作区最右侧 Diff 面板是否显示。 */
   localChangesDiffVisible: boolean
   revisionChangesView: 'flat' | 'tree'

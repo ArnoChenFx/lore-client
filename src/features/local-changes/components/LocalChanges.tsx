@@ -37,7 +37,7 @@ import { useTranslation } from 'react-i18next'
 import { useAdjustFromProps } from '../../../hooks/useAdjustFromProps'
 import { useClientPreferences } from '../../../hooks/useClientPreferences'
 import { t } from '../../../i18n'
-import { fileLockOwnerLabel } from '../../../shared/lib'
+import { fileLockOwnerLabel, repositoryPathKey } from '../../../shared/lib'
 import {
   buildChangeTreeRows,
   changeDirectoryObjectId,
@@ -510,10 +510,13 @@ export function LocalChanges({
   const [unstagedViewMode, setUnstagedViewMode] = useState<ChangeViewMode>(preferences.localChangesView)
   const [stagedViewMode, setStagedViewMode] = useState<ChangeViewMode>(preferences.localChangesStagedView)
   const lockByPath = useMemo(() => new Map(fileLocks.map((lock) => [lock.path, lock] as const)), [fileLocks])
-  const [collapsedDirectories, setCollapsedDirectories] = useState<Record<'unstaged' | 'staged', Set<string>>>(() => ({
-    unstaged: new Set(),
-    staged: new Set()
-  }))
+  const repositoryKey = repositoryPathKey(repositoryPath)
+  const savedCollapsedDirectories = () => {
+    const saved = preferences.localChangesCollapsedDirectories.find((entry) => entry.repositoryPath === repositoryKey)
+    return { unstaged: new Set(saved?.unstaged), staged: new Set(saved?.staged) }
+  }
+  const [collapsedDirectories, setCollapsedDirectories] =
+    useState<Record<'unstaged' | 'staged', Set<string>>>(savedCollapsedDirectories)
   const [stageSplit, setStageSplit] = useState(preferences.localChangesStageSplit)
   const [menu, setMenu] = useState<ChangeMenuRequest | null>(null)
   const anchorRef = useRef<string | null>(null)
@@ -533,6 +536,11 @@ export function LocalChanges({
     setUnstagedViewMode(preferences.localChangesView)
     setStagedViewMode(preferences.localChangesStagedView)
     setStageSplit(preferences.localChangesStageSplit)
+  })
+
+  // 折叠状态只在偏好就绪或切换仓库时读取，此后由本组件写回。
+  useAdjustFromProps(`${preferencesReady}:${repositoryKey}`, () => {
+    setCollapsedDirectories(savedCollapsedDirectories())
   })
 
   useEffect(() => {
@@ -671,7 +679,15 @@ export function LocalChanges({
 
   // 折叠只改变目录可见性，文件与目录的独立选区、搜索和主对象保持原样。
   const setSectionCollapsedDirectories = (scope: 'unstaged' | 'staged', next: Set<string>) => {
-    setCollapsedDirectories((current) => ({ ...current, [scope]: next }))
+    const updated = { ...collapsedDirectories, [scope]: next }
+    setCollapsedDirectories(updated)
+    // 当前仓库排在最前，超出仓库数量上限时丢弃最久未改动的仓库。
+    updatePreferences({
+      localChangesCollapsedDirectories: [
+        { repositoryPath: repositoryKey, unstaged: [...updated.unstaged], staged: [...updated.staged] },
+        ...preferences.localChangesCollapsedDirectories.filter((entry) => entry.repositoryPath !== repositoryKey)
+      ]
+    })
   }
 
   const toggleDirectory = (scope: 'unstaged' | 'staged', path: string) => {
