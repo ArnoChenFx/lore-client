@@ -871,10 +871,7 @@ export function LocalChanges({
           <div className="change-group-toolbar">
             <span>{t('unstaged')}</span>
             <div className="change-group-toolbar__actions">
-              <ChangeViewSwitch
-                viewMode={unstagedViewMode}
-                onChange={(mode) => setSectionViewMode('unstaged', mode)}
-              />
+              <ChangeViewSwitch viewMode={unstagedViewMode} onChange={(mode) => setSectionViewMode('unstaged', mode)} />
               <button type="button" disabled={conflictActive} onClick={() => onStageAll(true)}>
                 {t('stageAll')}
               </button>
