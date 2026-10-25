@@ -36,6 +36,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2.10"
+tauri-plugin-window-state = "2"
 # 统一在 WebView 初始化阶段禁用浏览器默认快捷键；Windows 功能同时启用 WebView2
 # 原生总开关，其他平台由插件注入的初始化脚本执行同一策略。
 # 6.x 对齐 Tauri 2.12 的 webview2-com 0.39 / windows 0.62 依赖图
