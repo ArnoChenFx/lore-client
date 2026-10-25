@@ -145,12 +145,37 @@ const statusInfo = {
 
 interface ChangeViewSwitchProps {
   viewMode: ChangeViewMode
+  hasDirectories: boolean
   onChange: (mode: ChangeViewMode) => void
+  onExpandAll: () => void
+  onCollapseAll: () => void
 }
 
-function ChangeViewSwitch({ viewMode, onChange }: ChangeViewSwitchProps) {
+function ChangeViewSwitch({ viewMode, hasDirectories, onChange, onExpandAll, onCollapseAll }: ChangeViewSwitchProps) {
   return (
     <div className="change-view-switch" role="group" aria-label={t('changeListView')}>
+      {viewMode === 'tree' && (
+        <>
+          <button
+            type="button"
+            aria-label={t('expandAllLocalChangeFolders')}
+            title={t('expandAllLocalChangeFolders')}
+            disabled={!hasDirectories}
+            onClick={onExpandAll}
+          >
+            <ChevronsDown size={13} />
+          </button>
+          <button
+            type="button"
+            aria-label={t('collapseAllLocalChangeFolders')}
+            title={t('collapseAllLocalChangeFolders')}
+            disabled={!hasDirectories}
+            onClick={onCollapseAll}
+          >
+            <ChevronsUp size={13} />
+          </button>
+        </>
+      )}
       <button
         type="button"
         className={viewMode === 'tree' ? 'is-active' : ''}
@@ -485,7 +510,10 @@ export function LocalChanges({
   const [unstagedViewMode, setUnstagedViewMode] = useState<ChangeViewMode>(preferences.localChangesView)
   const [stagedViewMode, setStagedViewMode] = useState<ChangeViewMode>(preferences.localChangesStagedView)
   const lockByPath = useMemo(() => new Map(fileLocks.map((lock) => [lock.path, lock] as const)), [fileLocks])
-  const [collapsedDirectories, setCollapsedDirectories] = useState<Set<string>>(() => new Set())
+  const [collapsedDirectories, setCollapsedDirectories] = useState<Record<'unstaged' | 'staged', Set<string>>>(() => ({
+    unstaged: new Set(),
+    staged: new Set()
+  }))
   const [stageSplit, setStageSplit] = useState(preferences.localChangesStageSplit)
   const [menu, setMenu] = useState<ChangeMenuRequest | null>(null)
   const anchorRef = useRef<string | null>(null)
@@ -539,27 +567,27 @@ export function LocalChanges({
   const allUnstagedFiles = files.filter((file) => !file.staged)
   const allStagedFiles = files.filter((file) => file.staged)
   const unstagedRows = useMemo(
-    () => buildChangeTreeRows(unstagedFiles, collapsedDirectories, 'unstaged'),
+    () => buildChangeTreeRows(unstagedFiles, collapsedDirectories.unstaged, 'unstaged'),
     [collapsedDirectories, unstagedFiles]
   )
   const stagedRows = useMemo(
-    () => buildChangeTreeRows(stagedFiles, collapsedDirectories, 'staged'),
+    () => buildChangeTreeRows(stagedFiles, collapsedDirectories.staged, 'staged'),
     [collapsedDirectories, stagedFiles]
   )
+  const allUnstagedTreeRows = useMemo(
+    () => buildChangeTreeRows(allUnstagedFiles, new Set(), 'unstaged'),
+    [allUnstagedFiles]
+  )
+  const allStagedTreeRows = useMemo(() => buildChangeTreeRows(allStagedFiles, new Set(), 'staged'), [allStagedFiles])
   const allTreeRows = useMemo(
-    () => [
-      ...buildChangeTreeRows(allUnstagedFiles, new Set(), 'unstaged'),
-      ...buildChangeTreeRows(allStagedFiles, new Set(), 'staged')
-    ],
-    [allStagedFiles, allUnstagedFiles]
+    () => [...allUnstagedTreeRows, ...allStagedTreeRows],
+    [allStagedTreeRows, allUnstagedTreeRows]
   )
-  const allDirectoryPaths = useMemo(
-    () => [
-      // 上下暂存分区可能包含同名目录，而折叠状态按仓库相对路径共享；这里必须去重。
-      ...new Set(allTreeRows.filter((row) => row.kind === 'directory').map((row) => row.path))
-    ],
-    [allTreeRows]
-  )
+  // 全部折叠使用完整快照而非当前搜索结果，清除筛选后也不会意外展开未命中的目录。
+  const allDirectoryPaths = {
+    unstaged: allUnstagedTreeRows.filter((row) => row.kind === 'directory').map((row) => row.path),
+    staged: allStagedTreeRows.filter((row) => row.kind === 'directory').map((row) => row.path)
+  }
   const sectionObjectIds = (viewMode: ChangeViewMode, rows: ChangeTreeRow[], sectionFiles: ChangeFile[]) =>
     viewMode === 'tree' ? rows.map((row) => row.id) : sectionFiles.map((file) => changeFileObjectId(file.id))
   const orderedIds = [
@@ -639,6 +667,18 @@ export function LocalChanges({
       setStagedViewMode(mode)
       updatePreferences({ localChangesStagedView: mode })
     }
+  }
+
+  // 折叠只改变目录可见性，文件与目录的独立选区、搜索和主对象保持原样。
+  const setSectionCollapsedDirectories = (scope: 'unstaged' | 'staged', next: Set<string>) => {
+    setCollapsedDirectories((current) => ({ ...current, [scope]: next }))
+  }
+
+  const toggleDirectory = (scope: 'unstaged' | 'staged', path: string) => {
+    const next = new Set(collapsedDirectories[scope])
+    if (next.has(path)) next.delete(path)
+    else next.add(path)
+    setSectionCollapsedDirectories(scope, next)
   }
 
   const selectObject = (objectId: string, event: Pick<MouseEvent<HTMLElement>, 'ctrlKey' | 'metaKey' | 'shiftKey'>) => {
@@ -792,34 +832,6 @@ export function LocalChanges({
             disabled={!refreshAvailable || busy || refreshing}
             onClick={onRefresh}
           />
-          {(unstagedViewMode === 'tree' || stagedViewMode === 'tree') && (
-            <div className="change-view-switch" role="group" aria-label={t('changeListView')}>
-              <button
-                type="button"
-                aria-label={t('expandAllLocalChangeFolders')}
-                title={t('expandAllLocalChangeFolders')}
-                disabled={allDirectoryPaths.length === 0}
-                onClick={() => {
-                  // 批量展开只改变目录可见性，文件与目录的独立选区、搜索和主对象保持原样。
-                  setCollapsedDirectories(new Set())
-                }}
-              >
-                <ChevronsDown size={14} />
-              </button>
-              <button
-                type="button"
-                aria-label={t('collapseAllLocalChangeFolders')}
-                title={t('collapseAllLocalChangeFolders')}
-                disabled={allDirectoryPaths.length === 0}
-                onClick={() => {
-                  // 使用完整快照而非当前搜索结果，清除筛选后也不会意外展开未命中的目录。
-                  setCollapsedDirectories(new Set(allDirectoryPaths))
-                }}
-              >
-                <ChevronsUp size={14} />
-              </button>
-            </div>
-          )}
           <IconButton
             className="diff-visibility-toggle"
             icon={preferences.localChangesDiffVisible ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
@@ -871,7 +883,13 @@ export function LocalChanges({
           <div className="change-group-toolbar">
             <span>{t('unstaged')}</span>
             <div className="change-group-toolbar__actions">
-              <ChangeViewSwitch viewMode={unstagedViewMode} onChange={(mode) => setSectionViewMode('unstaged', mode)} />
+              <ChangeViewSwitch
+                viewMode={unstagedViewMode}
+                hasDirectories={allDirectoryPaths.unstaged.length > 0}
+                onChange={(mode) => setSectionViewMode('unstaged', mode)}
+                onExpandAll={() => setSectionCollapsedDirectories('unstaged', new Set())}
+                onCollapseAll={() => setSectionCollapsedDirectories('unstaged', new Set(allDirectoryPaths.unstaged))}
+              />
               <button type="button" disabled={conflictActive} onClick={() => onStageAll(true)}>
                 {t('stageAll')}
               </button>
@@ -886,14 +904,7 @@ export function LocalChanges({
             actionLabel={t('stage')}
             stageDisabled={conflictActive}
             lockByPath={lockByPath}
-            onToggleDirectory={(path) =>
-              setCollapsedDirectories((current) => {
-                const next = new Set(current)
-                if (next.has(path)) next.delete(path)
-                else next.add(path)
-                return next
-              })
-            }
+            onToggleDirectory={(path) => toggleDirectory('unstaged', path)}
             onObjectPointer={selectObject}
             onContextMenu={openMenu}
             onToggleStage={(directoryFiles) => onStageFiles(directoryFiles, true)}
@@ -920,7 +931,13 @@ export function LocalChanges({
           <div className="change-group-toolbar">
             <span>{t('staged')}</span>
             <div className="change-group-toolbar__actions">
-              <ChangeViewSwitch viewMode={stagedViewMode} onChange={(mode) => setSectionViewMode('staged', mode)} />
+              <ChangeViewSwitch
+                viewMode={stagedViewMode}
+                hasDirectories={allDirectoryPaths.staged.length > 0}
+                onChange={(mode) => setSectionViewMode('staged', mode)}
+                onExpandAll={() => setSectionCollapsedDirectories('staged', new Set())}
+                onCollapseAll={() => setSectionCollapsedDirectories('staged', new Set(allDirectoryPaths.staged))}
+              />
               <button type="button" disabled={conflictActive} onClick={() => onStageAll(false)}>
                 {t('cancelAll')}
               </button>
@@ -935,14 +952,7 @@ export function LocalChanges({
             actionLabel={t('unstage')}
             stageDisabled={conflictActive}
             lockByPath={lockByPath}
-            onToggleDirectory={(path) =>
-              setCollapsedDirectories((current) => {
-                const next = new Set(current)
-                if (next.has(path)) next.delete(path)
-                else next.add(path)
-                return next
-              })
-            }
+            onToggleDirectory={(path) => toggleDirectory('staged', path)}
             onObjectPointer={selectObject}
             onContextMenu={openMenu}
             onToggleStage={(directoryFiles) => onStageFiles(directoryFiles, false)}
