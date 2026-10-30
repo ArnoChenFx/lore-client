@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 import { resolveBrowserExecutable } from './browser-path.mjs'
 import { createCdpClient } from './cdp-client.mjs'
+import { runLocalChangesLayoutWorkflow } from './cdp-workflows/local-changes-layout.mjs'
 import { runLazyViewRecoveryWorkflow } from './cdp-workflows/lazy-view-recovery.mjs'
 import { runRevisionNavigationWorkflow } from './cdp-workflows/revision-navigation.mjs'
 import { runSettingsWorkflow } from './cdp-workflows/settings.mjs'
@@ -2875,8 +2876,8 @@ async function runFullSuite(context) {
     )}`
   )
 
-  // 平铺/文件夹树共用同一选择模型，切换视图不能丢失主选择。
-  await cdp.evaluate(`document.querySelector("button[title='平铺视图']")?.click()`)
+  // 两个分区分别切换；都进入平铺后继续验证原有跨分区选择模型。
+  await cdp.evaluate(`document.querySelectorAll(".change-list-section button[title='平铺视图']").forEach(button => button.click())`)
   await delay(50)
   results.localChangesFlat = await cdp.evaluate(`({
     flatActive:
@@ -4643,6 +4644,8 @@ async function runFullSuite(context) {
   )
 
   await runWorkflow('lazy-view-recovery', runLazyViewRecoveryWorkflow, context)
+  await context.openFreshApplicationDocument(cdp, () => cdp.send('Page.navigate', { url: context.applicationUrl }))
+  await runWorkflow('local-changes-layout', runLocalChangesLayoutWorkflow, context)
 }
 
 function readOptions() {
@@ -4680,7 +4683,8 @@ try {
       ['startup', runStartupWorkflow],
       ['revision-navigation', runRevisionNavigationWorkflow],
       ['settings', runSettingsWorkflow],
-      ['lazy-view-recovery', runLazyViewRecoveryWorkflow]
+      ['lazy-view-recovery', runLazyViewRecoveryWorkflow],
+      ['local-changes-layout', runLocalChangesLayoutWorkflow]
     ]) {
       activeWorkflow = `${name}:reset`
       // Every core workflow starts with a new document and empty preferences;

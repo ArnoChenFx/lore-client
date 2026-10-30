@@ -844,6 +844,14 @@ mod tests {
                 color: Some("#4aa7ad".to_owned()),
                 icon: Some("gamepad".to_owned()),
             }],
+            local_changes_view: "flat".to_owned(),
+            local_changes_staged_view: "tree".to_owned(),
+            local_changes_commit_message_height: 548.0,
+            local_changes_collapsed_directories: vec![RepositoryCollapsedDirectories {
+                repository_path: "E:\\A".to_owned(),
+                unstaged: vec!["Content/Maps".to_owned()],
+                staged: vec!["Content/Textures".to_owned()],
+            }],
             binary_preview_limit_mib: 64.0,
             diff: DiffPreference {
                 diff_style: "split".to_owned(),
@@ -880,6 +888,15 @@ mod tests {
         assert_eq!(restored.external_diff_tools[0].kind, "custom");
         assert_eq!(restored.external_diff_tools[0].name, "Studio Diff");
         assert_eq!(restored.binary_preview_limit_mib, 64.0);
+        assert_eq!(restored.local_changes_view, "flat");
+        assert_eq!(restored.local_changes_staged_view, "tree");
+        assert_eq!(restored.local_changes_commit_message_height, 548.0);
+        let collapsed = &restored.local_changes_collapsed_directories;
+        assert_eq!(collapsed.len(), 1);
+        assert_eq!(collapsed[0].repository_path, "E:\\A");
+        assert_eq!(collapsed[0].unstaged, vec!["Content/Maps"]);
+        assert_eq!(collapsed[0].staged, vec!["Content/Textures"]);
+
         // 前端新增的 Diff 参数必须随偏好文件往返，否则重启后会静默丢失布局选择。
         assert_eq!(restored.diff.diff_style, "split");
         assert!(restored.diff.expand_full_file);
