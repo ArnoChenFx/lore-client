@@ -21,6 +21,10 @@ export const MIN_BINARY_PREVIEW_LIMIT_MIB = 0.01
  */
 const MAX_BINARY_PREVIEW_LIMIT_MIB_BY_BYTE_COUNTER = 17_592_186_044_415
 
+// 与 Rust 偏好校验上限一致；超出时保留最近折叠的目录与最近使用的仓库。
+const MAX_COLLAPSED_DIRECTORY_REPOSITORIES = 256
+const MAX_COLLAPSED_DIRECTORY_PATHS = 4_096
+
 /** 偏好以最多两位小数的 MiB 保存，避免 JSON 中出现超出 u64 精度的字节换算值。 */
 function roundPreviewLimitMib(value: number): number {
   return Math.round(value * 100) / 100
@@ -39,7 +43,9 @@ export const DEFAULT_CLIENT_PREFERENCES: ClientPreferences = {
   },
   inspectorTab: 'overview',
   localChangesView: 'tree',
+  localChangesStagedView: 'tree',
   localChangesStageSplit: 0.58,
+  localChangesCollapsedDirectories: [],
   localChangesDiffVisible: true,
   revisionChangesView: 'tree',
   revisionChangesBrowserWidth: 220,
@@ -170,6 +176,38 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
         )
         .slice(0, 256)
     : []
+  const normalizeCollapsedPaths = (paths: unknown) =>
+    Array.isArray(paths)
+      ? [
+          ...new Set(
+            paths.filter(
+              (path): path is string =>
+                typeof path === 'string' && path.length > 0 && path.length <= 4_096 && !path.includes('\0')
+            )
+          )
+        ].slice(-MAX_COLLAPSED_DIRECTORY_PATHS)
+      : []
+  const localChangesCollapsedDirectories = Array.isArray(value?.localChangesCollapsedDirectories)
+    ? value.localChangesCollapsedDirectories
+        .filter((entry) => typeof entry?.repositoryPath === 'string')
+        .map((entry) => ({
+          repositoryPath: repositoryPathKey(entry.repositoryPath),
+          unstaged: normalizeCollapsedPaths(entry.unstaged),
+          staged: normalizeCollapsedPaths(entry.staged)
+        }))
+        .filter(
+          (entry) =>
+            entry.repositoryPath.trim().length > 0 &&
+            entry.repositoryPath.length <= 4_096 &&
+            !entry.repositoryPath.includes('\0') &&
+            (entry.unstaged.length > 0 || entry.staged.length > 0)
+        )
+        .filter(
+          (entry, index, entries) =>
+            entries.findIndex((candidate) => candidate.repositoryPath === entry.repositoryPath) === index
+        )
+        .slice(0, MAX_COLLAPSED_DIRECTORY_REPOSITORIES)
+    : []
   const defaultIdentity =
     typeof value?.defaultIdentity === 'string' ? value.defaultIdentity.replaceAll('\r', '').replaceAll('\n', '') : ''
   const language = value?.language === 'en-US' ? 'en-US' : 'zh-CN'
@@ -271,6 +309,7 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
      * 多道图谱；旧配置缺少字段或外部调用传入未知值时统一回退默认单道模式。
      */
     revisionHistoryLaneMode: value?.revisionHistoryLaneMode === 'topology' ? 'topology' : 'flat',
+    localChangesCollapsedDirectories,
     authAccountBindings,
     repositoryTabCustomizations,
     repositoryPaths,

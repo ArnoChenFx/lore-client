@@ -93,6 +93,15 @@ pub struct RepositoryTabCustomization {
     pub icon: Option<String>,
 }
 
+/// 单个本地仓库在本地更改树视图中按暂存分区折叠的目录，路径相对仓库根目录。
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct RepositoryCollapsedDirectories {
+    pub repository_path: String,
+    pub unstaged: Vec<String>,
+    pub staged: Vec<String>,
+}
+
 impl Default for ExternalDiffPreference {
     fn default() -> Self {
         Self {
@@ -192,7 +201,9 @@ pub struct ClientPreferences {
     pub workspace_layout: WorkspaceLayoutPreference,
     pub inspector_tab: String,
     pub local_changes_view: String,
+    pub local_changes_staged_view: String,
     pub local_changes_stage_split: f64,
+    pub local_changes_collapsed_directories: Vec<RepositoryCollapsedDirectories>,
     /// 本地更改工作区最右侧 Diff 面板是否显示。
     pub local_changes_diff_visible: bool,
     pub revision_changes_view: String,
@@ -227,7 +238,9 @@ impl Default for ClientPreferences {
             workspace_layout: WorkspaceLayoutPreference::default(),
             inspector_tab: "overview".to_owned(),
             local_changes_view: "tree".to_owned(),
+            local_changes_staged_view: "tree".to_owned(),
             local_changes_stage_split: 0.58,
+            local_changes_collapsed_directories: Vec::new(),
             local_changes_diff_visible: true,
             revision_changes_view: "tree".to_owned(),
             revision_changes_browser_width: 220.0,
@@ -354,6 +367,24 @@ fn resolve_saved_workspace_identities(preferences: &mut ClientPreferences) {
         }
     }
     preferences.auth_account_bindings = bindings;
+
+    let mut collapsed = HashMap::<String, (usize, bool)>::new();
+    let mut collapsed_directories: Vec<RepositoryCollapsedDirectories> = Vec::new();
+    for mut entry in std::mem::take(&mut preferences.local_changes_collapsed_directories) {
+        let path = resolve(&entry.repository_path);
+        let canonical = entry.repository_path == path;
+        entry.repository_path = path.clone();
+        if let Some((index, existing_canonical)) = collapsed.get_mut(&path) {
+            if canonical && !*existing_canonical {
+                collapsed_directories[*index] = entry;
+                *existing_canonical = true;
+            }
+        } else {
+            collapsed.insert(path, (collapsed_directories.len(), canonical));
+            collapsed_directories.push(entry);
+        }
+    }
+    preferences.local_changes_collapsed_directories = collapsed_directories;
 
     let mut customized = HashMap::<String, (usize, bool)>::new();
     let mut customizations: Vec<RepositoryTabCustomization> = Vec::new();
@@ -504,6 +535,23 @@ fn validate_preferences(preferences: &ClientPreferences) -> Result<(), LoreComma
                 && !binding.auth_url.contains('\0')
                 && !binding.user_id.contains('\0')
         });
+    let valid_collapsed_paths = |paths: &[String]| {
+        paths.len() <= 4096
+            && paths
+                .iter()
+                .all(|path| !path.is_empty() && path.len() <= 4096 && !path.contains('\0'))
+    };
+    let valid_collapsed_directories = preferences.local_changes_collapsed_directories.len() <= 256
+        && preferences
+            .local_changes_collapsed_directories
+            .iter()
+            .all(|entry| {
+                !entry.repository_path.trim().is_empty()
+                    && entry.repository_path.len() <= 4096
+                    && !entry.repository_path.contains('\0')
+                    && valid_collapsed_paths(&entry.unstaged)
+                    && valid_collapsed_paths(&entry.staged)
+            });
     let valid_repository_tab_customizations = preferences.repository_tab_customizations.len()
         <= 256
         && preferences
@@ -554,6 +602,7 @@ fn validate_preferences(preferences: &ClientPreferences) -> Result<(), LoreComma
         || !valid_language
         || !valid_inspector
         || !valid_view(&preferences.local_changes_view)
+        || !valid_view(&preferences.local_changes_staged_view)
         || !valid_view(&preferences.revision_changes_view)
         || !valid_history_lane_mode
         || !finite_layout
@@ -563,6 +612,7 @@ fn validate_preferences(preferences: &ClientPreferences) -> Result<(), LoreComma
         || !valid_external_diff
         || !valid_identity
         || !valid_auth_bindings
+        || !valid_collapsed_directories
         || !valid_repository_tab_customizations
     {
         return Err(LoreCommandError::new(
@@ -892,6 +942,7 @@ mod tests {
         assert!(preferences.binary_diff_visible);
         assert_eq!(preferences.binary_preview_limit_mib, 20.0);
         assert_eq!(preferences.revision_history_lane_mode, "flat");
+        assert_eq!(preferences.local_changes_staged_view, "tree");
         // 旧文件缺省启动检查字段时保持既有行为，不因升级静默关闭自动更新。
         assert!(preferences.automatically_check_for_updates);
         // 旧文件缺少前端新增的 Diff 布局字段时按升级前行为回退统一视图，且不自动展开全文。
@@ -900,6 +951,7 @@ mod tests {
         assert_eq!(preferences.external_diff_tools.len(), 5);
         assert_eq!(preferences.external_merge_tools.len(), 5);
         assert!(preferences.repository_tab_customizations.is_empty());
+        assert!(preferences.local_changes_collapsed_directories.is_empty());
     }
 
     #[test]

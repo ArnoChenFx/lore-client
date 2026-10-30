@@ -3155,6 +3155,22 @@ button.sidebar__repo-mark:focus-visible {
   font-size: 10px;
 }
 
+.change-group-toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 分区工具栏只有 29px 高，视图切换使用比顶部工具栏更紧凑的按钮。 */
+.change-group-toolbar .change-view-switch {
+  height: 22px;
+}
+
+.change-group-toolbar .change-view-switch button {
+  width: 22px;
+  height: 20px;
+}
+
 .change-group > header {
   display: flex;
   height: 28px;
