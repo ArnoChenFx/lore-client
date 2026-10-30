@@ -109,6 +109,29 @@ bun tauri build --debug --no-bundle
 4. `cargo check` 会报出结构体字段增删；逐个确认新字段的语义后再决定填充值，
    不得为了通过编译而无脑传默认值（尤其是此前会改变行为的新开关）。
 
+### 内嵌 Lore v0.12.0
+
+两个 Lore 依赖均固定到官方 `v0.12.0` 标签的提交
+`f00dbbf07cb449103e211ccbecaa995630f47d2d`，原版本为 `v0.11.0`
+（`c9159c8259824455dcfdfab3b9bca877bdb9a4b7`）。上游 main 另有尚未发布的变更，
+不包含在此次升级中。该标签的 workspace 仍声明 `0.11.1-nightly`，因此内嵌库版本
+可能显示这个值；源码提交号才是精确的发布版本依据。
+
+此次升级带来 OIDC access token 自动续期与 refresh token 轮换、存储锁顺序死锁修复、
+缺失目录及大小写变体路径的安全暂存、dry-run 写入保护，以及 TLS 依赖安全修复。
+共享同一 Lore store 的所有进程都需要升级才能消除锁顺序死锁；升级后应使用匹配的
+构建重启外部 Lore service。
+
+Token 登录适配器显式将新增的 `client_id` 和 `client_secret` 留空，保留原来的 bearer
+token 登录语义。桌面界面暂不提供 confidential-client 登录。退出现在可能在删除本地
+凭据后因远端撤销失败而报错：客户端即使收到失败也会失效缓存连接、刷新账户和仓库
+状态，同时保留原始错误。设备级退出传入显式认证 URL；该模式缺少仓库远端公布的
+OIDC client ID，上游只能删除本地登录并记录警告，无法撤销该 OIDC refresh token。
+全局清空凭据仍是本地操作。
+
+两个标签之间的 FFI 错误码和 vendored 补丁（`quinn-proto`、`glob-match`）均未变化。
+离线开发不需要新增服务器配置或凭据，此次升级不扩展 Lore 功能界面。
+
 ### 修改持久化设置
 
 持久化设置统一使用偏好服务和 `client-preferences.json` 流程，不得新增运行期 `localStorage` 写入。

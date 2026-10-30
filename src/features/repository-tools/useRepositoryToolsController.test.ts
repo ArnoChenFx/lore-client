@@ -8,7 +8,8 @@ import {
   loadCurrentDependencyGraph,
   normalizeRepositoryToolPaths,
   projectRepositoryConfigurationSnapshot,
-  resolvePublishAuthAccount
+  resolvePublishAuthAccount,
+  runAuthenticationMutation
 } from './useRepositoryToolsController'
 
 describe('repository tools controller helpers', () => {
@@ -284,5 +285,76 @@ describe('repository tools controller helpers', () => {
     for (const [index, path] of paths.entries()) {
       expect(resolvePublishAuthAccount(path, bindings, [])?.userId).toBe(`user-${index}`)
     }
+  })
+})
+
+describe('authentication mutation refresh', () => {
+  it('refreshes after failed logout and preserves the revocation error', async () => {
+    const failure = new Error('Remote revocation failed after local credentials were removed')
+    const calls: string[] = []
+    await expect(
+      runAuthenticationMutation(
+        async () => {
+          calls.push('logout')
+          throw failure
+        },
+        async () => {
+          calls.push('refresh')
+        },
+        true
+      )
+    ).rejects.toBe(failure)
+    expect(calls).toEqual(['logout', 'refresh'])
+  })
+
+  it('preserves a logout error even when refreshing also fails', async () => {
+    const failure = new Error('Revocation failed')
+    await expect(
+      runAuthenticationMutation(
+        async () => {
+          throw failure
+        },
+        async () => {
+          throw new Error('Refresh failed')
+        },
+        true
+      )
+    ).rejects.toBe(failure)
+  })
+
+  it('does not refresh state after a failed login', async () => {
+    let refreshed = false
+    await expect(
+      runAuthenticationMutation(
+        async () => {
+          throw new Error('Login failed')
+        },
+        async () => {
+          refreshed = true
+        }
+      )
+    ).rejects.toThrow('Login failed')
+    expect(refreshed).toBe(false)
+  })
+
+  it('refreshes after a successful mutation and reports refresh errors', async () => {
+    const calls: string[] = []
+    await runAuthenticationMutation(
+      async () => {
+        calls.push('login')
+      },
+      async () => {
+        calls.push('refresh')
+      }
+    )
+    expect(calls).toEqual(['login', 'refresh'])
+    await expect(
+      runAuthenticationMutation(
+        async () => undefined,
+        async () => {
+          throw new Error('Refresh failed')
+        }
+      )
+    ).rejects.toThrow('Refresh failed')
   })
 })
