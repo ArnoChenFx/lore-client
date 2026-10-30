@@ -226,6 +226,9 @@ pub async fn lore_auth_login_with_token(
                     token: token.into(),
                     token_type: token_type.into(),
                     auth_url: auth_url.into(),
+                    // Token 登录不启用 Lore 0.12 新增的 confidential-client 流程。
+                    client_id: LoreString::default(),
+                    client_secret: LoreString::default(),
                 },
                 callback,
             ))
@@ -301,15 +304,16 @@ pub async fn lore_auth_clear(
 
 /// 认证 Token 发生变化后失效 Lore Transport 的进程级连接缓存。
 ///
-/// `invalidate` 参数让单元测试不依赖真实远端服务器。失败的认证操作不能中断已有
-/// 连接；只有 Token Store 已成功变化时才清理全部服务器连接并让后续操作重新鉴权。
+/// `invalidate` 参数让单元测试不依赖真实远端服务器。Lore 0.12 退出会先删除本地
+/// Token 再撤销远端 refresh token，因此撤销失败也必须清理已认证的缓存连接。
+/// 登录失败则保留已有连接。
 pub(super) fn invalidate_authentication_connections_with<F>(
     result: &LoreOperationResult,
     mut invalidate: F,
 ) where
     F: FnMut(),
 {
-    if result.status == 0 {
+    if result.status == 0 || result.operation == "auth.logout" {
         invalidate();
     }
 }

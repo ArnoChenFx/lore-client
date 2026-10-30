@@ -114,6 +114,35 @@ semantics at once. Work through it in this order:
    field's value from its documented semantics rather than defaulting to whatever
    compiles, especially for switches that change behavior.
 
+### Embedded Lore v0.12.0
+
+Both Lore dependencies are pinned to the official `v0.12.0` tag's commit,
+`f00dbbf07cb449103e211ccbecaa995630f47d2d` (previously `v0.11.0`,
+`c9159c8259824455dcfdfab3b9bca877bdb9a4b7`). Upstream main contains additional
+unreleased changes; those are outside this upgrade. The tag still declares
+`0.11.1-nightly` in its workspace, so the embedded library version may show that
+value; the source revision identifies the exact release commit.
+
+This upgrade brings OIDC access-token refresh and refresh-token rotation, store
+lock-order deadlock fixes, safer staging of missing/case-variant directories,
+dry-run write protection, and TLS dependency security fixes. Every process using
+the same Lore store must upgrade to receive the lock-order fix. Restart any
+external Lore service with the matching build after upgrading.
+
+The token-login adapter explicitly leaves the new `client_id` and `client_secret`
+fields empty, preserving bearer-token login. Confidential-client login is not
+exposed in the desktop UI. Logout now may fail remote revocation **after** removing
+local credentials: the client invalidates cached connections and refreshes account
+and repository state even on failure, while still reporting the original error.
+Device-level logout passes an explicit auth URL; upstream cannot revoke an OIDC
+refresh token without the repository-advertised client ID in this mode, so it
+removes that login locally and logs a warning. Global credential clearing remains
+a local operation.
+
+The upstream FFI error codes and both vendored patches (`quinn-proto`,
+`glob-match`) are unchanged between these tags. No new Lore UI features, server
+configuration, or credentials are required for the offline development workflow.
+
 ### Change persisted settings
 
 Use the preferences service and `client-preferences.json` flow for durable settings. Do not add runtime `localStorage` writes.
