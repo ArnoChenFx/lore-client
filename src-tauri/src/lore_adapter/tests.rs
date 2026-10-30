@@ -787,6 +787,30 @@ fn successful_auth_mutation_invalidates_cached_transport_connections() {
 }
 
 #[test]
+fn failed_logout_invalidates_connections_but_failed_login_preserves_them() {
+    for (operation, expected) in [
+        ("auth.logout", 1),
+        ("auth.login-with-token", 0),
+        ("auth.login-interactive", 0),
+    ] {
+        let result = LoreOperationResult {
+            request_id: test_operation_context().request_id,
+            workspace_key: None,
+            operation,
+            status: -1,
+            duration_ms: 0,
+            events: Vec::new(),
+        };
+        let mut invalidations = 0;
+        invalidate_authentication_connections_with(&result, || invalidations += 1);
+        assert_eq!(
+            invalidations, expected,
+            "Unexpected invalidation for {operation}"
+        );
+    }
+}
+
+#[test]
 fn conflict_marker_detection_covers_all_standard_marker_lines() {
     assert!(
         contains_conflict_markers("line\n<<<<<<< HEAD\nside\n=======\nother\n>>>>>>> feature\n"),
@@ -3428,6 +3452,10 @@ fn server_url_validates_scheme_and_removes_trailing_slash() {
     assert_eq!(
         validate_server_url(" lore://127.0.0.1:41337/ ").unwrap(),
         "lore://127.0.0.1:41337",
+    );
+    assert_eq!(
+        validate_server_url("lores://127.0.0.1:41337").unwrap(),
+        "lores://127.0.0.1:41337",
     );
     assert!(validate_server_url("https://example.com").is_err());
     assert!(

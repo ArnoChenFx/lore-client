@@ -88,7 +88,7 @@ pub(super) fn normalize_identity(identity: &str) -> Result<Option<String>, LoreC
     Ok(Some(identity.to_owned()))
 }
 
-/// 仓库远端地址允许被清除；非空值遵循当前 Lore 客户端使用的 lore:// 协议。
+/// 仓库远端地址允许被清除；非空值必须使用 Lore 支持的远端协议。
 pub(super) fn normalize_repository_remote_url(
     remote_url: &str,
 ) -> Result<Option<String>, LoreCommandError> {

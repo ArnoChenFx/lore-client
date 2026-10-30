@@ -84,6 +84,22 @@ import type {
   RepositoryToolsDialogProps
 } from './types'
 
+/** Logout may remove local credentials before remote revocation fails. Refresh
+ * account and repository state while preserving the original operation error. */
+export async function runAuthenticationMutation(
+  action: () => Promise<unknown>,
+  refresh: () => Promise<unknown>,
+  refreshOnFailure = false
+): Promise<void> {
+  try {
+    await action()
+  } catch (error) {
+    if (refreshOnFailure) await refresh().catch(() => undefined)
+    throw error
+  }
+  await refresh()
+}
+
 interface RepositoryToolSession {
   readonly repositoryPath: string
   readonly tab: RepositoryToolTab
@@ -1076,13 +1092,20 @@ export function useRepositoryToolsController({
 
   /** 账户是设备级资源；登录、退出和列表不得要求先打开本地仓库。 */
   const runAuthAction = useCallback(
-    async (action: (context: OperationContext) => Promise<unknown>, serverUrl?: string): Promise<boolean> => {
+    async (
+      action: (context: OperationContext) => Promise<unknown>,
+      serverUrl?: string,
+      refreshOnFailure = false
+    ): Promise<boolean> => {
       if (applicationMode !== 'tauri') return false
       return withOperationRequest(createOperationContext(null), async (operationContext) => {
         try {
           setAuthActionsPending((count) => count + 1)
-          await action(operationContext)
-          await onAuthStateChange(serverUrl, operationContext)
+          await runAuthenticationMutation(
+            () => action(operationContext),
+            () => onAuthStateChange(serverUrl, operationContext),
+            refreshOnFailure
+          )
           return true
         } catch (error) {
           notify(t('accountOperationFailed'), readErrorMessage(error), 'warning')
@@ -1246,7 +1269,11 @@ export function useRepositoryToolsController({
         ) {
           return Promise.resolve(false)
         }
-        return runAuthAction((context) => logoutAuthIdentity(identity.authUrl, identity.userId, context))
+        return runAuthAction(
+          (context) => logoutAuthIdentity(identity.authUrl, identity.userId, context),
+          undefined,
+          true
+        )
       },
       onClearAuthIdentities: () => {
         if (!confirmLocalized(t('confirm.clearAuthIdentities'))) return Promise.resolve(false)

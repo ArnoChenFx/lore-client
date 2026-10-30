@@ -71,6 +71,8 @@ pub fn run() {
         // Updater 负责校验签名并安装升级包；Process 只用于安装完成后的受控重启。
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        // 记住主窗口的尺寸、位置与最大化状态，重启后恢复。
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             app_logging::application_log_info,
             app_logging::application_log_open_directory,

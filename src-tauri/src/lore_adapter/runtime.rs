@@ -943,6 +943,9 @@ pub(super) fn scan_directory_usage(root: &Path) -> (u64, u64, Option<String>) {
     (size_bytes, file_count, first_error)
 }
 
+/// Lore Core 传输层注册的远端协议。
+const SERVER_URL_SCHEMES: [&str; 6] = ["lore", "lores", "urc", "urcs", "grpc", "grpcs"];
+
 /// 校验服务器地址的最小必要格式，并把末尾斜杠统一去除。
 ///
 /// 更细的主机、证书和协议错误由 Lore Core 返回，这样前端能保留完整事件链。
@@ -954,19 +957,21 @@ pub(super) fn validate_server_url(server_url: &str) -> Result<String, LoreComman
             "Enter a Lore server address",
         ));
     }
-    if !server_url.starts_with("lore://") {
+    let Some((_, authority)) = server_url
+        .split_once("://")
+        .filter(|(scheme, _)| SERVER_URL_SCHEMES.contains(scheme))
+    else {
         return Err(LoreCommandError::new(
             "invalid_server_scheme",
-            "The Lore server address must start with lore://",
+            "The Lore server address must start with lore:// or lores://",
         ));
-    }
+    };
     if server_url.chars().any(char::is_whitespace) {
         return Err(LoreCommandError::new(
             "invalid_server_url",
             "The Lore server address must not contain whitespace",
         ));
     }
-    let authority = &server_url["lore://".len()..];
     if authority.is_empty() || authority.contains('/') || server_url.len() > 4_096 {
         return Err(LoreCommandError::new(
             "invalid_server_url",
