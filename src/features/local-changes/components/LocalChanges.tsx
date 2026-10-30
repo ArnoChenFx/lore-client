@@ -521,6 +521,7 @@ export function LocalChanges({
   const [stageSplit, setStageSplit] = useState(preferences.localChangesStageSplit)
   const [menu, setMenu] = useState<ChangeMenuRequest | null>(null)
   const anchorRef = useRef<string | null>(null)
+  const panelRef = useRef<HTMLElement>(null)
   const listsRef = useRef<HTMLDivElement>(null)
   const splitDragRef = useRef<{
     pointerId: number
@@ -529,6 +530,7 @@ export function LocalChanges({
     startRatio: number
   } | null>(null)
   const [commitMessageHeight, setCommitMessageHeight] = useState(preferences.localChangesCommitMessageHeight)
+  const [commitMessageHeightLimit, setCommitMessageHeightLimit] = useState(MINIMUM_COMMIT_MESSAGE_HEIGHT)
   const commitMessageRef = useRef<HTMLTextAreaElement>(null)
   const commitMessageDragRef = useRef<{
     pointerId: number
@@ -567,6 +569,29 @@ export function LocalChanges({
     }
     previousConflictSessionRef.current = conflictIsActive
   }, [conflictSession])
+
+  // 保存用户期望高度，实际显示值随工作区大小裁剪；缩小窗口不覆盖磁盘偏好。
+  useEffect(() => {
+    const panel = panelRef.current
+    const lists = listsRef.current
+    const textarea = commitMessageRef.current
+    const composer = textarea?.closest('.revision-composer')
+    if (!panel || !lists || !textarea || !composer) return
+    const observer = new ResizeObserver(() => {
+      const composerChrome = composer.getBoundingClientRect().height - textarea.getBoundingClientRect().height
+      const availableHeight = panel.getBoundingClientRect().bottom - lists.getBoundingClientRect().top
+      const limit = Math.max(
+        MINIMUM_COMMIT_MESSAGE_HEIGHT,
+        Math.floor(availableHeight - composerChrome - MINIMUM_STAGE_PANEL_HEIGHT * 2 - 6)
+      )
+      setCommitMessageHeightLimit((current) => (current === limit ? current : limit))
+    })
+    // 同时覆盖窗口缩放、冲突工具栏显隐和提交区换行等布局变化。
+    observer.observe(panel)
+    observer.observe(lists)
+    observer.observe(composer)
+    return () => observer.disconnect()
+  }, [])
 
   const visibleFiles = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase()
@@ -825,12 +850,6 @@ export function LocalChanges({
     updatePreferences({ localChangesStageSplit: DEFAULT_STAGE_SPLIT })
   }
 
-  // 提交消息只能占用列表区高于两个分区最小高度的部分。
-  const maximumCommitMessageHeight = (currentHeight: number) => {
-    const listsHeight = listsRef.current?.getBoundingClientRect().height ?? 0
-    return Math.max(MINIMUM_COMMIT_MESSAGE_HEIGHT, currentHeight + listsHeight - MINIMUM_STAGE_PANEL_HEIGHT * 2 - 6)
-  }
-
   const clampCommitMessageHeight = (height: number, maximumHeight: number) =>
     Math.round(Math.min(maximumHeight, Math.max(MINIMUM_COMMIT_MESSAGE_HEIGHT, height)))
 
@@ -844,7 +863,7 @@ export function LocalChanges({
       pointerId: event.pointerId,
       startY: event.clientY,
       startHeight,
-      maximumHeight: maximumCommitMessageHeight(startHeight)
+      maximumHeight: commitMessageHeightLimit
     }
   }
 
@@ -879,6 +898,7 @@ export function LocalChanges({
 
   return (
     <section
+      ref={panelRef}
       className={`local-changes ${conflictActive ? 'has-conflicts' : ''}`}
       tabIndex={0}
       onKeyDown={handleListKeyDown}
@@ -1058,7 +1078,7 @@ export function LocalChanges({
         <div className="revision-composer__input">
           <textarea
             ref={commitMessageRef}
-            style={{ height: Math.max(MINIMUM_COMMIT_MESSAGE_HEIGHT, commitMessageHeight) }}
+            style={{ height: clampCommitMessageHeight(commitMessageHeight, commitMessageHeightLimit) }}
             value={effectiveRevisionMessage}
             onChange={(event) => {
               setMessage(event.target.value)

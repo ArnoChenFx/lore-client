@@ -61,6 +61,30 @@ describe('client preferences stored on disk', () => {
     })
   })
 
+  it('preserves independent section views and per-repository collapse state across other updates', () => {
+    const localChangesCollapsedDirectories = [
+      { repositoryPath: 'E:\\A', unstaged: ['Content/Maps'], staged: ['Content/Textures'] },
+      { repositoryPath: 'E:\\B', unstaged: [], staged: ['Source'] }
+    ]
+    updateClientPreferences({
+      localChangesView: 'flat',
+      localChangesStagedView: 'tree',
+      localChangesCollapsedDirectories
+    })
+    updateClientPreferences({ localChangesCommitMessageHeight: 548 })
+    expect(getClientPreferences()).toMatchObject({
+      localChangesView: 'flat',
+      localChangesStagedView: 'tree',
+      localChangesCommitMessageHeight: 548,
+      localChangesCollapsedDirectories
+    })
+    updateClientPreferences({
+      localChangesView: 'tree',
+      localChangesCollapsedDirectories: [],
+      localChangesCommitMessageHeight: 48
+    })
+  })
+
   it('stores the default commit identity with the remaining preferences', () => {
     updateClientPreferences({ defaultIdentity: 'yourname@example.com' })
 
