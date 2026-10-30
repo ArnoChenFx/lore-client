@@ -776,6 +776,7 @@ const zhCNStatic = {
   repositoryToolbar: '仓库工具栏',
   repositoryToolCategories: '仓库工具分类',
   repositoryTools: '仓库工具',
+  resizeTheCommitMessage: '调整提交消息高度',
   resizeTheInspector: '调整检查器宽度',
   resizeTheRevisionFileList: '调整 Revision 文件列表宽度',
   resizeTheSidebar: '调整侧栏宽度',

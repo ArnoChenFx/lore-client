@@ -841,6 +841,7 @@ const enUSStatic = {
   repositoryToolbar: 'Repository toolbar',
   repositoryToolCategories: 'Repository tool categories',
   repositoryTools: 'Repository Tools',
+  resizeTheCommitMessage: 'Resize the commit message',
   resizeTheInspector: 'Resize the inspector',
   resizeTheRevisionFileList: 'Resize the revision file list',
   resizeTheSidebar: 'Resize the sidebar',

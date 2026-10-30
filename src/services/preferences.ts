@@ -45,6 +45,7 @@ export const DEFAULT_CLIENT_PREFERENCES: ClientPreferences = {
   localChangesView: 'tree',
   localChangesStagedView: 'tree',
   localChangesStageSplit: 0.58,
+  localChangesCommitMessageHeight: 48,
   localChangesCollapsedDirectories: [],
   localChangesDiffVisible: true,
   revisionChangesView: 'tree',

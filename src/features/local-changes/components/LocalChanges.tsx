@@ -134,6 +134,7 @@ function mergeConflictSourceLabel(session: ConflictSession, branches: Branch[]) 
 
 const DEFAULT_STAGE_SPLIT = 0.58
 const MINIMUM_STAGE_PANEL_HEIGHT = 96
+const MINIMUM_COMMIT_MESSAGE_HEIGHT = 48
 
 const statusInfo = {
   // 这里只保存语义键，实际文案在渲染期取值，避免语言切换后被冻结为模块加载时语言。
@@ -527,15 +528,24 @@ export function LocalChanges({
     availableHeight: number
     startRatio: number
   } | null>(null)
+  const [commitMessageHeight, setCommitMessageHeight] = useState(preferences.localChangesCommitMessageHeight)
+  const commitMessageRef = useRef<HTMLTextAreaElement>(null)
+  const commitMessageDragRef = useRef<{
+    pointerId: number
+    startY: number
+    startHeight: number
+    maximumHeight: number
+  } | null>(null)
   const previousConflictSessionRef = useRef(Boolean(conflictSession))
 
   // 偏好就绪时同步本地视图状态。key 前缀偏好就绪标记：就绪前保持固定值不调整，
   // 就绪后一次灌入；偏好值是稳定标量，值相同时不会重复调整，用户拖拽的分割比例不被触碰。
-  const viewPreferenceKey = `${preferencesReady}:${preferences.localChangesView}|${preferences.localChangesStagedView}|${preferences.localChangesStageSplit}`
+  const viewPreferenceKey = `${preferencesReady}:${preferences.localChangesView}|${preferences.localChangesStagedView}|${preferences.localChangesStageSplit}|${preferences.localChangesCommitMessageHeight}`
   useAdjustFromProps(viewPreferenceKey, () => {
     setUnstagedViewMode(preferences.localChangesView)
     setStagedViewMode(preferences.localChangesStagedView)
     setStageSplit(preferences.localChangesStageSplit)
+    setCommitMessageHeight(preferences.localChangesCommitMessageHeight)
   })
 
   // 折叠状态只在偏好就绪或切换仓库时读取，此后由本组件写回。
@@ -815,6 +825,58 @@ export function LocalChanges({
     updatePreferences({ localChangesStageSplit: DEFAULT_STAGE_SPLIT })
   }
 
+  // 提交消息只能占用列表区高于两个分区最小高度的部分。
+  const maximumCommitMessageHeight = (currentHeight: number) => {
+    const listsHeight = listsRef.current?.getBoundingClientRect().height ?? 0
+    return Math.max(MINIMUM_COMMIT_MESSAGE_HEIGHT, currentHeight + listsHeight - MINIMUM_STAGE_PANEL_HEIGHT * 2 - 6)
+  }
+
+  const clampCommitMessageHeight = (height: number, maximumHeight: number) =>
+    Math.round(Math.min(maximumHeight, Math.max(MINIMUM_COMMIT_MESSAGE_HEIGHT, height)))
+
+  const beginCommitMessageResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const textarea = commitMessageRef.current
+    if (!textarea) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const startHeight = textarea.getBoundingClientRect().height
+    commitMessageDragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startHeight,
+      maximumHeight: maximumCommitMessageHeight(startHeight)
+    }
+  }
+
+  const moveCommitMessageResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = commitMessageDragRef.current
+    if (drag?.pointerId !== event.pointerId) return
+    // 分隔条位于编辑器上沿，向上拖动增加高度。
+    setCommitMessageHeight(clampCommitMessageHeight(drag.startHeight + drag.startY - event.clientY, drag.maximumHeight))
+  }
+
+  const finishCommitMessageResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = commitMessageDragRef.current
+    if (drag?.pointerId !== event.pointerId) return
+    const next = clampCommitMessageHeight(drag.startHeight + drag.startY - event.clientY, drag.maximumHeight)
+    setCommitMessageHeight(next)
+    updatePreferences({ localChangesCommitMessageHeight: next })
+    commitMessageDragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  const cancelCommitMessageResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = commitMessageDragRef.current
+    if (drag?.pointerId !== event.pointerId) return
+    setCommitMessageHeight(drag.startHeight)
+    commitMessageDragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
   return (
     <section
       className={`local-changes ${conflictActive ? 'has-conflicts' : ''}`}
@@ -977,6 +1039,16 @@ export function LocalChanges({
       </div>
 
       <footer className="revision-composer">
+        <div
+          className="revision-composer__resizer"
+          role="separator"
+          aria-label={t('resizeTheCommitMessage')}
+          aria-orientation="horizontal"
+          onPointerDown={beginCommitMessageResize}
+          onPointerMove={moveCommitMessageResize}
+          onPointerUp={finishCommitMessageResize}
+          onPointerCancel={cancelCommitMessageResize}
+        />
         <div className="revision-composer__label">
           <span>
             <strong>{t('createRevision')}</strong>
@@ -985,6 +1057,8 @@ export function LocalChanges({
         </div>
         <div className="revision-composer__input">
           <textarea
+            ref={commitMessageRef}
+            style={{ height: Math.max(MINIMUM_COMMIT_MESSAGE_HEIGHT, commitMessageHeight) }}
             value={effectiveRevisionMessage}
             onChange={(event) => {
               setMessage(event.target.value)

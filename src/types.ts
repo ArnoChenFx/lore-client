@@ -1161,6 +1161,7 @@ export interface ClientPreferences {
   localChangesView: 'flat' | 'tree'
   localChangesStagedView: 'flat' | 'tree'
   localChangesStageSplit: number
+  localChangesCommitMessageHeight: number
   localChangesCollapsedDirectories: RepositoryCollapsedDirectories[]
   /** 本地更改工作区最右侧 Diff 面板是否显示。 */
   localChangesDiffVisible: boolean

@@ -203,6 +203,7 @@ pub struct ClientPreferences {
     pub local_changes_view: String,
     pub local_changes_staged_view: String,
     pub local_changes_stage_split: f64,
+    pub local_changes_commit_message_height: f64,
     pub local_changes_collapsed_directories: Vec<RepositoryCollapsedDirectories>,
     /// 本地更改工作区最右侧 Diff 面板是否显示。
     pub local_changes_diff_visible: bool,
@@ -240,6 +241,7 @@ impl Default for ClientPreferences {
             local_changes_view: "tree".to_owned(),
             local_changes_staged_view: "tree".to_owned(),
             local_changes_stage_split: 0.58,
+            local_changes_commit_message_height: 48.0,
             local_changes_collapsed_directories: Vec::new(),
             local_changes_diff_visible: true,
             revision_changes_view: "tree".to_owned(),
@@ -475,10 +477,12 @@ fn validate_preferences(preferences: &ClientPreferences) -> Result<(), LoreComma
     let finite_layout = preferences.workspace_layout.sidebar_width.is_finite()
         && preferences.workspace_layout.inspector_width.is_finite()
         && preferences.local_changes_stage_split.is_finite()
+        && preferences.local_changes_commit_message_height.is_finite()
         && preferences.revision_changes_browser_width.is_finite();
     let valid_layout = preferences.workspace_layout.sidebar_width >= 120.0
         && preferences.workspace_layout.inspector_width >= 240.0
         && (0.15..=0.85).contains(&preferences.local_changes_stage_split)
+        && preferences.local_changes_commit_message_height > 0.0
         && preferences.revision_changes_browser_width >= 100.0;
     // 布局字段枚举受 Rust 边界约束；未知值让整个偏好文件加载失败，由前端回退默认并修复。
     let valid_diff = preferences.diff.context_lines <= 100
@@ -942,6 +946,7 @@ mod tests {
         assert!(preferences.binary_diff_visible);
         assert_eq!(preferences.binary_preview_limit_mib, 20.0);
         assert_eq!(preferences.revision_history_lane_mode, "flat");
+        assert_eq!(preferences.local_changes_commit_message_height, 48.0);
         assert_eq!(preferences.local_changes_staged_view, "tree");
         // 旧文件缺省启动检查字段时保持既有行为，不因升级静默关闭自动更新。
         assert!(preferences.automatically_check_for_updates);
