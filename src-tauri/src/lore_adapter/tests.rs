@@ -3453,6 +3453,10 @@ fn server_url_validates_scheme_and_removes_trailing_slash() {
         validate_server_url(" lore://127.0.0.1:41337/ ").unwrap(),
         "lore://127.0.0.1:41337",
     );
+    assert_eq!(
+        validate_server_url("lores://127.0.0.1:41337").unwrap(),
+        "lores://127.0.0.1:41337",
+    );
     assert!(validate_server_url("https://example.com").is_err());
     assert!(
         validate_server_url("lore://127.0.0.1:41337/world").is_err(),
