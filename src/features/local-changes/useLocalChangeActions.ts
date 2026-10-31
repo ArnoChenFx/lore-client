@@ -11,6 +11,7 @@ import {
   openExternalDiff,
   openExternalMerge,
   openWorkspaceFile,
+  pushBranch,
   runConflictAction,
   savePatchFile,
   stageMove,
@@ -581,7 +582,7 @@ export function useLocalChangeActions({
   }, [])
 
   const createRevision = useCallback(
-    async (message: string) => {
+    async (message: string, push: boolean) => {
       if (!activeSnapshot) return
       if (applicationMode === 'browser-demo') {
         notify(t('revisionCreated'), message, 'success')
@@ -596,10 +597,17 @@ export function useLocalChangeActions({
        * Commit 成功后只刷新权威仓库快照，保留用户当前所在的本地更改视图。
        * 若操作实际新进入冲突会话，会话层仍会覆盖该默认行为并切回本地更改。
        */
-      await runRepositoryMutation(
+      const committed = await runRepositoryMutation(
         'createRevision',
         (repository, operationContext) => commitRevision(repository.path, message, defaultIdentity, operationContext),
         message
+      )
+      // 失败的 Commit 不触发 Push。
+      if (!committed || !push) return
+      await runRepositoryMutation(
+        'pushBranch',
+        (repository, operationContext) => pushBranch(repository.path, repository.branch, operationContext),
+        operationMessage('status.pushedToRemote', { name: activeSnapshot.repository.branch })
       )
     },
     [activeSnapshot, applicationMode, defaultIdentity, notify, runRepositoryMutation, upsertSnapshot]

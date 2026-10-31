@@ -1073,7 +1073,8 @@ function App() {
                 onSelectionChange={selectChangeFiles}
                 onStageFiles={(files, staged) => void stageChangeFiles(files, staged)}
                 onStageAll={(staged) => void stageAll(staged)}
-                onCreateRevision={(message) => void createRevision(message)}
+                pushAvailable={applicationMode === 'tauri' && Boolean(activeRepository.remoteUrl)}
+                onCreateRevision={(message, push) => void createRevision(message, push)}
                 onOpenFile={(file) => void openChangeFile(file)}
                 externalDiffTools={availableExternalDiffTools}
                 externalMergeTools={activeSnapshot.conflictSession?.incomingRevision ? availableExternalMergeTools : []}
