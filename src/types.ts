@@ -1165,6 +1165,8 @@ export interface ClientPreferences {
   localChangesCollapsedDirectories: RepositoryCollapsedDirectories[]
   /** 本地更改工作区最右侧 Diff 面板是否显示。 */
   localChangesDiffVisible: boolean
+  /** Commit 时是否同时 Push 当前分支。 */
+  localChangesPushAfterCommit: boolean
   revisionChangesView: 'flat' | 'tree'
   revisionChangesBrowserWidth: number
   /** Revision“变更”页签内右侧 Diff 面板是否显示。 */

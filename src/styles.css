@@ -3437,6 +3437,10 @@ button.sidebar__repo-mark:focus-visible {
   color: var(--warning);
 }
 
+.revision-composer__input > div > label {
+  flex: 0 0 auto;
+}
+
 .revision-composer__input > div > button {
   display: flex;
   flex: 0 0 auto;

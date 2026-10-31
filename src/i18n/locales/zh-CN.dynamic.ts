@@ -116,7 +116,6 @@ const zhCNDynamic = {
     daysAgo_one: '{{count}} 天前',
     daysAgo_other: '{{count}} 天前',
     csvPreviewTruncated: '仅显示前 {{rows}} 行、{{columns}} 列；完整内容请用外部应用打开。',
-    commitIdentityRepository: '提交身份（仓库）：{{identity}}',
     commitIdentityClientDefault: '提交身份（客户端默认）：{{identity}}',
     demoFilesStateUpdated: '{{count}} 个演示文件的状态已更新',
     stageStateUpdated: '{{count}} 个文件的 Stage 状态已更新',
