@@ -57,6 +57,9 @@ fn prevent_default_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 pub fn run() {
     // 限制 Lore 的全局并行度，避免桌面客户端在扫描大型仓库时占满所有逻辑核心。
     let _ = lore::set_thread_limit(8);
+    // Store 在调用之间不持有文件锁，避免阻塞其他进程的 Lore 调用。
+    // Lore 每个进程只读取一次该变量，必须在首次 Lore 调用前设置。
+    std::env::set_var("LORE_STORE_RETAIN", "1");
 
     tauri::Builder::default()
         .plugin(app_logging::plugin())
