@@ -121,7 +121,6 @@ const enUSDynamic = {
     daysAgo_other: '{{count}} days ago',
     csvPreviewTruncated:
       'Showing the first {{rows}} rows and {{columns}} columns; open in an external app for the full content.',
-    commitIdentityRepository: 'Commit identity (repository): {{identity}}',
     commitIdentityClientDefault: 'Commit identity (client default): {{identity}}',
     demoFilesStateUpdated: 'Updated the state of {{count}} demo files',
     stageStateUpdated: 'Updated the Stage state of {{count}} files',

@@ -48,6 +48,7 @@ export const DEFAULT_CLIENT_PREFERENCES: ClientPreferences = {
   localChangesCommitMessageHeight: 48,
   localChangesCollapsedDirectories: [],
   localChangesDiffVisible: true,
+  localChangesPushAfterCommit: true,
   revisionChangesView: 'tree',
   revisionChangesBrowserWidth: 220,
   revisionChangesDiffVisible: true,
@@ -282,6 +283,10 @@ function normalizePreferences(value: Partial<ClientPreferences> | null | undefin
       typeof value?.localChangesDiffVisible === 'boolean'
         ? value.localChangesDiffVisible
         : DEFAULT_CLIENT_PREFERENCES.localChangesDiffVisible,
+    localChangesPushAfterCommit:
+      typeof value?.localChangesPushAfterCommit === 'boolean'
+        ? value.localChangesPushAfterCommit
+        : DEFAULT_CLIENT_PREFERENCES.localChangesPushAfterCommit,
     revisionChangesDiffVisible:
       typeof value?.revisionChangesDiffVisible === 'boolean'
         ? value.revisionChangesDiffVisible

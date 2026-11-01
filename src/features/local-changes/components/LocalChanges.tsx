@@ -50,7 +50,7 @@ import {
   type ChangeTreeRow,
   type ChangeViewMode
 } from '../../../shared/lib'
-import { IconButton } from '../../../shared/ui'
+import { CheckboxInput, IconButton } from '../../../shared/ui'
 import type {
   Branch,
   ChangeFile,
@@ -87,7 +87,9 @@ interface LocalChangesProps {
   onSelectionChange: (selectedIds: string[], primaryId: string | null) => void
   onStageFiles: (files: ChangeFile[], staged: boolean) => void
   onStageAll: (staged: boolean) => void
-  onCreateRevision: (message: string) => void
+  /** 当前仓库是否配置了可 Push 的远端。 */
+  pushAvailable?: boolean
+  onCreateRevision: (message: string, push: boolean) => void
   onOpenFile: (file: ChangeFile) => void
   externalDiffTools?: ExternalDiffToolPreference[]
   externalMergeTools?: ExternalDiffToolPreference[]
@@ -485,6 +487,7 @@ export function LocalChanges({
   onSelectionChange,
   onStageFiles,
   onStageAll,
+  pushAvailable = false,
   onCreateRevision,
   onOpenFile,
   externalDiffTools = [],
@@ -653,6 +656,7 @@ export function LocalChanges({
   const repositoryCommitIdentity = repositoryIdentity?.trim() ?? ''
   const defaultCommitIdentity = preferences.defaultIdentity.trim()
   const effectiveCommitIdentity = repositoryCommitIdentity || defaultCommitIdentity
+  const pushAfterCommit = pushAvailable && preferences.localChangesPushAfterCommit
   const mergeSourceLabel = conflictSession ? mergeConflictSourceLabel(conflictSession, branches) : null
   // Cherry-pick 必须保留精确来源 Revision 语义；短 ID 足以辨识，也避免默认消息被完整哈希淹没。
   const cherryPickSourceLabel =
@@ -1099,7 +1103,7 @@ export function LocalChanges({
               >
                 <Check size={12} />
                 {repositoryCommitIdentity
-                  ? t('status.commitIdentityRepository', { identity: effectiveCommitIdentity })
+                  ? effectiveCommitIdentity
                   : t('status.commitIdentityClientDefault', { identity: effectiveCommitIdentity })}
               </span>
             ) : (
@@ -1111,11 +1115,19 @@ export function LocalChanges({
                 {t('commitIdentityConfiguredCreateRevision_ce67')}
               </span>
             )}
+            <label className="tool-check" title={t('pushCurrentBranchConfiguredRemote_d077')}>
+              <CheckboxInput
+                checked={pushAfterCommit}
+                disabled={!pushAvailable}
+                onChange={(event) => updatePreferences({ localChangesPushAfterCommit: event.target.checked })}
+              />
+              <span>{t('push')}</span>
+            </label>
             <button
               type="button"
               disabled={!canCreateRevision}
               onClick={() => {
-                onCreateRevision(effectiveRevisionMessage.trim())
+                onCreateRevision(effectiveRevisionMessage.trim(), pushAfterCommit)
                 setMessage('')
                 setMessageOverridden(false)
               }}
