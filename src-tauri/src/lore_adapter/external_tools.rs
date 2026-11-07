@@ -63,11 +63,20 @@ pub(super) fn validate_stage_paths(paths: Vec<String>) -> Result<Vec<String>, Lo
             {
                 return Ok(".".to_owned());
             }
-            validate_repository_relative_path(&normalized).map(|validated| {
-                validated
-                    .to_string_lossy()
-                    .replace(std::path::MAIN_SEPARATOR, "/")
-            })
+            let validated = validate_repository_relative_path(&normalized)?;
+            if validated.components().any(|component| {
+                let name = component.as_os_str().to_string_lossy();
+                lore_revision::util::path::resolves_elsewhere(&name)
+                    || lore_revision::repository::is_reserved_node_name(&name)
+            }) {
+                return Err(LoreCommandError::new(
+                    "invalid_lore_node_name",
+                    format!("Lore cannot track this file or folder name: {path}"),
+                ));
+            }
+            Ok(validated
+                .to_string_lossy()
+                .replace(std::path::MAIN_SEPARATOR, "/"))
         })
         .collect()
 }

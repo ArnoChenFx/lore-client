@@ -114,34 +114,55 @@ semantics at once. Work through it in this order:
    field's value from its documented semantics rather than defaulting to whatever
    compiles, especially for switches that change behavior.
 
-### Embedded Lore v0.12.0
+### Embedded Lore v0.13.0
 
-Both Lore dependencies are pinned to the official `v0.12.0` tag's commit,
-`f00dbbf07cb449103e211ccbecaa995630f47d2d` (previously `v0.11.0`,
-`c9159c8259824455dcfdfab3b9bca877bdb9a4b7`). Upstream main contains additional
-unreleased changes; those are outside this upgrade. The tag still declares
-`0.11.1-nightly` in its workspace, so the embedded library version may show that
-value; the source revision identifies the exact release commit.
+Both Lore dependencies are pinned to the official `v0.13.0` tag's commit,
+`9e0b4519a8a246e471d01853955f63bf0cecbeca` (previously `v0.12.0`,
+`f00dbbf07cb449103e211ccbecaa995630f47d2d`). The tag declares
+`0.12.1-nightly` in its workspace; the source revision identifies the release.
+Unreleased changes on upstream main are outside this upgrade.
 
-This upgrade brings OIDC access-token refresh and refresh-token rotation, store
-lock-order deadlock fixes, safer staging of missing/case-variant directories,
-dry-run write protection, and TLS dependency security fixes. Every process using
-the same Lore store must upgrade to receive the lock-order fix. Restart any
-external Lore service with the matching build after upgrading.
+Client compatibility assessment and adaptations:
 
-The token-login adapter explicitly leaves the new `client_id` and `client_secret`
-fields empty, preserving bearer-token login. Confidential-client login is not
-exposed in the desktop UI. Logout now may fail remote revocation **after** removing
-local credentials: the client invalidates cached connections and refreshes account
-and repository state even on failure, while still reporting the original error.
-Device-level logout passes an explicit auth URL; upstream cannot revoke an OIDC
-refresh token without the repository-advertised client ID in this mode, so it
-removes that login locally and logs a warning. Global credential clearing remains
-a local operation.
+- Interactive login now has `reuse_session`. The adapter sets it to `0` so an
+  explicit login still opens authentication and lets the user change accounts.
+  Local user-info emits `AuthUserToken` before `AuthUserInfo` for stored logins;
+  our calls keep `with_identity_token` and `with_access_token` at `0`, so the
+  new token event contains no token string. Display-name parsing still consumes
+  `AuthUserInfo`. New refresh/session fields do not change the current UI.
+- FFI code `52` is `LinkDivergent`. The native name table and both UI languages
+  identify it and preserve the upstream path/branch details. Authentication/connection recovery codes
+  `16` and `29` retain their meanings. No existing code was renumbered.
+- View and ignore patterns now follow gitignore component boundaries and ancestor
+  exclusions. Selective Sync uses Lore's own `Filter` for validation and preview,
+  replacing the client's duplicate matcher. For example, `!/Engine/Content**`
+  does not include that directory's contents; use `!/Engine/Content`. Inclusions
+  beginning with a globstar component, including `!/**/a/b`, are rejected before
+  applying a view. The vendored `glob-match` exactly matches the tag;
+  `quinn-proto` and the upstream patch list are unchanged.
+- Names that Windows resolves to a different entry are refused on every platform,
+  including names ending in a space or dot, drive designators and reserved control
+  directory aliases. Stage/Unstage now validate these names before calling Lore,
+  returning a localized error instead of an apparent successful no-op. Leading
+  spaces in otherwise valid names remain distinct. Existing unsupported names
+  need renaming before they can be tracked by the upgraded library.
+- Tracked files continue to participate even when an ignore rule matches them.
+  Reset sync and branch switching preserve untracked files; explicit reset purge
+  deletes untracked files regardless of ignore rules. The client does not add a
+  purge flag or enable the new instance move/delete APIs. The release also fixes
+  sparse-view staging, link mounts and merges, history paging, and interrupted
+  sync recovery, and improves sync/filter/storage performance.
 
-The upstream FFI error codes and both vendored patches (`quinn-proto`,
-`glob-match`) are unchanged between these tags. No new Lore UI features, server
-configuration, or credentials are required for the offline development workflow.
+Deployment compatibility needs separate attention: a `lores://` server must
+advertise authenticated endpoints (such as `lores://`), or connections fail with
+`NotSupported`. When upgrading Lore Server, a configured `user_url` must implement
+`lore.user.v1.RepositoryRegistryService` before the server upgrade; the old
+Partition RPCs were removed. Repository writes, branch protection, and presigned
+URLs enforce the new documented permissions. Servers without `user_url` do not
+need the directory migration. This dependency update does not upgrade a running
+server or the E2E stack's pinned `0.10.1` server; live compatibility must be tested
+against the deployment in use. Restart external Lore services with a matching
+build after upgrading the desktop client.
 
 ### Change persisted settings
 

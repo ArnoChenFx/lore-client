@@ -115,6 +115,9 @@ const enUSStatic = {
   archiveIncludeLayers: 'Also archive in every configured Layer',
   archiveIncludeLayersHint:
     'Lore archives the same branch in every configured layer; repositories without layers are unaffected.',
+  loreErrorInvalidNodeName: 'This file or folder name is not supported by Lore. Rename it before staging.',
+  loreErrorLinkDivergent:
+    'A linked repository has newer remote revisions. Sync and merge the affected Link, then retry the push.',
   loreErrorLocalModifications:
     'The operation was refused because the object still carries uncommitted staged work or local modifications. Commit or discard those changes first, then retry.',
   archivedBranchAvailableRevision_4860: 'This archived branch has no available revision',

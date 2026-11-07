@@ -109,28 +109,43 @@ bun tauri build --debug --no-bundle
 4. `cargo check` 会报出结构体字段增删；逐个确认新字段的语义后再决定填充值，
    不得为了通过编译而无脑传默认值（尤其是此前会改变行为的新开关）。
 
-### 内嵌 Lore v0.12.0
+### 内嵌 Lore v0.13.0
 
-两个 Lore 依赖均固定到官方 `v0.12.0` 标签的提交
-`f00dbbf07cb449103e211ccbecaa995630f47d2d`，原版本为 `v0.11.0`
-（`c9159c8259824455dcfdfab3b9bca877bdb9a4b7`）。上游 main 另有尚未发布的变更，
-不包含在此次升级中。该标签的 workspace 仍声明 `0.11.1-nightly`，因此内嵌库版本
-可能显示这个值；源码提交号才是精确的发布版本依据。
+两个 Lore 依赖均固定到官方 `v0.13.0` 标签的提交
+`9e0b4519a8a246e471d01853955f63bf0cecbeca`，原版本为 `v0.12.0`
+（`f00dbbf07cb449103e211ccbecaa995630f47d2d`）。标签内 workspace 声明的版本仍为
+`0.12.1-nightly`，发布版本以源码提交号为准；此次升级不包含 main 上未发布的变更。
 
-此次升级带来 OIDC access token 自动续期与 refresh token 轮换、存储锁顺序死锁修复、
-缺失目录及大小写变体路径的安全暂存、dry-run 写入保护，以及 TLS 依赖安全修复。
-共享同一 Lore store 的所有进程都需要升级才能消除锁顺序死锁；升级后应使用匹配的
-构建重启外部 Lore service。
+客户端影响与适配：
 
-Token 登录适配器显式将新增的 `client_id` 和 `client_secret` 留空，保留原来的 bearer
-token 登录语义。桌面界面暂不提供 confidential-client 登录。退出现在可能在删除本地
-凭据后因远端撤销失败而报错：客户端即使收到失败也会失效缓存连接、刷新账户和仓库
-状态，同时保留原始错误。设备级退出传入显式认证 URL；该模式缺少仓库远端公布的
-OIDC client ID，上游只能删除本地登录并记录警告，无法撤销该 OIDC refresh token。
-全局清空凭据仍是本地操作。
+- 交互登录新增 `reuse_session`，适配器显式设为 `0`，保留用户主动登录时打开认证、
+  切换账户的行为。本地账户查询现在对已存储登录先发 `AuthUserToken`、再发
+  `AuthUserInfo`；客户端仍将 `with_identity_token` 与 `with_access_token` 设为 `0`，
+  因而新增事件不含 Token 字符串，显示名仍从 `AuthUserInfo` 提取。新增续期与会话字段
+  不改变现有账户界面。
+- 新增 FFI 错误码 `52`（`LinkDivergent`），已补齐 Rust 名称映射和中英恢复提示，
+  保留上游 Link 路径、Branch 详情。认证相关的 `16`、`29` 含义不变，旧码没有重排。
+- View/Ignore 按 gitignore 的路径组件及祖先目录规则匹配。选择性同步直接使用 Lore
+  的 `Filter` 校验并计算预览，移除客户端重复实现。例如 `!/Engine/Content**` 不会
+  包含该目录内的文件，应改用 `!/Engine/Content`。以 globstar 组件开头的重包含
+  （包括 `!/**/a/b`）在应用 View 前被拒绝。vendored `glob-match` 已完整同步到标签；
+  `quinn-proto` 与上游 patch 清单不变。
+- 所有平台统一拒绝 Windows 会解析成其他对象的名称，包括尾随空格、尾随点、盘符及
+  仓库控制目录别名。Stage/Unstage 在调用 Lore 前校验并返回本地化错误，避免表面成功
+  却未暂存任何内容；合法名称的前导空格仍保留且彼此区分。现有不支持的名称需先重命名，
+  才能由升级后的库跟踪。
+- 已跟踪文件即使命中 Ignore 仍参与状态、暂存等操作。reset 同步及分支切换保留未跟踪
+  文件；显式 reset purge 不受 Ignore 保护。客户端没有新增 purge 开关，也没有开放新
+  Instance 移动/删除 API。上游另修复稀疏 View 暂存、Link 挂载与合并、历史分页、同步
+  中断恢复，并优化同步、过滤器及存储性能。
 
-两个标签之间的 FFI 错误码和 vendored 补丁（`quinn-proto`、`glob-match`）均未变化。
-离线开发不需要新增服务器配置或凭据，此次升级不扩展 Lore 功能界面。
+部署兼容性需单独确认：`lores://` 服务器公布的各服务端点必须支持服务器身份验证
+（如 `lores://`），否则连接报 `NotSupported`。升级 Lore Server 前，配置的 `user_url`
+必须先提供 `lore.user.v1.RepositoryRegistryService`；旧 Partition RPC 已删除。
+仓库写入、分支保护及预签名 URL 将执行新版权限检查。未配置 `user_url` 的服务器
+无需目录服务迁移。本次仅更新客户端依赖，不升级运行中的服务器，也不改变 E2E 栈
+固定的 `0.10.1` 服务端；实际部署仍需联机验证。桌面升级后应使用匹配构建重启外部
+Lore service。
 
 ### 修改持久化设置
 

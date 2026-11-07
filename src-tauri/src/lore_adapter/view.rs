@@ -34,64 +34,6 @@ pub(super) fn repository_view_display_path(view_path: &Path) -> String {
         .unwrap_or_else(|| "view".to_owned())
 }
 
-/// 按固定 Lore 版本 `filter.rs` 的顺序覆盖语义添加一条规则。
-pub(super) fn push_repository_view_rule(
-    parsed: &mut ParsedRepositoryView,
-    glob: &str,
-    negated: bool,
-) {
-    let leading_separator = glob.starts_with('/');
-    let ending_separator = glob.ends_with('/');
-    let normalized = glob.trim_matches('/').to_lowercase();
-    let filename = if negated {
-        !leading_separator && !normalized.contains('/')
-    } else {
-        !leading_separator && !normalized.contains('/') && normalized != "**"
-    };
-
-    if negated && !filename {
-        let mut parts = normalized.split('/').collect::<Vec<_>>();
-        parts.pop();
-        let mut parent = String::new();
-        for part in parts {
-            if !parent.is_empty() {
-                parent.push('/');
-            }
-            parent.push_str(part);
-            parsed.rules.push(RepositoryViewRule {
-                glob: parent.clone(),
-                negated: true,
-                directory: true,
-                generated: true,
-                filename: false,
-            });
-        }
-    }
-
-    parsed.rules.push(RepositoryViewRule {
-        glob: normalized.clone(),
-        negated,
-        directory: ending_separator,
-        generated: false,
-        filename,
-    });
-
-    if !filename && !normalized.ends_with('*') && !normalized.ends_with("*/") {
-        let mut subtree = normalized;
-        if !subtree.ends_with('/') {
-            subtree.push('/');
-        }
-        subtree.push_str("**");
-        parsed.rules.push(RepositoryViewRule {
-            glob: subtree,
-            negated,
-            directory: false,
-            generated: true,
-            filename: false,
-        });
-    }
-}
-
 /// 解析 Lore View 文本，不读取工作区也不产生写操作。
 pub(super) fn parse_repository_view(content: &str) -> ParsedRepositoryView {
     let mut parsed = ParsedRepositoryView::default();
@@ -105,16 +47,18 @@ pub(super) fn parse_repository_view(content: &str) -> ParsedRepositoryView {
         }
 
         parsed.rule_count += 1;
-        let mut negated = false;
-        while glob.starts_with('!') {
-            negated = !negated;
-            glob = &glob[1..];
-        }
+        let negated = glob.starts_with('!');
+        glob = &glob[usize::from(negated)..];
         if glob.starts_with("\\!") {
             glob = &glob[1..];
         }
 
-        if negated && glob.starts_with("**") {
+        let result = if negated {
+            parsed.filter.view.add_inclusion(glob)
+        } else {
+            parsed.filter.view.add_exclusion(glob)
+        };
+        if result.is_err() {
             parsed.diagnostics.push(LoreViewDiagnostic {
                 line: index + 1,
                 severity: "error",
@@ -130,7 +74,6 @@ pub(super) fn parse_repository_view(content: &str) -> ParsedRepositoryView {
             parsed.exclusion_count += 1;
             has_exclude = true;
         }
-        push_repository_view_rule(&mut parsed, glob, negated);
     }
 
     if has_include && !has_exclude {
@@ -150,25 +93,16 @@ pub(super) fn repository_view_is_valid(parsed: &ParsedRepositoryView) -> bool {
         .any(|diagnostic| diagnostic.severity == "error")
 }
 
-/// 判断文件是否被 View 排除；后出现且命中的规则覆盖此前状态。
+/// 通过 Lore 的祖先目录与重包含规则判断文件是否被 View 排除。
 pub(super) fn repository_view_excludes(parsed: &ParsedRepositoryView, path: &str) -> bool {
-    let normalized = path.replace('\\', "/").to_lowercase();
-    let filename = normalized.rsplit('/').next().unwrap_or(&normalized);
-    let mut excluded = false;
-    for rule in &parsed.rules {
-        if rule.negated != excluded || rule.directory {
-            continue;
-        }
-        let target = if rule.filename {
-            filename
-        } else {
-            normalized.as_str()
-        };
-        if glob_match(rule.glob.as_str(), target) {
-            excluded = !rule.negated;
-        }
-    }
-    excluded
+    let normalized = path.replace('\\', "/");
+    let Ok(path) = lore_revision::util::path::RelativePath::new_from_initial_path(normalized)
+    else {
+        return false;
+    };
+    parsed
+        .filter
+        .excludes(&path, false, lore_revision::filter::FilterMode::View)
 }
 
 pub(super) fn read_repository_view(

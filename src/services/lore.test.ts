@@ -7,6 +7,7 @@ import {
   DEFAULT_SERVER_URL,
   isAuthenticationRequiredError,
   LoreCommandClientError,
+  LoreOperationError,
   parseFileDependencies,
   parseFileLocks,
   parseMetadataEntries,
@@ -48,6 +49,42 @@ function historyEntry(
 describe('Lore event adapter', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en-US')
+  })
+
+  it('localizes a divergent link push and preserves upstream path details', async () => {
+    const detail = "Can't push the link at /tools (branch main): the remote branch has newer revisions than yours"
+    for (const language of ['en-US', 'zh-CN']) {
+      await i18n.changeLanguage(language)
+      for (const events of [
+        [{ tagName: 'complete', data: { error: { message: detail } } }],
+        [{ tagName: 'error', data: { errorInner: detail } }]
+      ]) {
+        const error = new LoreOperationError({
+          requestId: 'link-divergent',
+          workspaceKey: null,
+          operation: 'branch.push',
+          status: 52,
+          durationMs: 0,
+          events
+        })
+        expect(error.status).toBe(52)
+        expect(error.message).toBe(`${i18n.t('loreErrorLinkDivergent')}\n${detail}`)
+        expect(error.message).not.toContain('loreErrorLinkDivergent')
+      }
+    }
+  })
+
+  it('localizes unsupported Lore node names in both languages', async () => {
+    for (const language of ['en-US', 'zh-CN']) {
+      await i18n.changeLanguage(language)
+      const error = new LoreCommandClientError(
+        { code: 'invalid_lore_node_name', message: 'Lore cannot track this file or folder name: asset ' },
+        'lore_stage'
+      )
+      expect(error.code).toBe('invalid_lore_node_name')
+      expect(error.message).toBe(i18n.t('loreErrorInvalidNodeName'))
+      expect(error.message).not.toContain('loreErrorInvalidNodeName')
+    }
   })
 
   it('resolves the local default server and explicit environment overrides', () => {

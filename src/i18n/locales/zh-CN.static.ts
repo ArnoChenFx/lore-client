@@ -98,6 +98,8 @@ const zhCNStatic = {
   archiveBranch_2: '归档分支…',
   archiveIncludeLayers: '同时归档所有已配置的 Layer',
   archiveIncludeLayersHint: 'Lore 会在每个已配置的 Layer 中归档同名分支；仓库没有配置 Layer 时不会产生额外影响。',
+  loreErrorInvalidNodeName: 'Lore 不支持此文件或文件夹名称。请先重命名，再暂存。',
+  loreErrorLinkDivergent: '关联仓库的远端已有更新的 Revision。请先同步并合并受影响的 Link，再重试推送。',
   loreErrorLocalModifications: '操作被拒绝：对象仍存在未提交的暂存工作或本地修改。请先提交或丢弃这些更改后重试。',
   archivedBranchAvailableRevision_4860: '该归档分支没有可用修订',
   archivedBranchAvailableRevision_62c0: '归档分支没有可用修订',
