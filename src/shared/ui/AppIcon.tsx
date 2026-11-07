@@ -1,4 +1,4 @@
-import appIconUrl from '../../../assets/app-icon-transparent.svg'
+import appIconUrl from '../../../assets/app-icon.svg'
 
 interface AppIconProps {
   className?: string
@@ -9,9 +9,7 @@ interface AppIconProps {
 /**
  * 前端统一使用的 Lore Client 软件图标。
  *
- * 前端使用与 Tauri 完整图标同源的透明背景 SVG，不在组件内重新绘制，也不让欢迎页
- * 和关于页各自选择临时 Lucide 图标。完整系统图标保留深色底座，前端透明版则让现有
- * 主题表面承担底色，避免浅色主题出现固定近黑品牌方块。
+ * 与 Tauri 系统图标同源的 Lore 标志 SVG。
  */
 export function AppIcon({ className, label }: AppIconProps) {
   return (
