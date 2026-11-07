@@ -174,6 +174,8 @@ pub async fn lore_auth_login_interactive(
                 LoreAuthLoginInteractiveArgs {
                     remote_url: remote_url.into(),
                     no_browser: 0,
+                    // 用户显式发起登录时仍打开认证流程，允许切换账号。
+                    reuse_session: 0,
                 },
                 callback,
             ))

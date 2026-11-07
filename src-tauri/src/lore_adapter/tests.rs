@@ -1221,6 +1221,7 @@ fn ffi_error_code_table_covers_the_relocated_code_blocks() {
     assert_eq!(lore_error_code_name(17), Some("NotAuthorized"));
     assert_eq!(lore_error_code_name(29), Some("NotConnected"));
     assert_eq!(lore_error_code_name(44), Some("LocalModifications"));
+    assert_eq!(lore_error_code_name(52), Some("LinkDivergent"));
     assert_eq!(lore_error_code_name(89), Some("RepositoryNotFound"));
     assert_eq!(lore_error_code_name(193), Some("ShutDown"));
     // 旧编号在 0.10.0 含义已变或已废弃；未使用的新码必须保持未命名。
@@ -2559,7 +2560,33 @@ fn explicit_file_paths_preserve_spaces_and_never_expand_empty_entries_to_root() 
     let paths = ["asset", "asset ", " asset", " ", "directory / file "]
         .map(str::to_owned)
         .to_vec();
-    assert_eq!(validate_stage_paths(paths.clone()).unwrap(), paths);
+    let stage_paths = vec![
+        "asset".to_owned(),
+        " asset".to_owned(),
+        "directory/ file".to_owned(),
+    ];
+    assert_eq!(
+        validate_stage_paths(stage_paths.clone()).unwrap(),
+        stage_paths
+    );
+    for path in [
+        "asset ",
+        " ",
+        "directory /file",
+        "asset.",
+        "directory/C:/file",
+        "file::$DATA",
+        ".lore/config",
+        "LORE~1/config",
+    ] {
+        assert_eq!(
+            validate_stage_paths(vec![path.to_owned()])
+                .unwrap_err()
+                .code,
+            "invalid_lore_node_name",
+            "{path}"
+        );
+    }
     assert_eq!(
         validate_repository_relative_paths(paths.clone()).unwrap(),
         paths
@@ -4564,6 +4591,38 @@ fn repository_view_rejects_expensive_double_star_inclusion() {
             code: "view_inclusion_starts_with_double_star",
         }]
     );
+}
+
+#[test]
+fn repository_view_matches_v013_gitignore_boundaries() {
+    let cases = [
+        ("**\n!/Engine/Content**\n", "Engine/Content/a.uasset", true),
+        ("**\n!/Engine/Content\n", "Engine/Content/a.uasset", false),
+        ("**\n!keep.txt\n", "nested/keep.txt", true),
+        ("**\n!keep.txt\n", "keep.txt", false),
+        ("**\n!!keep.txt\n", "!keep.txt", false),
+        ("Cache/\n", "nested/Cache/a.bin", true),
+        ("Cache/\n", "Cache", false),
+        (
+            "**\n!/Engine/Textures/\n",
+            "Engine\\Textures\\Sky.tga",
+            false,
+        ),
+    ];
+    for (content, path, excluded) in cases {
+        let parsed = parse_repository_view(content);
+        assert!(repository_view_is_valid(&parsed), "{content:?}");
+        assert_eq!(
+            repository_view_excludes(&parsed, path),
+            excluded,
+            "{content:?}: {path}"
+        );
+    }
+    for content in ["**\n!/**/Textures/**\n", "**\n!/**\n"] {
+        let parsed = parse_repository_view(content);
+        assert!(!repository_view_is_valid(&parsed));
+        assert_eq!(parsed.diagnostics[0].line, 2);
+    }
 }
 
 #[test]

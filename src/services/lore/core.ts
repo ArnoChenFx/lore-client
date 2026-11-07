@@ -226,6 +226,9 @@ function localizeCommandError(error: Partial<LoreCommandError>, command: string)
   if (error.code === 'composition_field_invalid') {
     return t('compositionFieldInvalid')
   }
+  if (error.code === 'invalid_lore_node_name') {
+    return t('loreErrorInvalidNodeName')
+  }
   if (error.code === 'invalid_repository_relative_path') {
     return t('invalidRepositoryRelativePath')
   }
@@ -340,25 +343,26 @@ function localizeCommandError(error: Partial<LoreCommandError>, command: string)
  * 的“遇到顺序”编号不再适用）；这里只覆盖用户可以自助恢复的错误，其余码继续保留
  * 上游详情。新增码时同步 zh-CN 与 en-US。
  */
-function localizedLoreErrorCodeKey(code: number): 'loreErrorLocalModifications' | null {
+function localizedLoreErrorCodeKey(code: number): 'loreErrorLocalModifications' | 'loreErrorLinkDivergent' | null {
   // LocalModifications：Layer/Link 移除、同步等在存在暂存工作或本地修改时拒绝。
   if (code === 44) return 'loreErrorLocalModifications'
+  if (code === 52) return 'loreErrorLinkDivergent'
   return null
 }
 
 function readLoreErrorMessage(result: LoreOperationResult): string {
   const errorEvent = result.events.find((event) => event.tagName === 'error')
-  if (typeof errorEvent?.data.errorInner === 'string') {
-    return errorEvent.data.errorInner
-  }
+  const eventMessage = typeof errorEvent?.data.errorInner === 'string' ? errorEvent.data.errorInner : undefined
 
   const complete = result.events.find((event) => event.tagName === 'complete')
   const detail = complete?.data.error
-  const detailMessage = isRecord(detail)
-    ? ['message', 'inner', 'context']
-        .map((key) => (typeof detail[key] === 'string' && detail[key] ? String(detail[key]) : ''))
-        .find(Boolean)
-    : undefined
+  const detailMessage =
+    eventMessage ??
+    (isRecord(detail)
+      ? ['message', 'inner', 'context']
+          .map((key) => (typeof detail[key] === 'string' && detail[key] ? String(detail[key]) : ''))
+          .find(Boolean)
+      : undefined)
 
   /*
    * 已知 FFI 码优先渲染为本地化主文案，后面保留上游详情：拒绝类错误（如 Layer

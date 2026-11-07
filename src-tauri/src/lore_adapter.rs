@@ -10,7 +10,6 @@ use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use glob_match::glob_match;
 use lore::auth::{
     LoreAuthClearArgs, LoreAuthListArgs, LoreAuthLocalUserInfoArgs, LoreAuthLoginInteractiveArgs,
     LoreAuthLoginWithTokenArgs, LoreAuthLogoutArgs, LoreAuthUserInfoArgs,
@@ -886,20 +885,10 @@ pub struct LoreRepositoryViewApplyResult {
     pub result: LoreOperationResult,
 }
 
-/// Rust 边界内部复现固定 Lore 版本的单条 Filter 规则。
-#[derive(Clone, Debug, PartialEq)]
-struct RepositoryViewRule {
-    glob: String,
-    negated: bool,
-    directory: bool,
-    generated: bool,
-    filename: bool,
-}
-
-/// 解析后的 View 只在 Rust 内使用，避免绑定 Lore 内部 Filter ABI。
-#[derive(Clone, Debug, Default, PartialEq)]
+/// 与内嵌 Lore 共用过滤器，使预览与实际同步使用相同的规则语义。
+#[derive(Clone, Debug, Default)]
 struct ParsedRepositoryView {
-    rules: Vec<RepositoryViewRule>,
+    filter: lore_revision::filter::Filter,
     rule_count: usize,
     exclusion_count: usize,
     inclusion_count: usize,

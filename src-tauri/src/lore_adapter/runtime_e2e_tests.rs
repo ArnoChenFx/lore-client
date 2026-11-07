@@ -307,11 +307,11 @@ fn patch_export_without_confirmation_refuses_a_symlink_destination() {
     assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep me\n");
 }
 
-/// POSIX files whose names differ only by edge spaces must remain distinct through
+/// POSIX files whose names differ only by leading spaces must remain distinct through
 /// the actual Lore commands, including destructive restoration of one selected file.
 #[cfg(unix)]
 #[test]
-fn whitespace_file_names_survive_stage_preview_diff_and_reset() {
+fn leading_space_file_names_survive_stage_preview_diff_and_reset() {
     let _operation_scope = test_operation_scope();
     let sandbox = tempfile::tempdir().unwrap();
     let repository = sandbox.path().join("repository");
@@ -329,22 +329,38 @@ fn whitespace_file_names_survive_stage_preview_diff_and_reset() {
     .unwrap();
     let files = [
         ("asset", "plain\n"),
-        ("asset ", "trailing space\n"),
+        ("  asset", "double leading space\n"),
         (" asset", "leading space\n"),
-        (" ", "space only\n"),
+        ("   asset", "space only\n"),
     ];
     for (name, content) in files {
         std::fs::write(repository.join(name), content).unwrap();
     }
 
-    // Only the requested trailing-space file may enter the first immutable tree.
+    for name in ["asset ", " ", "asset."] {
+        std::fs::write(repository.join(name), "unsupported sibling\n").unwrap();
+        let error = tauri::async_runtime::block_on(lore_stage(
+            test_operation_context(),
+            repository_text.clone(),
+            vec![name.to_owned()],
+        ))
+        .unwrap_err();
+        assert_eq!(error.code, "invalid_lore_node_name");
+        assert_eq!(
+            std::fs::read_to_string(repository.join(name)).unwrap(),
+            "unsupported sibling\n"
+        );
+        std::fs::remove_file(repository.join(name)).unwrap();
+    }
+
+    // Only the requested double-leading-space file may enter the first immutable tree.
     let staged = tauri::async_runtime::block_on(lore_stage(
         test_operation_context(),
         repository_text.clone(),
-        vec!["asset ".to_owned()],
+        vec!["  asset".to_owned()],
     ))
     .unwrap();
-    ensure_operation_success(&staged, "Stage the exact trailing-space path").unwrap();
+    ensure_operation_success(&staged, "Stage the exact double-leading-space path").unwrap();
     let commit = tauri::async_runtime::block_on(lore_commit(
         test_operation_context(),
         repository_text.clone(),
@@ -358,7 +374,7 @@ fn whitespace_file_names_survive_stage_preview_diff_and_reset() {
         tree.iter()
             .map(|file| file.path.as_str())
             .collect::<Vec<_>>(),
-        vec!["asset "],
+        vec!["  asset"],
         "staging one file must not select its trimmed sibling"
     );
 
@@ -379,67 +395,67 @@ fn whitespace_file_names_survive_stage_preview_diff_and_reset() {
         test_operation_context(),
         repository_text.clone(),
         revision.clone(),
-        "asset ".to_owned(),
+        "  asset".to_owned(),
         None,
     ))
     .unwrap();
-    assert_eq!(text, "trailing space\n");
+    assert_eq!(text, "double leading space\n");
     let preview =
-        build_file_preview(&repository_text, "asset ", Some(&revision), true, 1024).unwrap();
-    assert_eq!(preview.path, "asset ");
-    assert_eq!(preview.size, "trailing space\n".len() as u64);
+        build_file_preview(&repository_text, "  asset", Some(&revision), true, 1024).unwrap();
+    assert_eq!(preview.path, "  asset");
+    assert_eq!(preview.size, "double leading space\n".len() as u64);
 
-    std::fs::write(repository.join("asset "), "changed trailing file\n").unwrap();
+    std::fs::write(repository.join("  asset"), "changed double-leading file\n").unwrap();
     std::fs::write(repository.join("asset"), "keep sibling change\n").unwrap();
     let diff = tauri::async_runtime::block_on(lore_workspace_diff(
         test_operation_context(),
         repository_text.clone(),
-        vec!["asset ".to_owned()],
+        vec!["  asset".to_owned()],
         Some(3),
         None,
         None,
     ))
     .unwrap();
-    ensure_operation_success(&diff, "Diff the exact trailing-space path").unwrap();
+    ensure_operation_success(&diff, "Diff the exact double-leading-space path").unwrap();
     let diff_paths = diff
         .events
         .iter()
         .filter(|event| event["tagName"] == "fileDiff")
         .map(|event| event["data"]["path"].as_str().unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(diff_paths, vec!["asset "]);
+    assert_eq!(diff_paths, vec!["  asset"]);
     let reset = tauri::async_runtime::block_on(lore_file_reset(
         test_operation_context(),
         repository_text.clone(),
-        vec!["asset ".to_owned()],
+        vec!["  asset".to_owned()],
         revision,
     ))
     .unwrap();
-    ensure_operation_success(&reset, "Reset the exact trailing-space path").unwrap();
+    ensure_operation_success(&reset, "Reset the exact double-leading-space path").unwrap();
     assert_eq!(
-        std::fs::read_to_string(repository.join("asset ")).unwrap(),
-        "trailing space\n"
+        std::fs::read_to_string(repository.join("  asset")).unwrap(),
+        "double leading space\n"
     );
     assert_eq!(
         std::fs::read_to_string(repository.join("asset")).unwrap(),
         "keep sibling change\n"
     );
 
-    // A whitespace-only name must stay a file selection, never become repository root.
+    // A three-leading-space name must stay a file selection, never become repository root.
     let staged = tauri::async_runtime::block_on(lore_stage(
         test_operation_context(),
         repository_text.clone(),
-        vec![" ".to_owned(), " asset".to_owned()],
+        vec!["   asset".to_owned(), " asset".to_owned()],
     ))
     .unwrap();
-    ensure_operation_success(&staged, "Stage the whitespace-only file").unwrap();
+    ensure_operation_success(&staged, "Stage the three-leading-space file").unwrap();
     let unstaged = tauri::async_runtime::block_on(lore_unstage(
         test_operation_context(),
         repository_text.clone(),
-        vec![" ".to_owned()],
+        vec!["   asset".to_owned()],
     ))
     .unwrap();
-    ensure_operation_success(&unstaged, "Unstage the whitespace-only file").unwrap();
+    ensure_operation_success(&unstaged, "Unstage the three-leading-space file").unwrap();
     let status = tauri::async_runtime::block_on(lore_repository_status(
         test_operation_context(),
         repository_text.clone(),
@@ -457,12 +473,12 @@ fn whitespace_file_names_survive_stage_preview_diff_and_reset() {
     assert_eq!(
         staged_paths,
         vec![" asset"],
-        "unstaging the whitespace-only file must preserve other staged files"
+        "unstaging the three-leading-space file must preserve other staged files"
     );
     let staged = tauri::async_runtime::block_on(lore_stage(
         test_operation_context(),
         repository_text.clone(),
-        vec![" ".to_owned()],
+        vec!["   asset".to_owned()],
     ))
     .unwrap();
     ensure_operation_success(&staged, "Stage both exact whitespace paths").unwrap();
@@ -480,9 +496,9 @@ fn whitespace_file_names_survive_stage_preview_diff_and_reset() {
         .map(|file| file.path.as_str())
         .collect::<Vec<_>>();
     assert_eq!(paths.len(), 3);
-    assert!(paths.contains(&"asset "));
+    assert!(paths.contains(&"  asset"));
     assert!(paths.contains(&" asset"));
-    assert!(paths.contains(&" "));
+    assert!(paths.contains(&"   asset"));
     assert!(!paths.contains(&"asset"));
 
     let staged = tauri::async_runtime::block_on(lore_stage(
@@ -518,7 +534,7 @@ fn whitespace_file_names_survive_stage_preview_diff_and_reset() {
         .filter(|event| event["tagName"] == "lockFileAcquire")
         .map(|event| event["data"]["path"].as_str().unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(lock_paths, vec![" ", " asset", "asset", "asset "]);
+    assert_eq!(lock_paths, vec!["   asset", "  asset", " asset", "asset"]);
 }
 
 #[cfg(unix)]

@@ -1101,6 +1101,7 @@ pub(super) fn lore_error_code_name(code: i32) -> Option<&'static str> {
         47 => "DeleteProtected",
         48 => "DeleteCurrent",
         49 => "DeleteDefault",
+        52 => "LinkDivergent",
         // 已存在（56–63）
         56 => "AlreadyLinked",
         57 => "BranchAlreadyExists",
