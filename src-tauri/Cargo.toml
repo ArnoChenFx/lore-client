@@ -25,10 +25,10 @@ exr = { version = "1.74", default-features = false }
 zstd = "0.13"
 # Blender 旧版压缩文件使用 gzip；关闭系统 zlib，保持桌面构建可复现且不引入额外动态库。
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
-lore = { git = "https://github.com/EpicGames/lore.git", rev = "9e0b4519a8a246e471d01853955f63bf0cecbeca" }
+lore = { git = "https://github.com/EpicGames/lore.git", rev = "317f48b918f0b4d43de104d99e80ac4a57b697df" }
 # 认证变更需要调用 Lore 顶层 crate 尚未暴露的 Transport 连接失效入口；
 # 依赖必须与 `lore` 锁定到完全相同的提交，避免协议实现漂移或重复版本。
-lore-revision = { git = "https://github.com/EpicGames/lore.git", rev = "9e0b4519a8a246e471d01853955f63bf0cecbeca" }
+lore-revision = { git = "https://github.com/EpicGames/lore.git", rev = "317f48b918f0b4d43de104d99e80ac4a57b697df" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
