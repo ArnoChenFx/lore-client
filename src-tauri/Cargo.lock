@@ -2809,7 +2809,7 @@ dependencies = [
 
 [[package]]
 name = "lore-client"
-version = "0.2.20"
+version = "0.2.21"
 dependencies = [
  "embed-resource",
  "exr",
