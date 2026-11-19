@@ -47,11 +47,11 @@ use lore::notification::{LoreNotificationSubscribeArgs, LoreNotificationUnsubscr
 use lore::repository::{
     LoreRepositoryCloneArgs, LoreRepositoryConfigGetArgs, LoreRepositoryCreateArgs,
     LoreRepositoryCreateMetadata, LoreRepositoryDumpArgs, LoreRepositoryGcArgs,
-    LoreRepositoryInfoArgs, LoreRepositoryInstanceListArgs, LoreRepositoryInstancePruneArgs,
-    LoreRepositoryListArgs, LoreRepositoryMetadataClearArgs, LoreRepositoryMetadataGetArgs,
-    LoreRepositoryMetadataSetArgs, LoreRepositoryReleaseArgs, LoreRepositoryStatusArgs,
-    LoreRepositoryUpdatePathArgs, LoreRepositoryVerifyFragmentArgs, LoreRepositoryVerifyStateArgs,
-    LoreVfsType,
+    LoreRepositoryInfoArgs, LoreRepositoryInstanceCloneArgs, LoreRepositoryInstanceListArgs,
+    LoreRepositoryInstancePruneArgs, LoreRepositoryListArgs, LoreRepositoryMetadataClearArgs,
+    LoreRepositoryMetadataGetArgs, LoreRepositoryMetadataSetArgs, LoreRepositoryReleaseArgs,
+    LoreRepositoryStatusArgs, LoreRepositoryUpdatePathArgs, LoreRepositoryVerifyFragmentArgs,
+    LoreRepositoryVerifyStateArgs, LoreVfsType,
 };
 use lore::revision::{
     LoreRevisionAmendArgs, LoreRevisionBisectArgs, LoreRevisionCherryPickAbortArgs,
@@ -555,6 +555,17 @@ impl From<crate::asset_preview::AssetPreviewError> for LoreCommandError {
 #[serde(rename_all = "camelCase")]
 pub struct LoreCloneResult {
     pub destination_path: String,
+    pub result: LoreOperationResult,
+}
+
+/// 实例克隆同样返回 Lore 原始事件与适配层解析出的绝对目标路径。
+///
+/// 预检（dry run）与真实克隆共用这个形状；Lore 的非零状态保留在 `result.status`，
+/// 因为“拒绝克隆”本身带有 `repositoryInstanceCloneBegin` 事件，前端需要用它解释原因。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoreInstanceCloneResult {
+    pub target_path: String,
     pub result: LoreOperationResult,
 }
 

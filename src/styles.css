@@ -4855,6 +4855,11 @@ button.sidebar__repo-mark:focus-visible {
   animation: menu-in 90ms ease-out;
 }
 
+.context-submenu.opens-up {
+  top: auto;
+  bottom: -5px;
+}
+
 /*
  * 文件锁子菜单承载 Owner、Branch 与提示型语义，适度加宽以避免高密度桌面菜单
  * 因英文说明产生过多折行；状态行不可聚焦，但仍需保持正常信息对比度。
@@ -13247,6 +13252,95 @@ body.is-resizing-panes {
 .diagnostic-module--instances {
   align-content: stretch;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+/* 实例克隆表单字段较多，独占一整行，避免在单列里过度换行。 */
+.diagnostic-module--wide {
+  grid-column: 1 / -1;
+}
+
+.diagnostic-module--instance-clone {
+  align-content: stretch;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.instance-clone__body {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+}
+
+/* 表单已经在 `.instance-clone__body` 里留了内边距；`.diagnostic-module__fields` 定义在本规则之后，需要叠加类名提高优先级。 */
+.diagnostic-module__fields.instance-clone__fields {
+  padding: 0;
+}
+
+.instance-clone__hint {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.instance-clone__path {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.instance-clone__check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+
+.instance-clone__plan {
+  display: grid;
+  gap: 6px;
+  padding: 8px 9px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+}
+
+.instance-clone__plan.is-refused {
+  background: var(--danger-surface);
+  border-color: var(--danger-border);
+}
+
+.instance-clone__plan dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.instance-clone__plan dt {
+  color: var(--text-soft);
+}
+
+.instance-clone__plan dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.instance-clone__plan p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.instance-clone__result {
+  padding: 7px 9px;
+  background: var(--success-surface);
+  border: 1px solid var(--success-border);
+  border-radius: 3px;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .diagnostic-module > header,

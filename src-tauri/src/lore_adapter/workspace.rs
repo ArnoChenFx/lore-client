@@ -870,21 +870,33 @@ fn reject_symbolic_link_destination(destination: &Path) -> Result<(), LoreComman
     Ok(())
 }
 
-/// 把所选路径或扩展名规则追加到 Lore 官方 `.loreignore` 文件。
+/// 把所选路径或扩展名规则追加到 Lore 的忽略文件。
 ///
-/// 前端只选择“按路径”或“按扩展名”，规则文本始终由 Rust 从已校验路径生成，
+/// 默认写入仓库根目录的 `.loreignore`（会随提交共享）。`instance_only` 为真时改写当前 Instance
+/// 自己的忽略文件：Lore v0.14.0 起会读取“当前 Lore 目录”下的 `ignore`（`.lore/ignore`，旧格式
+/// 为 `.urc/ignore`），语法与 `.loreignore` 相同，只对这个工作副本生效、从不提交，且同样只作用于
+/// Lore 尚未跟踪的路径。Instance 规则只能排除（`!` 行会被 Lore 跳过并告警），这里生成的规则
+/// 从不起于重包含语法。
+///
+/// 前端只选择“按路径”或“按扩展名”以及作用域，规则文本始终由 Rust 从已校验路径生成，
 /// 避免换行注入或意外写入任意过滤表达式。
 #[tauri::command]
 pub fn lore_ignore_paths(
     repository_path: String,
     paths: Vec<String>,
     by_extension: bool,
+    instance_only: Option<bool>,
 ) -> Result<Vec<String>, LoreCommandError> {
     let repository_path = validate_repository_path(&repository_path)?;
     let paths = validate_repository_relative_paths(paths)?;
     let rules = build_ignore_rules(&paths, by_extension)?;
-    let ignore_path =
-        repository_contained_write_path(&repository_path, &repository_path.join(".loreignore"))?;
+    let ignore_target = if instance_only.unwrap_or(false) {
+        // 按仓库格式选 `.lore` 或旧 `.urc`，不在旧仓库旁边创建新目录。
+        repository_metadata_directory(&repository_path)?.join("ignore")
+    } else {
+        repository_path.join(".loreignore")
+    };
+    let ignore_path = repository_contained_write_path(&repository_path, &ignore_target)?;
     // 已存在的忽略文件可能包含用户手写规则，读取失败时必须停止，不能把异常误判为空文件后覆盖。
     let existing = match std::fs::read_to_string(&ignore_path) {
         Ok(content) => content,

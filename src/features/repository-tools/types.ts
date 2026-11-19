@@ -1,5 +1,6 @@
 import type {
   Branch,
+  InstanceCloneRequest,
   LoreAuthIdentity,
   LoreBranchDiff,
   LoreBranchInfo,
@@ -8,6 +9,8 @@ import type {
   LoreDependencySelection,
   LoreDiagnosticReport,
   LoreFileLock,
+  LoreInstanceClonePreview,
+  LoreInstanceCloneResult,
   LoreLayer,
   LoreLayerAddRequest,
   LoreLayerRemoveRequest,
@@ -139,6 +142,12 @@ export interface RepositoryToolsDialogProps {
   onListInstances?: () => Promise<LoreRepositoryInstance[]>
   onPruneInstances?: () => Promise<boolean>
   onUpdateInstancePath?: () => Promise<boolean>
+  /** 弹出原生目录选择器；用户取消时返回 null。 */
+  onSelectInstanceCloneParent?: () => Promise<string | null>
+  /** 实例克隆预检（Lore dry run）：不加锁、不写入。 */
+  onPreviewInstanceClone?: (request: InstanceCloneRequest) => Promise<LoreInstanceClonePreview>
+  /** 真实实例克隆：经 Repository 写队列执行，失败时抛出。 */
+  onCloneInstance?: (request: InstanceCloneRequest) => Promise<LoreInstanceCloneResult>
   onVerify: () => void
   onCollectGarbage: () => void
   onClose: () => void

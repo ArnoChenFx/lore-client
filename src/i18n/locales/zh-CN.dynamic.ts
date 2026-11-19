@@ -24,6 +24,11 @@ const zhCNDynamic = {
     diffUnmodifiedLines_other: '{{count}} 行未修改',
     staleInstancesPruned: '已清理失效的仓库 Instance',
     instancePathUpdated: '已更新当前 Instance 路径',
+    instanceCloned: '已克隆 Instance',
+    instanceCloneResult:
+      '已创建 Instance {{id}}（{{path}}）：克隆 {{directories}} 个目录、{{entries}} 个文件，其中复制 {{copied}} 个。',
+    instanceCloneCopySummary_one: '{{count}} 个文件 · {{size}}',
+    instanceCloneCopySummary_other: '{{count}} 个文件 · {{size}}',
     instanceTooltip: '当前 Lore 工作区实例：{{value}}',
     partitionTooltip: '当前实例使用的 Lore 分区：{{value}}',
     currentBranchTooltip: '当前工作区附着的分支：{{value}}',
@@ -286,6 +291,8 @@ const zhCNDynamic = {
     operationFailedWithStatus: '{{operation}} 失败（状态码 {{status}}）'
   },
   confirm: {
+    cloneInstance:
+      '将仓库“{{repository}}”的 Instance 克隆到 {{target}}？\n方式：{{method}}。克隆期间同一共享 Store 上的其他 Lore 命令需要等待。',
     healRepositoryPath: '将修复仓库“{{repository}}”中“{{path}}”检测到的不一致。修复可能创建 staged 状态；是否继续？',
     pruneRepositoryInstances:
       '将从仓库“{{repository}}”移除 {{count}} 个路径已不存在的 Instance 记录：\n{{paths}}\n是否继续？',

@@ -168,6 +168,59 @@ pub async fn lore_repository_instance_update_path(
     .await
 }
 
+/**
+ * 把当前 Instance 克隆为同一共享 Store 上的独立 Instance（Lore v0.14.0 起可用）。
+ *
+ * 目标由“已存在的父目录 + 单级目录名”组合，Rust 边界拒绝已存在的目标；共享 Store、块共享能力、
+ * 空间和嵌套 Instance 等检查由 Lore 完成，结果通过事件与状态码返回。
+ *
+ * `dry_run` 只运行不加锁的预检：Lore 发出 `repositoryInstanceCloneBegin` 说明将如何克隆（共享数据块、
+ * 复制字节或不支持），不写入任何内容。`allow_copy` 为假时，无法共享数据块的克隆会在预检阶段被
+ * 拒绝，状态码为 9，但 Begin 事件仍然到达。
+ *
+ * 真实克隆会持有源 Instance 与 Store 的锁直到完成，期间同一 Store 上的其他命令都会等待，耗时可能
+ * 以分钟计；前端必须走 Repository 写队列并先让用户确认。失败时 Lore 自己清理已复制的内容。
+ */
+#[tauri::command]
+pub async fn lore_repository_instance_clone(
+    operation_context: OperationContext,
+    repository_path: String,
+    destination_parent: String,
+    directory_name: String,
+    allow_copy: bool,
+    dry_run: bool,
+) -> Result<LoreInstanceCloneResult, LoreCommandError> {
+    let destination = validate_instance_clone_destination(&destination_parent, &directory_name)?;
+    run_lore_task(operation_context, move || {
+        let target_path = display_path_without_windows_verbatim_prefix(&destination);
+        let mut globals = global_args(&repository_path)?;
+        globals.dry_run = u8::from(dry_run);
+        let lore_target_path = target_path.clone();
+        let result = run_operation(
+            if dry_run {
+                "repository.instance-clone-preview"
+            } else {
+                "repository.instance-clone"
+            },
+            move |callback| {
+                lore::runtime().block_on(lore::repository::instance_clone(
+                    globals,
+                    LoreRepositoryInstanceCloneArgs {
+                        target_path: lore_target_path.into(),
+                        allow_copy: u8::from(allow_copy),
+                    },
+                    callback,
+                ))
+            },
+        )?;
+        Ok(LoreInstanceCloneResult {
+            target_path,
+            result,
+        })
+    })
+    .await
+}
+
 /// 读取 Clone 前的远端 Repository 说明、默认 Branch、创建者与创建时间。
 #[tauri::command]
 pub async fn lore_repository_info_remote(

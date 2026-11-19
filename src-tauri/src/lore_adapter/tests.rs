@@ -1221,9 +1221,16 @@ fn ffi_error_code_table_covers_the_relocated_code_blocks() {
     assert_eq!(lore_error_code_name(17), Some("NotAuthorized"));
     assert_eq!(lore_error_code_name(29), Some("NotConnected"));
     assert_eq!(lore_error_code_name(44), Some("LocalModifications"));
+    assert_eq!(lore_error_code_name(51), Some("MountsBusy"));
     assert_eq!(lore_error_code_name(52), Some("LinkDivergent"));
     assert_eq!(lore_error_code_name(89), Some("RepositoryNotFound"));
     assert_eq!(lore_error_code_name(193), Some("ShutDown"));
+    // v0.14.0 的发布说明点名的码：拒绝类错误 16/17、可重试的 31、root file 缺失的 82、
+    // link 内路径不支持的 9、实例克隆空间不足的 118。
+    assert_eq!(lore_error_code_name(9), Some("NotSupported"));
+    assert_eq!(lore_error_code_name(31), Some("SlowDown"));
+    assert_eq!(lore_error_code_name(82), Some("FileNotFound"));
+    assert_eq!(lore_error_code_name(118), Some("Oversized"));
     // 旧编号在 0.10.0 含义已变或已废弃；未使用的新码必须保持未命名。
     assert_eq!(lore_error_code_name(1), None);
     assert_eq!(lore_error_code_name(200), None);
@@ -1240,6 +1247,19 @@ fn lock_query_filters_reject_control_characters_without_rewriting_paths() {
         validate_optional_lock_filter(Some("Content/Maps/\nSecret.umap".to_owned()), "Lock path")
             .expect_err("control characters must never enter a remote lock query");
     assert_eq!(error.code, "invalid_lock_filter");
+}
+
+#[test]
+fn lock_query_allows_one_filter_but_never_owner_and_path_together() {
+    // Lore v0.14.0 在询问远端之前就拒绝 owner + path 组合；客户端在 Rust 边界自己拒绝。
+    assert!(ensure_lock_query_filters_exclusive(None, "").is_ok());
+    assert!(ensure_lock_query_filters_exclusive(Some("user-1"), "").is_ok());
+    assert!(ensure_lock_query_filters_exclusive(None, "Content/Maps/Level.umap").is_ok());
+    // 空字符串等价于“没有筛选”，不能被当成一个筛选。
+    assert!(ensure_lock_query_filters_exclusive(Some(""), "Content/Maps/Level.umap").is_ok());
+    let error = ensure_lock_query_filters_exclusive(Some("user-1"), "Content/Maps/Level.umap")
+        .expect_err("an owner and a path together are refused by the pinned Lore");
+    assert_eq!(error.code, "lock_query_filters_conflict");
 }
 
 #[test]
@@ -2520,6 +2540,7 @@ fn ignore_rules_append_to_a_regular_loreignore_file() {
         repository.path().to_string_lossy().into_owned(),
         vec!["Content/Hero.txt".to_owned()],
         false,
+        None,
     )
     .expect("a regular ignore file inside the repository should be updated");
 
@@ -2528,6 +2549,100 @@ fn ignore_rules_append_to_a_regular_loreignore_file() {
         fs::read_to_string(repository.path().join(".loreignore")).unwrap(),
         "*.log\nContent/Hero.txt\n"
     );
+}
+
+#[test]
+fn instance_ignore_rules_go_to_the_lore_directory_and_never_touch_loreignore() {
+    // Lore v0.14.0 reads `<Lore directory>/ignore` as the instance's own, never-committed rules.
+    let repository = tempfile::tempdir().expect("temporary repository should exist");
+    fs::create_dir(repository.path().join(".lore")).unwrap();
+    fs::write(
+        repository.path().join(".loreignore"),
+        "*.log
+",
+    )
+    .unwrap();
+    let path = repository.path().to_string_lossy().into_owned();
+
+    let appended = lore_ignore_paths(
+        path.clone(),
+        vec!["Saved/Local.txt".to_owned(), "Saved/Other.txt".to_owned()],
+        false,
+        Some(true),
+    )
+    .expect("the instance ignore file should be written inside the Lore directory");
+    assert_eq!(appended, vec!["Saved/Local.txt", "Saved/Other.txt"]);
+    assert_eq!(
+        fs::read_to_string(repository.path().join(".lore").join("ignore")).unwrap(),
+        "Saved/Local.txt
+Saved/Other.txt
+"
+    );
+    assert_eq!(
+        fs::read_to_string(repository.path().join(".loreignore")).unwrap(),
+        "*.log
+",
+        "the shared repository rules stay untouched"
+    );
+
+    // Appending is idempotent and keeps what is already there.
+    let appended = lore_ignore_paths(
+        path.clone(),
+        vec!["Saved/Local.txt".to_owned()],
+        false,
+        Some(true),
+    )
+    .unwrap();
+    assert!(appended.is_empty());
+
+    // An extension rule is generated the same way as for the repository file.
+    lore_ignore_paths(path, vec!["Saved/a.tmp".to_owned()], true, Some(true)).unwrap();
+    assert_eq!(
+        fs::read_to_string(repository.path().join(".lore").join("ignore")).unwrap(),
+        "Saved/Local.txt
+Saved/Other.txt
+*.tmp
+"
+    );
+}
+
+#[test]
+fn instance_ignore_rules_use_the_legacy_urc_directory_of_an_old_repository() {
+    let repository = tempfile::tempdir().expect("temporary repository should exist");
+    fs::create_dir(repository.path().join(".urc")).unwrap();
+
+    lore_ignore_paths(
+        repository.path().to_string_lossy().into_owned(),
+        vec!["Local.txt".to_owned()],
+        false,
+        Some(true),
+    )
+    .expect("an old repository keeps its instance rules beside its own metadata");
+
+    assert_eq!(
+        fs::read_to_string(repository.path().join(".urc").join("ignore")).unwrap(),
+        "Local.txt
+"
+    );
+    assert!(
+        !repository.path().join(".lore").exists(),
+        "no `.lore` directory may appear beside an old `.urc` repository"
+    );
+}
+
+#[test]
+fn instance_ignore_rules_need_an_existing_lore_directory() {
+    // Without Lore metadata there is no instance to hold rules; the repository file is not a fallback.
+    let repository = tempfile::tempdir().expect("temporary repository should exist");
+    let error = lore_ignore_paths(
+        repository.path().to_string_lossy().into_owned(),
+        vec!["Local.txt".to_owned()],
+        false,
+        Some(true),
+    )
+    .expect_err("a directory without Lore metadata has no instance ignore file");
+    assert_eq!(error.code, "repository_metadata_missing");
+    assert!(!repository.path().join(".loreignore").exists());
 }
 
 #[cfg(unix)]
@@ -2543,6 +2658,7 @@ fn ignore_rules_refuse_a_loreignore_link_that_leaves_the_repository() {
         repository.path().to_string_lossy().into_owned(),
         vec!["Content/Hero.txt".to_owned()],
         false,
+        None,
     )
     .expect_err("an ignore file that leaves the repository must not be updated");
 
@@ -4020,6 +4136,81 @@ fn clone_target_accepts_a_portable_unicode_directory_name() {
             .expect("The test parent directory should be canonicalizable")
             .join("世界-project")
     );
+}
+
+#[test]
+fn instance_clone_target_must_be_new_and_use_a_portable_single_level_name() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("System time should be later than the Unix epoch")
+        .as_nanos();
+    let parent = std::env::temp_dir().join(format!("lore-client-instance-clone-{unique}"));
+    let _cleanup = TemporaryRepository::new(parent.clone());
+    std::fs::create_dir_all(&parent).expect("The test parent directory should be created");
+    std::fs::create_dir(parent.join("empty")).expect("The empty directory should be created");
+    std::fs::write(parent.join("file.txt"), "preserve").expect("The test file should be written");
+    let parent_text = parent.to_string_lossy();
+
+    let destination = validate_instance_clone_destination(parent_text.as_ref(), "世界-copy")
+        .expect("A fresh portable single-level name should be accepted");
+    assert_eq!(
+        destination,
+        std::fs::canonicalize(&parent)
+            .expect("The test parent directory should be canonicalizable")
+            .join("世界-copy")
+    );
+
+    // Lore 自己创建目标，任何已存在的目标（包括空目录）都必须提前拒绝，这与 Clone 允许空目录不同。
+    for existing in ["empty", "file.txt"] {
+        let error = validate_instance_clone_destination(parent_text.as_ref(), existing)
+            .expect_err("An existing destination must be refused");
+        assert_eq!(
+            error.code, "instance_clone_destination_exists",
+            "{existing}"
+        );
+    }
+
+    for name in [
+        "",
+        ".",
+        "..",
+        "nested/directory",
+        r"nested\directory",
+        "CON",
+        "trailing.",
+        "trailing ",
+        "bad\nname",
+    ] {
+        let error = validate_instance_clone_destination(parent_text.as_ref(), name)
+            .expect_err("Non-portable or multi-level names must be refused");
+        assert_eq!(error.code, "invalid_instance_clone_directory", "{name:?}");
+    }
+
+    let missing_parent = parent.join("missing");
+    assert!(
+        validate_instance_clone_destination(missing_parent.to_string_lossy().as_ref(), "copy")
+            .is_err(),
+        "The parent directory must already exist"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn instance_clone_target_treats_a_dangling_symlink_as_existing() {
+    // 上游把指向不存在位置的符号链接也算“已存在”；`Path::exists` 会跟随链接而误报不存在。
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("System time should be later than the Unix epoch")
+        .as_nanos();
+    let parent = std::env::temp_dir().join(format!("lore-client-instance-clone-link-{unique}"));
+    let _cleanup = TemporaryRepository::new(parent.clone());
+    std::fs::create_dir_all(&parent).expect("The test parent directory should be created");
+    std::os::unix::fs::symlink(parent.join("nowhere"), parent.join("dangling"))
+        .expect("The dangling link should be created");
+
+    let error = validate_instance_clone_destination(parent.to_string_lossy().as_ref(), "dangling")
+        .expect_err("A dangling symbolic link already occupies the destination");
+    assert_eq!(error.code, "instance_clone_destination_exists");
 }
 
 #[test]

@@ -957,7 +957,7 @@ fn live_loreignore_rule_hides_matching_files_from_status() {
         "trace.log should be pending before the rule: {before:?}"
     );
 
-    let rules = lore_ignore_paths(text(&repository), vec!["trace.log".to_owned()], false)
+    let rules = lore_ignore_paths(text(&repository), vec!["trace.log".to_owned()], false, None)
         .expect("the ignore rule should be appended");
     evidence("rules appended", &rules);
     evidence(

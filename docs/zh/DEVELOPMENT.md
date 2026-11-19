@@ -108,15 +108,91 @@ bun tauri build --debug --no-bundle
    静默失效。
 4. `cargo check` 会报出结构体字段增删；逐个确认新字段的语义后再决定填充值，
    不得为了通过编译而无脑传默认值（尤其是此前会改变行为的新开关）。
+   同时运行 `cargo check --tests`：测试代码会直接构造事件结构体，新增字段会先在这里暴露。
+5. 阅读依赖的 `build.rs` 与原生链接输入。新增的预编译库（v0.14.0 在 Windows 上新增了静态
+   SWFS 库）会改变桌面二进制的链接内容，需要运行 `bun tauri build --debug --no-bundle` 并查看链接器警告。
+6. 事件 JSON 并不能完全从 `lore.h` 看出：有些类型自己决定序列化方式（`InstanceId` 是
+   `{ "data": [16 个字节] }`，不是十六进制字符串）。运行当前固定版本章节里点名的、默认被忽略的
+   真实 Lore 契约测试，并比对真实事件与前端解析器。
 
-### 内嵌 Lore v0.13.0
+### 内嵌 Lore v0.14.0
 
-两个 Lore 依赖均固定到官方 `v0.13.0` 标签的提交
-`9e0b4519a8a246e471d01853955f63bf0cecbeca`，原版本为 `v0.12.0`
-（`f00dbbf07cb449103e211ccbecaa995630f47d2d`）。标签内 workspace 声明的版本仍为
-`0.12.1-nightly`，发布版本以源码提交号为准；此次升级不包含 main 上未发布的变更。
+两个 Lore 依赖均固定到官方 `v0.14.0` 标签的提交
+`317f48b918f0b4d43de104d99e80ac4a57b697df`，原版本为 `v0.13.0`
+（`9e0b4519a8a246e471d01853955f63bf0cecbeca`）。标签内 workspace 声明的版本为
+`0.13.1-nightly`，发布版本以源码提交号为准；此次升级不包含 main 上未发布的变更。
+vendored 的 `glob-match` 与 `quinn-proto` 与标签一致，上游 `[patch.crates-io]` 清单不变，
+FFI 错误码表与 v0.13.0 完全相同。
 
 客户端影响与适配：
+
+- **推送进度。** Push 事件（片段开始/进度/结束、Revision 推送、分支创建）现在都以所属的
+  `repository` 与 `branch` 起头，而且 `lore push` 最多同时上传 8 个目标（主仓库、layer、
+  link），不同目标的事件会交错。进度改为按 `(repository, branch)` 分别记账再合计显示，界面
+  消费的流形状不变；同一仓库的目标仍然一次只推一个。
+- **被拒绝的请求。** 被服务器或认证服务拒绝的请求现在统一报 `NotAuthenticated`(16) 或
+  `NotAuthorized`(17)，不再是内部错误、`NotConnected`(29) 或 not-found。16、17 与可重试的
+  `SlowDown`(31) 配有本地化主文案并保留 Lore 的详情；`MountsBusy`(51) 已加入原生名称表。
+  服务器对“无法验证的令牌”（过期、格式错误）只回复无区分的 `PermissionDenied`，无法与真正
+  的无权限区分，所以 17 仍然**不**触发重新认证，而是在文案里提示到“账户”中重新认证。
+- **锁查询。** Lore 在询问远端之前就拒绝同时给出 owner 与 path 的查询。原生命令先行拒绝
+  （`lock_query_filters_conflict`），界面本来就不会发出这种组合；只给 path、不给 branch 时现在
+  查询当前分支。
+- **作者名解析。** 当 `local_user_info` 从仓库推导认证地址时，现在会先联网刷新已过期的登录，
+  刷新被拒绝时还会删除已存的刷新令牌。适配层始终显式传入认证地址且不带仓库，走不到这条分支，
+  必须保持这一点，否则作者名查询会访问网络并可能让登录失效。
+- **已对照源码确认不受影响。** 分支元数据 `set`/`clear`（客户端只读元数据）、
+  `instance move`/`delete`（未开放）、`branch create` 的零 id 与非法名称变化（客户端不传 id）、
+  归档分支的 switch/reset/push 变化（归档项只读，库内 push 在远端分支被删时会自行重建）、
+  严格的 `LORE_AUTH_STORE` 与 `config.toml` 校验（只有 CLI 入口调用，库内 token store 仍宽松
+  读取）、`fast_flush`（默认关闭）以及 `stage` 的全局 `force`（从不设置）。
+- **`lore.h` 之外的事件 JSON。** `InstanceId` 序列化为 `{ "data": [16 个字节] }`，不像
+  分支和仓库 ID 那样是十六进制字符串（v0.13.0 就已如此）。`readInstanceId` 为实例列表和克隆
+  结果做转换；旧的按字符串读取得到的是空 id，在列表里变成重复的 key。
+
+新消费的能力：
+
+- **克隆 Instance**（仓库工具 → 高级诊断）。`lore_repository_instance_clone` 先用 Lore 自己的
+  dry run 预检，再克隆。只有使用共享 Store 的 Instance 才能克隆；目标必须不存在（在原生边界
+  检查）；所在卷无法共享数据块时，Lore 拒绝，除非用户允许复制且空间足够。克隆会持有 Instance 与
+  Store 的锁，因此经 Repository 写队列执行，并先弹出写明克隆方式的确认；进度事件会流式推送，
+  预检则从不开流。
+- **Instance 级忽略规则。** 本地更改 → 忽略 →“仅在此 Instance”会写入 `<Lore 目录>/ignore`
+  （`.lore/ignore`，旧仓库为 `.urc/ignore`）。规则只对当前工作副本生效、只作用于未跟踪路径、
+  从不提交，并且只能排除。
+
+未采纳：FUSE 虚拟克隆（仅 Linux，且应用需要承载 `lore service run`；`LoreVfsType::Default`
+现在在 Linux 上等于 FUSE，所以适配层必须继续固定传 `LoreVfsType::None`）、`--fast-flush`
+（崩溃会丢弃该文件持有的全部索引条目，包括尚未推送的 Revision 与 Branch）、用户级
+`config.toml` 的 `[auth]`、`lore-unix://` 远端，以及用 `branch create <name> --id <id>` 恢复归档
+分支（它还会把工作区挂到恢复后的分支并停在原修订，需要单独设计界面）。
+
+构建与测试注意：
+
+- Lore v0.14.0 在 Windows x86-64 上链接一份预编译的静态 SWFS 库（`lore-revision/native/swfs`：
+  dev 配置用 `swfs_d.lib`，release 用 `swfs.lib`）。它的构建脚本注明由二进制自己的
+  `+crt-static` 提供 C 运行时，上游的 `.cargo/config.toml` 设置了它而本客户端没有。两种配置都能用
+  本客户端的现有配置正常链接：唯一的痕迹是缺少 `swfs.pdb` 的链接警告 `LNK4099`（属预期），且二进制
+  只导入系统 DLL（Universal CRT 的 API set），没有 VC 运行时 DLL。升级时需要重新核对。
+- 在 Windows 上，`cargo test` 生成的库测试程序没有 `tauri-build` 嵌入应用的 Common Controls v6 清单。
+  `tauri-plugin-dialog 2.8.4`（`rfd 0.17`）的消息框通过 `TaskDialogIndirect` 显示，只有 comctl32 v6
+  才有该函数，所以测试程序在补上这份清单之前（例如用 `mt.exe`）会以 `STATUS_ENTRYPOINT_NOT_FOUND`
+  （`0xc0000139`）启动失败。应用本体不受影响。
+- `lore-fuse` 仅限 Linux，直接使用 `/dev/fuse`，不需要任何系统库。
+- `cargo test instance_clone_matches_the_real_lore -- --ignored --test-threads=1` 会驱动真实的
+  共享 Store 仓库并核对前端解析的事件契约。每次升级 Lore 后都应运行；它通过
+  `LORE_GLOBAL_PATH` 隔离 Lore 的全局状态，所以默认被忽略。
+
+部署兼容性：分支元数据键 `archived`、`restored`、`restoring`、`released` 现在专属于归档与恢复。
+应用此前存在这些键下的值，必须在升级 Lore Server 或库之前移除或改名；客户端从不写入它们。
+中继给 Lore service 的调用多带一个变量，桌面客户端升级后应结束正在运行的 Lore service 进程。
+Lore Server 的变化（mutable store 交换契约、`remote` 不可变存储默认信任上游、QUIC 请求失败日志
+target）在升级服务端时才生效，本次不做。E2E 栈固定的 `0.10.1` 服务端不变，实际部署仍需联机
+验证。
+
+### 沿用自 v0.13.0 的行为
+
+v0.13.0 升级时做过以下适配，对当前固定版本仍然成立：
 
 - 交互登录新增 `reuse_session`，适配器显式设为 `0`，保留用户主动登录时打开认证、
   切换账户的行为。本地账户查询现在对已存储登录先发 `AuthUserToken`、再发

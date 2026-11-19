@@ -9,7 +9,8 @@ const PROGRESS_EVENT_LABELS = [
   ['revisionCommitProgress', '提交进度', 'Commit Progress'],
   ['revisionSyncProgress', '同步进度', 'Sync Progress'],
   ['branchPushFragmentProgress', '推送进度', 'Push Progress'],
-  ['repositoryCloneProgress', '克隆进度', 'Clone Progress']
+  ['repositoryCloneProgress', '克隆进度', 'Clone Progress'],
+  ['repositoryInstanceCloneProgress', 'Instance 克隆进度', 'Instance Clone Progress']
 ] as const
 
 describe('Lore progress event labels', () => {

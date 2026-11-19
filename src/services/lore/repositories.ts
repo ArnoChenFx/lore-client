@@ -186,6 +186,18 @@ export async function selectCloneParentDirectory(): Promise<string | null> {
   })
 }
 
+/** 选择实例克隆的父目录；目标目录由 Lore 创建，最终路径由 Rust 端安全拼接和校验。 */
+export async function selectInstanceCloneParentDirectory(): Promise<string | null> {
+  if (!isTauri()) {
+    throw new Error(t('browserPreviewAccessLocalDirectories_2cd3'))
+  }
+  return open({
+    directory: true,
+    multiple: false,
+    title: t('chooseInstanceCloneDestination')
+  })
+}
+
 /** 选择 Lore 克隆接受的可选选择性同步规则文件。 */
 export async function selectCloneViewFile(): Promise<string | null> {
   if (!isTauri()) {

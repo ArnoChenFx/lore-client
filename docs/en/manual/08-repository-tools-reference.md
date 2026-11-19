@@ -273,6 +273,7 @@ unknown. Verify Fragment is read-only and does not automatically Heal.
 | **stale** | The failure reason comes from Lore and is shown as reported rather than guessed: path no longer exists, superseded by another Instance at that path, no checkout at that path, or an unknown reason (new codes are never relabelled as a known one). Verify disk before pruning. |
 | **Update current Instance path** | Re-registers only the currently open Instance. |
 | **Prune stale Instances** | Removes listed stale metadata records after confirmation. |
+| **Clone Instance** | Copies the current Instance into a new, independent working directory on the same Shared Store, keeping its revision, branch, and staged state. Choose an existing parent folder and a new single-level folder name; the destination must not exist yet. **Preview** asks Lore how the clone would be made without writing anything. **Clone…** previews again, shows the method in the confirmation, then runs. Where the volume can share data blocks (ReFS or Dev Drive on Windows; APFS, Btrfs, XFS, bcachefs) the clone takes almost no extra space. Elsewhere Lore refuses it unless **Allow copying** is on and the volume has room. Only Instances that use a Shared Store can be cloned. While the clone runs, other Lore commands on the same Shared Store wait. A failed clone removes what it copied. |
 
 ## 12. Maintenance
 

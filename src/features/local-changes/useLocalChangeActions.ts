@@ -517,7 +517,7 @@ export function useLocalChangeActions({
   )
 
   const ignoreChangeFiles = useCallback(
-    async (files: ChangeFile[], byExtension: boolean) => {
+    async (files: ChangeFile[], byExtension: boolean, instanceOnly = false) => {
       if (!activeSnapshot || files.length === 0) return
       const paths = files.map(changeFilePath)
       if (applicationMode === 'browser-demo') {
@@ -528,10 +528,21 @@ export function useLocalChangeActions({
         )
         return
       }
+      // Instance 规则写入 `<Lore 目录>/ignore`：只对当前工作副本生效、从不提交，且同样只作用于未跟踪路径。
+      const label = instanceOnly
+        ? byExtension
+          ? 'ignoreFileExtensionInstance'
+          : 'ignoreFilePathInstance'
+        : byExtension
+          ? 'ignoreFileExtension'
+          : 'ignoreFilePath'
       await runRepositoryMutation(
-        byExtension ? 'ignoreFileExtension' : 'ignoreFilePath',
-        (repository, operationContext) => ignoreWorkspacePaths(repository.path, paths, byExtension, operationContext),
-        operationMessage('loreignoreUpdatedTrackedFilesStill_c80a'),
+        label,
+        (repository, operationContext) =>
+          ignoreWorkspacePaths(repository.path, paths, byExtension, operationContext, instanceOnly),
+        operationMessage(
+          instanceOnly ? 'instanceIgnoreUpdatedUntrackedOnly' : 'loreignoreUpdatedTrackedFilesStill_c80a'
+        ),
         'changes'
       )
     },

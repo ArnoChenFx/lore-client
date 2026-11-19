@@ -10,6 +10,7 @@ import {
   applyRepositoryView,
   bisectRevisionRange,
   clearAuthIdentities,
+  cloneRepositoryInstance,
   collectRepositoryGarbage,
   dumpRepositoryState,
   findRevisionByMetadata,
@@ -30,6 +31,7 @@ import {
   loginAuthInteractive,
   loginAuthWithToken,
   logoutAuthIdentity,
+  previewRepositoryInstanceClone,
   previewRepositoryView,
   pruneRepositoryInstances,
   publishRepository,
@@ -41,6 +43,7 @@ import {
   removeLink,
   resetBranchLatest,
   restoreCurrentRevision,
+  selectInstanceCloneParentDirectory,
   setRepositoryAuthAccountBinding,
   setBranchProtected,
   syncRepository,
@@ -55,12 +58,14 @@ import { createOperationContext, withOperationRequest } from '../../services/ope
 import { changeFilePath, LatestTaskQueue, readErrorMessage, repositoryPathKey } from '../../shared/lib'
 import type {
   ApplicationMode,
+  InstanceCloneRequest,
   OperationContext,
   LoreDependencyGraphQuery,
   LoreDependencySelection,
   LoreDiagnosticReport,
   LoreFileLock,
   LoreAuthIdentity,
+  LoreInstanceCloneResult,
   LoreLayer,
   LoreLayerAddRequest,
   LoreLayerRemoveRequest,
@@ -132,7 +137,8 @@ const REPOSITORY_TOOL_BUSY_ACTIONS = new Set([
   'clearAuthIdentities',
   'healRepository',
   'pruneRepositoryInstances',
-  'updateRepositoryInstancePath'
+  'updateRepositoryInstancePath',
+  'cloneRepositoryInstance'
 ])
 
 /** 只把真正阻塞 Repository Tools 的仓库写操作映射为弹层加载态。 */
@@ -1310,6 +1316,22 @@ export function useRepositoryToolsController({
           (targetRepository, operationContext) => updateRepositoryInstancePath(targetRepository.path, operationContext),
           operationMessage('status.instancePathUpdated')
         ),
+      // 预检不加锁、不写入任何内容，是普通读取；真实克隆会持有源 Instance 与 Store 的锁，必须走 Repository 写队列。
+      onSelectInstanceCloneParent: selectInstanceCloneParentDirectory,
+      onPreviewInstanceClone: (request: InstanceCloneRequest) =>
+        previewRepositoryInstanceClone(repository.path, request),
+      onCloneInstance: async (request: InstanceCloneRequest) => {
+        let result: LoreInstanceCloneResult | null = null
+        const succeeded = await runRepositoryMutation(
+          'cloneRepositoryInstance',
+          async (targetRepository, operationContext) => {
+            result = await cloneRepositoryInstance(targetRepository.path, request, operationContext)
+          },
+          operationMessage('status.instanceCloned')
+        )
+        if (!succeeded || !result) throw new Error(t('instanceCloneDidNotComplete'))
+        return result
+      },
       onVerify: () => {
         void runRepositoryMutation(
           'verifyRepository',

@@ -24,6 +24,11 @@ const enUSDynamic = {
     diffUnmodifiedLines_other: '{{count}} unmodified lines',
     staleInstancesPruned: 'Pruned stale repository instances',
     instancePathUpdated: 'Updated the current instance path',
+    instanceCloned: 'Cloned the instance',
+    instanceCloneResult:
+      'Created instance {{id}} at {{path}}: {{directories}} directories and {{entries}} files cloned, {{copied}} copied.',
+    instanceCloneCopySummary_one: '{{count}} file · {{size}}',
+    instanceCloneCopySummary_other: '{{count}} files · {{size}}',
     instanceTooltip: 'Current Lore workspace instance: {{value}}',
     partitionTooltip: 'Lore partition used by the current instance: {{value}}',
     currentBranchTooltip: 'Branch attached to the current workspace: {{value}}',
@@ -297,6 +302,8 @@ const enUSDynamic = {
     operationFailedWithStatus: '{{operation}} failed (status {{status}})'
   },
   confirm: {
+    cloneInstance:
+      'Clone the instance of repository “{{repository}}” to {{target}}?\nMethod: {{method}}. Other Lore commands on the same Shared Store wait while the clone runs.',
     healRepositoryPath:
       'Heal inconsistencies detected in “{{path}}” for repository “{{repository}}”? Healing may create staged state.',
     pruneRepositoryInstances: 'Remove {{count}} stale instance records from repository “{{repository}}”?\n{{paths}}',

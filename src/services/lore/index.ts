@@ -68,10 +68,14 @@ export {
   removeFileDependency
 } from './dependencies'
 export {
+  cloneRepositoryInstance,
   collectRepositoryGarbage,
   dumpRepositoryState,
   listRepositoryInstances,
   parseDiagnosticReport,
+  parseInstanceCloneResult,
+  parseInstanceClonePlan,
+  previewRepositoryInstanceClone,
   pruneRepositoryInstances,
   updateRepositoryInstancePath,
   verifyRepository,
@@ -115,6 +119,7 @@ export {
   repositoryPublishFailureMessage,
   selectCloneParentDirectory,
   selectCloneViewFile,
+  selectInstanceCloneParentDirectory,
   selectRepositoryDirectory,
   selectSharedStoreParentDirectory,
   setSharedStoreUseAutomatically

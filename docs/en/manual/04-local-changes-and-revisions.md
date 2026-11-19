@@ -53,6 +53,13 @@ Depending on state and selection, the menu includes Open, External Diff/Merge, S
 Patch, Show in File Manager, Timeline, History, collaborative locks, Stage/Unstage,
 Discard, Stage all, Ignore paths/extensions, and Copy paths.
 
+**Ignore selected paths/extensions** writes the rule to the shared `.loreignore`.
+**Ignore selected paths/extensions on this instance only** writes it to this Instance's own
+`ignore` file in its Lore directory (`.lore/ignore`, or `.urc/ignore` in an old repository)
+instead. Those rules apply only to this working copy, are
+never committed, use the `.loreignore` syntax, and, like `.loreignore`, apply only to paths
+Lore does not track yet. They can only exclude: Lore skips a `!` line with a warning.
+
 If Lore has no recoverable file-level Stash, Stash is disabled with a reason. Save as
 Patch is a one-way export and is not presented as Stash.
 

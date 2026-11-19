@@ -185,19 +185,26 @@ export async function openWorkspaceFile(
   )
 }
 
-/** 将选中路径或其扩展名安全追加到 `.loreignore`。 */
+/**
+ * 将选中路径或其扩展名安全追加到 `.loreignore`。
+ *
+ * `instanceOnly` 改为写入当前 Instance 自己的忽略文件（`<Lore 目录>/ignore`，Lore v0.14.0 起读取）：
+ * 只对这个工作副本生效，从不提交，语法与 `.loreignore` 相同但只能排除。参数放在最后，保持既有调用不变。
+ */
 export async function ignoreWorkspacePaths(
   repositoryPath: string,
   paths: string[],
   byExtension: boolean,
-  operationContext?: OperationContext
+  operationContext?: OperationContext,
+  instanceOnly = false
 ): Promise<string[]> {
   return invokeCommand<string[]>(
     'lore_ignore_paths',
     {
       repositoryPath,
       paths,
-      byExtension
+      byExtension,
+      instanceOnly
     },
     operationContext
   )

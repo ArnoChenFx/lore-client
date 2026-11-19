@@ -5,7 +5,15 @@ import { useTranslation } from 'react-i18next'
 import { useAdjustFromProps } from '../../../hooks/useAdjustFromProps'
 import { confirmLocalized } from '../../../i18n'
 import { NumberInput, TextButton, TextInput } from '../../../shared/ui'
-import type { LoreDiagnosticReport, LoreRepositoryInstance, LoreRepositoryInstanceStaleness } from '../../../types'
+import type {
+  InstanceCloneRequest,
+  LoreDiagnosticReport,
+  LoreInstanceClonePreview,
+  LoreInstanceCloneResult,
+  LoreRepositoryInstance,
+  LoreRepositoryInstanceStaleness
+} from '../../../types'
+import { InstanceClonePanel } from './InstanceClonePanel'
 
 interface RepositoryDiagnosticsPanelProps {
   repositoryName: string
@@ -16,6 +24,9 @@ interface RepositoryDiagnosticsPanelProps {
   onListInstances: () => Promise<LoreRepositoryInstance[]>
   onPruneInstances: () => Promise<boolean>
   onUpdateInstancePath: () => Promise<boolean>
+  onSelectInstanceCloneParent: () => Promise<string | null>
+  onPreviewInstanceClone: (request: InstanceCloneRequest) => Promise<LoreInstanceClonePreview>
+  onCloneInstance: (request: InstanceCloneRequest) => Promise<LoreInstanceCloneResult>
 }
 
 /**
@@ -42,7 +53,10 @@ export function RepositoryDiagnosticsPanel({
   onDump,
   onListInstances,
   onPruneInstances,
-  onUpdateInstancePath
+  onUpdateInstancePath,
+  onSelectInstanceCloneParent,
+  onPreviewInstanceClone,
+  onCloneInstance
 }: RepositoryDiagnosticsPanelProps) {
   const { t } = useTranslation()
   const [path, setPath] = useState('')
@@ -310,6 +324,18 @@ export function RepositoryDiagnosticsPanel({
             </TextButton>
           </footer>
         </section>
+
+        <InstanceClonePanel
+          // 预检只描述它产生时的仓库；切换仓库必须重置表单，不能沿用上一仓库的预检结果。
+          key={repositoryName}
+          repositoryName={repositoryName}
+          busy={Boolean(pending)}
+          onSelectParent={onSelectInstanceCloneParent}
+          onPreview={onPreviewInstanceClone}
+          onClone={onCloneInstance}
+          // 克隆成功后重新读取 Lore 的完整 Instance 集合，不局部追加行。
+          onCloned={() => void refreshInstances()}
+        />
       </div>
 
       <section className="diagnostic-report">

@@ -266,6 +266,7 @@ pub async fn lore_lock_file_query(
         path,
         "Lock path",
     )?)?;
+    ensure_lock_query_filters_exclusive(owner.as_deref(), &path)?;
     run_lore_task(operation_context, move || {
         let globals = global_args(&repository_path)?;
         run_operation("lock.file-query", move |callback| {

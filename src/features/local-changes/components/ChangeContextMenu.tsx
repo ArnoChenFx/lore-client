@@ -52,7 +52,8 @@ interface ChangeContextMenuProps {
   onStage: (files: ChangeFile[], staged: boolean) => void
   onDiscard: (files: ChangeFile[]) => void
   onStageAll: () => void
-  onIgnore: (files: ChangeFile[], byExtension: boolean) => void
+  /** `instanceOnly` 把规则写入当前 Instance 自己的忽略文件（不提交），而不是仓库的 `.loreignore`。 */
+  onIgnore: (files: ChangeFile[], byExtension: boolean, instanceOnly?: boolean) => void
   onSavePatch: (files: ChangeFile[]) => void
   onAcquireLocks: (files: ChangeFile[]) => void
   onReleaseLocks: (files: ChangeFile[]) => void
@@ -61,6 +62,8 @@ interface ChangeContextMenuProps {
 }
 
 const VIEWPORT_GAP = 8
+/** 二级菜单相对触发行向上伸出的距离，与样式表 `.context-submenu { top: -5px }` 保持一致。 */
+const SUBMENU_OVERLAP = 5
 
 export interface ChangeFileLockSelection {
   /** 当前冻结选区中至少存在一条真实锁记录的文件。 */
@@ -93,6 +96,18 @@ export function resolveChangeFileLockSelection(
     locks,
     deletedUnlockedFiles: files.filter((file) => file.status === 'deleted' && !lockedPaths.has(changeFilePath(file)))
   }
+}
+
+/**
+ * 二级菜单默认从触发行向下展开；按此展开后的底边与视口底边的间距不足 `VIEWPORT_GAP` 时，应改为
+ * 贴着触发行的底边向上展开。
+ *
+ * `hostTop` 是触发行的顶边，`submenuHeight` 是子菜单的整体高度（包含内边距与边框）。菜单被夹到窗口
+ * 底部时，触发行与底边的距离是固定的，所以这个判断主要取决于子菜单有多高：英文标签折行后的实例级
+ * 忽略项会让它超出视口，中文标签则恰好落在临界点附近。
+ */
+export function shouldOpenSubmenuUp(hostTop: number, submenuHeight: number, viewportHeight: number): boolean {
+  return hostTop - SUBMENU_OVERLAP + submenuHeight > viewportHeight - VIEWPORT_GAP
 }
 
 /** 父级菜单项禁用时禁止展开对应子菜单，避免禁用态仍可点到子项。 */
@@ -155,6 +170,23 @@ export function ChangeContextMenu({
       opensLeft: left + bounds.width + 260 > window.innerWidth
     })
   }, [request])
+
+  /*
+   * 二级菜单默认从触发行向下展开。菜单贴近窗口底部时（1280×720 下很常见），较高的子菜单会被窗口
+   * 底边截断，最后几项无法点击；此时改为贴着触发行的底边向上展开。用 `offsetHeight` 而不是
+   * 实际包围盒来判断，几何不受上一次“向上”状态影响。
+   */
+  const [submenuOpensUp, setSubmenuOpensUp] = useState(false)
+  useLayoutEffect(() => {
+    const element = menuRef.current?.querySelector<HTMLElement>('.context-submenu')
+    const host = element?.parentElement
+    if (!element || !host) {
+      setSubmenuOpensUp(false)
+      return
+    }
+    setSubmenuOpensUp(shouldOpenSubmenuUp(host.getBoundingClientRect().top, element.offsetHeight, window.innerHeight))
+  }, [submenu])
+  const submenuClassName = submenuOpensUp ? 'context-submenu opens-up' : 'context-submenu'
 
   useEffect(() => {
     const frame = requestAnimationFrame(() =>
@@ -397,7 +429,7 @@ export function ChangeContextMenu({
             <ChevronRight size={13} />
           </button>
           {canOpenExternalSubmenu && submenu === 'external' && (
-            <div className="context-submenu" role="menu">
+            <div className={submenuClassName} role="menu">
               {externalDiffTools.map((tool) => (
                 <button
                   key={tool.id}
@@ -436,7 +468,7 @@ export function ChangeContextMenu({
             <ChevronRight size={13} />
           </button>
           {submenu === 'merge' && (
-            <div className="context-submenu" role="menu">
+            <div className={submenuClassName} role="menu">
               {externalMergeTools.map((tool) => (
                 <button
                   key={tool.id}
@@ -509,7 +541,7 @@ export function ChangeContextMenu({
           <ChevronRight size={13} />
         </button>
         {submenu === 'lock' && (
-          <div className="context-submenu context-submenu--locks" role="menu">
+          <div className={`${submenuClassName} context-submenu--locks`} role="menu">
             <button type="button" role="menuitem" className="context-submenu__status" disabled>
               <LockKeyhole size={14} />
               <span>
@@ -614,7 +646,7 @@ export function ChangeContextMenu({
           <ChevronRight size={13} />
         </button>
         {canOpenIgnoreSubmenu && submenu === 'ignore' && (
-          <div className="context-submenu" role="menu">
+          <div className={submenuClassName} role="menu">
             <button type="button" role="menuitem" onClick={() => closeThen(() => onIgnore(files, false))}>
               <ShieldOff size={14} />
               <span>{t('ignoreSelectedPaths')}</span>
@@ -628,6 +660,24 @@ export function ChangeContextMenu({
               <ShieldOff size={14} />
               <span>
                 {t('ignoreSelectedExtensions')}
+                {!allHaveExtension && <small>{t('selectionIncludesFilesWithoutExtension_9275')}</small>}
+              </span>
+            </button>
+            <hr />
+            {/* Lore v0.14.0 起 Instance 可以有自己的忽略规则：只对当前工作副本生效、从不提交。 */}
+            <button type="button" role="menuitem" onClick={() => closeThen(() => onIgnore(files, false, true))}>
+              <ShieldOff size={14} />
+              <span>{t('ignoreSelectedPathsInstance')}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!allHaveExtension}
+              onClick={() => closeThen(() => onIgnore(files, true, true))}
+            >
+              <ShieldOff size={14} />
+              <span>
+                {t('ignoreSelectedExtensionsInstance')}
                 {!allHaveExtension && <small>{t('selectionIncludesFilesWithoutExtension_9275')}</small>}
               </span>
             </button>

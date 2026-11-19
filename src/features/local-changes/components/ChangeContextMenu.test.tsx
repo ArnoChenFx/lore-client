@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 
 import type { ChangeFile, LoreFileLock } from '../../../types'
-import { canOpenChangeContextSubmenu, resolveChangeFileLockSelection } from './ChangeContextMenu'
+import { canOpenChangeContextSubmenu, resolveChangeFileLockSelection, shouldOpenSubmenuUp } from './ChangeContextMenu'
 
 describe('local change context submenu guards', () => {
   it('keeps external diff available for binary files and tool configuration', () => {
@@ -16,6 +16,30 @@ describe('local change context submenu guards', () => {
 
   it('keeps the lock submenu available for status and manager access while writes are busy', () => {
     expect(canOpenChangeContextSubmenu('lock', { textFileCount: 0, busy: true })).toBe(true)
+  })
+})
+
+describe('local change context submenu placement', () => {
+  // 数值取自 1280×720 下菜单被夹到窗口底部时的真实测量：Ignore 触发行顶边约 575，四项子菜单高约 144
+  // （中文单行），英文标签的实例级两项折成两行后约 158。视口留 8px 间距，向下展开的底边不得超过 712。
+  it('keeps opening downward while there is room', () => {
+    expect(shouldOpenSubmenuUp(100, 144, 720)).toBe(false)
+    expect(shouldOpenSubmenuUp(568, 144, 720)).toBe(false)
+  })
+
+  it('opens upward when the Chinese submenu would press into the bottom gap', () => {
+    // 向下展开后底边 714，虽然仍在 720 的视口内，却压进了 8px 间距。
+    expect(shouldOpenSubmenuUp(575, 144, 720)).toBe(true)
+  })
+
+  it('opens upward when wrapped English labels would run past the viewport', () => {
+    expect(shouldOpenSubmenuUp(585, 158, 720)).toBe(true)
+  })
+
+  it('treats the exact gap limit as still fitting', () => {
+    // 575 - 5 + 142 = 712 恰好贴着间距边界；再高 1px 才需要翻转。
+    expect(shouldOpenSubmenuUp(575, 142, 720)).toBe(false)
+    expect(shouldOpenSubmenuUp(575, 143, 720)).toBe(true)
   })
 })
 

@@ -1083,7 +1083,9 @@ function App() {
                 onRevealFile={(file) => void revealCurrentFile(file)}
                 onFileHistory={(file, mode) => void openFileHistory(file, mode)}
                 onDiscardFiles={(files) => void discardChangeFiles(files)}
-                onIgnoreFiles={(files, byExtension) => void ignoreChangeFiles(files, byExtension)}
+                onIgnoreFiles={(files, byExtension, instanceOnly) =>
+                  void ignoreChangeFiles(files, byExtension, instanceOnly)
+                }
                 onSavePatch={(files) => void saveChangesPatch(files)}
                 onAcquireFileLocks={(files) => void acquireActiveFileLocks(files.map(changeFilePath))}
                 onReleaseFileLocks={(files) => void releaseActiveFileLocks(files.map(changeFilePath))}

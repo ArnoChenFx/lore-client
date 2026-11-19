@@ -759,7 +759,9 @@ describe('repository snapshot branch loading', () => {
         const fallbackInvoke = invokeMock.getMockImplementation()
         invokeMock.mockImplementation(async (command: string, args: MockIpcArgs) => {
           if (command === 'lore_revision_history') {
-            return historyResult(args.operationContext, [], { status: 17, events })
+            // 连接建立阶段缺少可用凭据时，Lore 以 NotConnected(29) 终止并附带认证文案；17 自 0.10.0 起是
+            // NotAuthorized，会得到本地化的权限提示，不再是这里要保留的原始诊断。
+            return historyResult(args.operationContext, [], { status: 29, events })
           }
           if (!fallbackInvoke) throw new Error(`The test does not handle command: ${command}`)
           return fallbackInvoke(command, args)
@@ -777,7 +779,7 @@ describe('repository snapshot branch loading', () => {
         )
 
         expect(error).toBeInstanceOf(LoreOperationError)
-        expect(error).toMatchObject({ status: 17, operation: 'revision.history', events, message: detail })
+        expect(error).toMatchObject({ status: 29, operation: 'revision.history', events, message: detail })
         expect(isAuthenticationRequiredError(error)).toBe(true)
       })
     }

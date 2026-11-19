@@ -343,7 +343,22 @@ function localizeCommandError(error: Partial<LoreCommandError>, command: string)
  * 的“遇到顺序”编号不再适用）；这里只覆盖用户可以自助恢复的错误，其余码继续保留
  * 上游详情。新增码时同步 zh-CN 与 en-US。
  */
-function localizedLoreErrorCodeKey(code: number): 'loreErrorLocalModifications' | 'loreErrorLinkDivergent' | null {
+type LocalizedLoreErrorCodeKey =
+  | 'loreErrorLocalModifications'
+  | 'loreErrorLinkDivergent'
+  | 'loreErrorNotAuthenticated'
+  | 'loreErrorNotAuthorized'
+  | 'loreErrorSlowDown'
+
+function localizedLoreErrorCodeKey(code: number): LocalizedLoreErrorCodeKey | null {
+  // 认证与鉴权：Lore v0.14.0 起，被服务器或认证服务拒绝的请求统一报 NotAuthenticated(16) 或
+  // NotAuthorized(17)，不再是内部错误、NotConnected 或 not-found。服务器对“无法验证的令牌”
+  // （过期、格式错误）也只回无区分的 PermissionDenied，因此 17 无法与真正的无权限区分；
+  // 文案同时给出两种可能的处理方式。
+  if (code === 16) return 'loreErrorNotAuthenticated'
+  if (code === 17) return 'loreErrorNotAuthorized'
+  // SlowDown：存储要求放慢，或 Revision Tree 在高负载下放弃本次遍历，均可稍后重试。
+  if (code === 31) return 'loreErrorSlowDown'
   // LocalModifications：Layer/Link 移除、同步等在存在暂存工作或本地修改时拒绝。
   if (code === 44) return 'loreErrorLocalModifications'
   if (code === 52) return 'loreErrorLinkDivergent'

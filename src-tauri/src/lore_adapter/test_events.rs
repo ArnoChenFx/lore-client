@@ -16,6 +16,11 @@ use lore_revision::commit::{
     LoreRevisionCommitProgressEventData,
 };
 use lore_revision::event::{LoreEvent, LoreMetadataEventData};
+use lore_revision::instance::{
+    InstanceId, LoreRepositoryInstanceCloneBeginEventData,
+    LoreRepositoryInstanceCloneCompleteEventData, LoreRepositoryInstanceCloneMethod,
+    LoreRepositoryInstanceClonePhase, LoreRepositoryInstanceCloneProgressEventData,
+};
 use lore_revision::interface::{LoreFileAction, LoreMetadata};
 use lore_revision::repository::clone::{
     LoreRepositoryCloneBeginEventData, LoreRepositoryCloneCountData,
@@ -31,6 +36,11 @@ use lore_revision::stage::{
 const BRANCH_ID: &str = "e726318bbc3fd75ac8733a7e030cc35b";
 /// 录制事件里反复出现的零哈希。
 const ZERO_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+/// 录制的两轮推送所属的仓库。v0.14.0 起片段事件都带 `repository` 与 `branch`，单目标夹具默认
+/// 使用这一组，交错场景用 `*_for` 系列显式指定。
+pub const PUSH_REPOSITORY: &str = "01a1344baf3377dc9bedfb65bd0911a4";
+/// 与 [`PUSH_REPOSITORY`] 对应的默认推送分支。
+pub const PUSH_BRANCH: &str = BRANCH_ID;
 
 fn stage_count(directory_add: u64, file_add: u64, total: u64) -> LoreFileStageCountData {
     LoreFileStageCountData {
@@ -164,10 +174,25 @@ pub fn sync_running() -> LoreEvent {
 
 /// 推送开始（合成）：字段形状取自上游 branch/push.rs，哈希使用零值。
 pub fn push_start(local_history: u64, already: bool) -> LoreEvent {
+    push_start_for(
+        "01a133b39ff976f2a32b7cb4d54202f8",
+        BRANCH_ID,
+        local_history,
+        already,
+    )
+}
+
+/// 指定目标的推送开始：并发推送时主仓库、layer 与 link 各发一次。
+pub fn push_start_for(
+    repository: &str,
+    branch: &str,
+    local_history: u64,
+    already: bool,
+) -> LoreEvent {
     LoreEvent::BranchPush(LoreBranchPushEventData {
         remote: "quic://example".into(),
-        repository: "01a133b39ff976f2a32b7cb4d54202f8".parse().unwrap(),
-        branch: BRANCH_ID.parse().unwrap(),
+        repository: repository.parse().unwrap(),
+        branch: branch.parse().unwrap(),
         branch_name: "main".into(),
         remote_revision: ZERO_HASH.parse().unwrap(),
         local_revision: ZERO_HASH.parse().unwrap(),
@@ -180,17 +205,45 @@ pub fn push_start(local_history: u64, already: bool) -> LoreEvent {
     })
 }
 
-/// 片段传输开始。
+/// 片段传输开始（默认目标）。
 pub fn push_begin(fragments: u64) -> LoreEvent {
+    push_begin_for(PUSH_REPOSITORY, PUSH_BRANCH, fragments)
+}
+
+/// 指定 `(repository, branch)` 的片段传输开始。
+pub fn push_begin_for(repository: &str, branch: &str, fragments: u64) -> LoreEvent {
     LoreEvent::BranchPushFragmentBegin(LoreBranchPushFragmentBeginEventData {
+        repository: repository.parse().unwrap(),
+        branch: branch.parse().unwrap(),
         fragments,
         bytes_total: 0,
     })
 }
 
-/// 片段传输进度；`bytes_total` 是当前已知的待传总量（会随发现增长）。
+/// 片段传输进度（默认目标）；`bytes_total` 是当前已知的待传总量（会随发现增长）。
 pub fn push_tick(complete: u64, count: u64, transferred: u64, bytes_total: u64) -> LoreEvent {
+    push_tick_for(
+        PUSH_REPOSITORY,
+        PUSH_BRANCH,
+        complete,
+        count,
+        transferred,
+        bytes_total,
+    )
+}
+
+/// 指定 `(repository, branch)` 的片段传输进度。
+pub fn push_tick_for(
+    repository: &str,
+    branch: &str,
+    complete: u64,
+    count: u64,
+    transferred: u64,
+    bytes_total: u64,
+) -> LoreEvent {
     LoreEvent::BranchPushFragmentProgress(LoreBranchPushFragmentProgressEventData {
+        repository: repository.parse().unwrap(),
+        branch: branch.parse().unwrap(),
         complete,
         count,
         bytes_transferred: transferred,
@@ -198,9 +251,16 @@ pub fn push_tick(complete: u64, count: u64, transferred: u64, bytes_total: u64) 
     })
 }
 
-/// 片段传输结束。
+/// 片段传输结束（默认目标）。
 pub fn push_end(fragments: u64, transferred: u64) -> LoreEvent {
+    push_end_for(PUSH_REPOSITORY, PUSH_BRANCH, fragments, transferred)
+}
+
+/// 指定 `(repository, branch)` 的片段传输结束。
+pub fn push_end_for(repository: &str, branch: &str, fragments: u64, transferred: u64) -> LoreEvent {
     LoreEvent::BranchPushFragmentEnd(LoreBranchPushFragmentEndEventData {
+        repository: repository.parse().unwrap(),
+        branch: branch.parse().unwrap(),
         fragments,
         bytes_transferred: transferred,
     })
@@ -260,6 +320,66 @@ pub fn clone_event(
     } else {
         LoreEvent::RepositoryCloneProgress(LoreRepositoryCloneProgressEventData { count })
     }
+}
+
+/// 实例克隆开始（合成）：字段形状取自上游 `lore-revision/src/instance.rs`。
+/// `file_count` 只在“复制字节”方式下有意义。
+pub fn instance_clone_begin(
+    method: LoreRepositoryInstanceCloneMethod,
+    file_count: u64,
+) -> LoreEvent {
+    LoreEvent::RepositoryInstanceCloneBegin(LoreRepositoryInstanceCloneBeginEventData {
+        instance_id: InstanceId::generate(),
+        source_path: "E:\\Worlds\\Source".into(),
+        target_path: "E:\\Worlds\\Copy".into(),
+        method,
+        filesystem: "NTFS".into(),
+        mount_point: "E:\\".into(),
+        size: if file_count > 0 {
+            1_048_576 * file_count
+        } else {
+            0
+        },
+        file_count,
+        available_size: 0,
+        reason: "".into(),
+    })
+}
+
+/// 实例克隆进度（合成）。
+pub fn instance_clone_progress(
+    phase: LoreRepositoryInstanceClonePhase,
+    cloned_directories: u64,
+    cloned_entries: u64,
+    copied_files: u64,
+) -> LoreEvent {
+    LoreEvent::RepositoryInstanceCloneProgress(LoreRepositoryInstanceCloneProgressEventData {
+        phase,
+        path: "".into(),
+        cloned_directory_count: cloned_directories,
+        cloned_entry_count: cloned_entries,
+        copied_file_count: copied_files,
+    })
+}
+
+/// 实例克隆完成（合成）：`dry_run` 为真时按上游约定带零 Instance ID 且不计任何内容。
+pub fn instance_clone_complete(
+    dry_run: bool,
+    cloned_directories: u64,
+    cloned_entries: u64,
+    copied_files: u64,
+) -> LoreEvent {
+    LoreEvent::RepositoryInstanceCloneComplete(LoreRepositoryInstanceCloneCompleteEventData {
+        instance_id: if dry_run {
+            InstanceId::default()
+        } else {
+            InstanceId::generate()
+        },
+        target_path: "E:\\Worlds\\Copy".into(),
+        cloned_directory_count: cloned_directories,
+        cloned_entry_count: cloned_entries,
+        copied_file_count: copied_files,
+    })
 }
 
 /// 与进度聚合无关的元数据事件：键 `branch`、值为录制的分支 Context。

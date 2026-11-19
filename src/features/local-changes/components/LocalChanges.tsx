@@ -98,7 +98,7 @@ interface LocalChangesProps {
   onRevealFile: (file: ChangeFile) => void
   onFileHistory: (file: ChangeFile, mode: 'timeline' | 'history') => void
   onDiscardFiles: (files: ChangeFile[]) => void
-  onIgnoreFiles: (files: ChangeFile[], byExtension: boolean) => void
+  onIgnoreFiles: (files: ChangeFile[], byExtension: boolean, instanceOnly?: boolean) => void
   onSavePatch: (files: ChangeFile[]) => void
   onAcquireFileLocks?: (files: ChangeFile[]) => void
   onReleaseFileLocks?: (files: ChangeFile[]) => void

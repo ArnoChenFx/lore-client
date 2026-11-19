@@ -74,6 +74,47 @@ describe('Lore event adapter', () => {
     }
   })
 
+  it('localizes refused and retryable status codes while keeping the upstream detail', async () => {
+    // Lore v0.14.0 reports requests the server refuses as NotAuthenticated(16) or NotAuthorized(17)
+    // instead of an internal error, NotConnected or not-found; SlowDown(31) can be retried.
+    const cases = [
+      [16, 'loreErrorNotAuthenticated'],
+      [17, 'loreErrorNotAuthorized'],
+      [31, 'loreErrorSlowDown']
+    ] as const
+    const detail = 'Not allowed'
+    for (const language of ['en-US', 'zh-CN']) {
+      await i18n.changeLanguage(language)
+      for (const [status, key] of cases) {
+        const error = new LoreOperationError({
+          requestId: `refused-${status}`,
+          workspaceKey: null,
+          operation: 'branch.list',
+          status,
+          durationMs: 0,
+          events: [{ tagName: 'complete', data: { error: { message: detail } } }]
+        })
+        expect(error.status).toBe(status)
+        expect(error.message).toBe(`${i18n.t(key)}\n${detail}`)
+        expect(error.message).not.toContain(key)
+      }
+    }
+  })
+
+  it('does not relabel a lost connection as an authentication problem', async () => {
+    // NotConnected(29) still means the remote could not be reached; only refusals are localized.
+    const detail = 'Not connected to remote: connection refused'
+    const error = new LoreOperationError({
+      requestId: 'offline',
+      workspaceKey: null,
+      operation: 'branch.list',
+      status: 29,
+      durationMs: 0,
+      events: [{ tagName: 'complete', data: { error: { message: detail } } }]
+    })
+    expect(error.message).toBe(detail)
+  })
+
   it('localizes unsupported Lore node names in both languages', async () => {
     for (const language of ['en-US', 'zh-CN']) {
       await i18n.changeLanguage(language)

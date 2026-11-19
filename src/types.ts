@@ -957,6 +957,62 @@ export interface LoreRepositoryInstance {
   stale: LoreRepositoryInstanceStaleness
 }
 
+/**
+ * Lore 在写入任何内容之前为实例克隆决定的方式：共享源 Instance 的数据块、复制字节，或该目标不支持。
+ * 无法识别的取值一律视为 `unsupported`，不能当成“共享数据块”。
+ */
+export type LoreInstanceCloneMethod = 'sharesBlocks' | 'copiesBytes' | 'unsupported'
+
+/** 实例克隆的计划（`repositoryInstanceCloneBegin` 事件）。 */
+export interface LoreInstanceClonePlan {
+  method: LoreInstanceCloneMethod
+  sourcePath: string
+  targetPath: string
+  /** 目标卷的文件系统与挂载点；`unsupported` 时为空。 */
+  filesystem: string
+  mountPoint: string
+  /** “复制字节”方式需要写入的字节数与文件数；其它方式为 0。 */
+  size: number
+  fileCount: number
+  /** 目标卷的剩余空间（字节），仅“复制字节”方式给出，否则为 0。 */
+  availableSize: number
+  /** 需要复制或无法克隆的原因；共享数据块时为空。 */
+  reason: string
+}
+
+/** Lore 在预检阶段拒绝本次克隆时的状态码与说明。 */
+export interface LoreInstanceCloneRefusal {
+  status: number
+  message: string
+}
+
+/**
+ * 一次实例克隆预检（dry run）的结果。被拒绝时计划仍然有效，用来解释拒绝原因；
+ * 连计划都没有的拒绝（本地 Store、目标非法等）作为错误抛出。
+ */
+export interface LoreInstanceClonePreview {
+  targetPath: string
+  plan: LoreInstanceClonePlan
+  refusal: LoreInstanceCloneRefusal | null
+}
+
+/** 实例克隆完成后的结果（`repositoryInstanceCloneComplete` 事件）。 */
+export interface LoreInstanceCloneResult {
+  targetPath: string
+  instanceId: string
+  clonedDirectoryCount: number
+  clonedEntryCount: number
+  copiedFileCount: number
+}
+
+/** 实例克隆的用户输入：目标由“已存在的父目录 + 单级目录名”组合，由 Rust 端安全拼接。 */
+export interface InstanceCloneRequest {
+  parentDirectory: string
+  directoryName: string
+  /** 允许在无法共享数据块时复制文件；默认拒绝。 */
+  allowCopy: boolean
+}
+
 /** 高级诊断页显示的单条结构化事件摘要。 */
 export interface LoreDiagnosticFinding {
   kind: string

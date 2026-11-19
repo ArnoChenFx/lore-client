@@ -566,3 +566,172 @@ fn whitespace_file_names_select_the_exact_optional_file_and_executable() {
         Some(sandbox.path().join("tool "))
     );
 }
+
+/// Restores `LORE_GLOBAL_PATH` even when an assertion fails.
+struct GlobalPathGuard(Option<std::ffi::OsString>);
+
+impl GlobalPathGuard {
+    fn set(path: &Path) -> Self {
+        let previous = std::env::var_os("LORE_GLOBAL_PATH");
+        std::env::set_var("LORE_GLOBAL_PATH", path);
+        Self(previous)
+    }
+}
+
+impl Drop for GlobalPathGuard {
+    fn drop(&mut self) {
+        match self.0.take() {
+            Some(previous) => std::env::set_var("LORE_GLOBAL_PATH", previous),
+            None => std::env::remove_var("LORE_GLOBAL_PATH"),
+        }
+    }
+}
+
+/// The lowercase hex form of an `InstanceId` event value, which Lore serializes as
+/// `{ "data": [16 bytes] }` rather than as a string.
+fn instance_id_hex(value: &Value) -> String {
+    value["data"]
+        .as_array()
+        .expect("an instance id serializes as an object with a data array")
+        .iter()
+        .map(|byte| format!("{:02x}", byte.as_u64().expect("every id byte is a number")))
+        .collect()
+}
+
+fn event<'a>(result: &'a LoreOperationResult, tag: &str) -> Option<&'a Value> {
+    result
+        .events
+        .iter()
+        .find(|event| event["tagName"] == tag)
+        .map(|event| &event["data"])
+}
+
+/// Drives the real Lore instance clone on a shared-store repository and checks the event contract
+/// the frontend parses: tag names, the `{ data: [..] }` instance id shape, and the status codes of
+/// a refused and an allowed clone.
+///
+/// Ignored by default: it points the process-wide `LORE_GLOBAL_PATH` at a temporary directory so
+/// Lore's global configuration and Shared Store registry never touch the developer's machine, and
+/// another test running in parallel must not observe that. Run it alone after a Lore upgrade:
+/// `cargo test instance_clone_matches_the_real_lore -- --ignored --test-threads=1`.
+#[test]
+#[ignore]
+fn instance_clone_matches_the_real_lore_event_contract() {
+    let root = tempfile::tempdir().unwrap();
+    let global = root.path().join("global");
+    std::fs::create_dir_all(&global).unwrap();
+    let _global_path = GlobalPathGuard::set(&global);
+
+    let repository = root.path().join("repository");
+    let store = root.path().join("store");
+    let parent = root.path().join("copies");
+    for directory in [&repository, &store, &parent] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let repository_text = repository.to_string_lossy().into_owned();
+    let parent_text = parent.to_string_lossy().into_owned();
+
+    tauri::async_runtime::block_on(super::repository::lore_repository_initialize(
+        test_operation_context(),
+        repository_text.clone(),
+        "instance-clone".to_owned(),
+        "Instance clone".to_owned(),
+        "tester".to_owned(),
+        Some("tester".to_owned()),
+        true,
+        Some(store.to_string_lossy().into_owned()),
+    ))
+    .expect("the repository should initialize on a shared store");
+    std::fs::write(
+        repository.join("doc.txt"),
+        "one
+",
+    )
+    .unwrap();
+    tauri::async_runtime::block_on(lore_stage(
+        test_operation_context(),
+        repository_text.clone(),
+        vec!["doc.txt".to_owned()],
+    ))
+    .expect("stage should succeed");
+    tauri::async_runtime::block_on(lore_commit(
+        test_operation_context(),
+        repository_text.clone(),
+        "Write one".to_owned(),
+        Some("tester".to_owned()),
+    ))
+    .expect("commit should succeed");
+
+    let clone = |allow_copy: bool, dry_run: bool| {
+        tauri::async_runtime::block_on(super::maintenance::lore_repository_instance_clone(
+            test_operation_context(),
+            repository_text.clone(),
+            parent_text.clone(),
+            "copy".to_owned(),
+            allow_copy,
+            dry_run,
+        ))
+    };
+
+    // A dry run always reports how the clone would be made. Where the volume cannot share blocks
+    // a clone that does not allow copying is refused with NotSupported (9), after that report.
+    let refused_or_ready = clone(false, true).expect("a dry run is not refused at the boundary");
+    let plan = event(&refused_or_ready.result, "repositoryInstanceCloneBegin")
+        .expect("a dry run always sends the clone plan");
+    let method = plan["method"].as_str().expect("the method is a string");
+    assert!(
+        ["sharesBlocks", "copiesBytes"].contains(&method),
+        "unexpected clone method {method}"
+    );
+    assert_eq!(
+        refused_or_ready.result.status,
+        if method == "copiesBytes" { 9 } else { 0 },
+        "refusing a copy without permission is NotSupported (9)"
+    );
+    let source_id = instance_id_hex(&plan["instanceId"]);
+    assert_eq!(source_id.len(), 32);
+
+    // A dry run that is allowed to copy succeeds and names no new instance.
+    let preview = clone(true, true).expect("the allowed dry run");
+    assert_eq!(preview.result.status, 0);
+    let preview_complete = event(&preview.result, "repositoryInstanceCloneComplete")
+        .expect("a dry run ends with a complete event");
+    assert_eq!(
+        instance_id_hex(&preview_complete["instanceId"]),
+        "0".repeat(32),
+        "a dry run reports the zero instance id"
+    );
+    assert!(!parent.join("copy").exists(), "a dry run writes nothing");
+
+    // The real clone creates the instance.
+    let cloned = clone(true, false).expect("the real clone");
+    assert_eq!(cloned.result.status, 0);
+    let complete = event(&cloned.result, "repositoryInstanceCloneComplete")
+        .expect("a clone ends with a complete event");
+    let new_id = instance_id_hex(&complete["instanceId"]);
+    assert_ne!(new_id, "0".repeat(32));
+    assert_ne!(new_id, source_id);
+    assert!(parent.join("copy").join("doc.txt").is_file());
+    assert!(parent.join("copy").join(".lore").is_dir());
+
+    // The instance list now holds both the source and the clone.
+    let list = tauri::async_runtime::block_on(super::maintenance::lore_repository_instance_list(
+        test_operation_context(),
+        repository_text.clone(),
+    ))
+    .expect("the instance list");
+    let listed: Vec<String> = list
+        .events
+        .iter()
+        .filter(|event| event["tagName"] == "repositoryInstance")
+        .map(|event| instance_id_hex(&event["data"]["instanceId"]))
+        .collect();
+    assert!(
+        listed.contains(&source_id) && listed.contains(&new_id),
+        "{listed:?}"
+    );
+
+    // The destination exists now, so the Rust boundary refuses another clone to it.
+    let error = clone(true, true).expect_err("an existing destination is refused");
+    assert_eq!(error.code, "instance_clone_destination_exists");
+}

@@ -11,9 +11,13 @@
 //!   不到 300 ms 就结束的操作不开启全局流。
 //! - 只依赖 std、serde_json 与 `LoreEvent`，可以脱离 Tauri 单测。
 
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use lore::interface::LoreEvent;
+use lore::interface::{
+    LoreEvent, LoreRepositoryInstanceCloneMethod, LoreRepositoryInstanceClonePhase,
+};
+use lore_revision::lore::{BranchId, RepositoryId};
 use serde_json::{json, Map, Value};
 
 /// 同一操作两条流式快照之间的最小间隔。
@@ -28,6 +32,8 @@ enum Family {
     Sync,
     Push,
     Clone,
+    /// Lore v0.14.0 的实例克隆（`lore repository instance clone`）。
+    InstanceClone,
 }
 
 impl Family {
@@ -39,6 +45,7 @@ impl Family {
             Family::Sync => "revisionSyncProgress",
             Family::Push => "branchPushFragmentProgress",
             Family::Clone => "repositoryCloneProgress",
+            Family::InstanceClone => "repositoryInstanceCloneProgress",
         }
     }
 }
@@ -113,12 +120,30 @@ pub(super) struct ProgressAggregator {
     force_open: bool,
     snapshot: Option<Snapshot>,
     last_sent: Option<(Instant, Snapshot)>,
+    /// 实例克隆“复制字节”方式在 Begin 事件里给出的待写入文件总数；共享数据块的克隆没有总量。
+    instance_clone_total: Option<u64>,
+    /// 实例克隆最近一次汇报的阶段；阶段切换所需的快照不受 250 ms 节流限制。
+    instance_clone_phase: Option<LoreRepositoryInstanceClonePhase>,
     /// 逐文件事件（`FileStageFile`）计入的文件数。
     stage_events: u64,
     /// 上游计数快照（进度 tick 与 End）报告过的最大文件数。两者描述的是同一批文件，只能取较大
     /// 值：快照可能先于对应的 `FileStageFile` 事件计入文件，相加就会把这些文件数两次。
     stage_reported: u64,
     push: PushState,
+}
+
+/// 一轮片段上传的归属：上游推送事件自 v0.14.0 起都以 `(repository, branch)` 起头。
+///
+/// `BranchId` 与 `RepositoryId` 只派生了 `Ord`、没有 `Hash`，所以进行中的轮次放在 `BTreeMap` 里。
+type RoundKey = (RepositoryId, BranchId);
+
+/// 一轮正在进行的片段上传。
+#[derive(Clone, Copy, Default)]
+struct OpenRound {
+    /// (已登记, 需传输)。`None` 表示这一轮还没有给出片段数。
+    fragments: Option<(u64, u64)>,
+    /// 这一轮已传输的字节数。
+    bytes: u64,
 }
 
 /// 推送按“上传轮”记账：每个版本的片段上传是一轮 `FragmentBegin → Progress* → FragmentEnd`。
@@ -128,18 +153,23 @@ pub(super) struct ProgressAggregator {
 /// `BranchPushRevisionPushEnd` 只为属于当前分支的版本发送，来自其他分支的版本在它之前就
 /// `continue` 了。所以以 `FragmentEnd` 的次数为准，`localHistory` 之和只作“已宣布的轮数”，
 /// 实际轮数超过它时 `step_count` 随之上调。升级上游版本时需要重新核对这一点。
+///
+/// v0.14.0 起主仓库、layer 与各个 link 最多 8 个目标同时推送（`schedule_targets`），不同目标的
+/// 事件会交错，所以进行中的轮次按 `(repository, branch)` 分别记账再合计显示。同一仓库的目标
+/// 一次只推一个（`busy[order.group]`），因此同一个键内的轮次仍然是串行的。每个目标在开始
+/// 推送时才发 `BranchPush`（`start_target`），`rounds_total` 随目标陆续启动而累加。
 #[derive(Default)]
 struct PushState {
     /// 各个 `BranchPush`（主分支、layer、link）宣布的版本数之和。
     rounds_total: u64,
-    /// 已经结束的上传轮数。
+    /// 已经结束的上传轮数（所有目标合计）。
     rounds_done: u64,
-    /// 当前这一轮是否已经开始上传（Begin 之后、End 之前）。
-    cycle_open: bool,
-    /// 当前轮：(已登记, 需传输)。`None` 表示还在准备（收集片段、向远端询问缺哪些）。
-    fragments: Option<(u64, u64)>,
+    /// 正在上传的轮次。
+    open: BTreeMap<RoundKey, OpenRound>,
+    /// 最近结束的一轮的 (已传, 总数)：已宣布的轮次全部结束后停在这里，显示 100%。
+    settled: Option<(u64, u64)>,
+    /// 已结束轮次传输的字节数之和。
     bytes_prior: u64,
-    bytes_current: u64,
 }
 
 impl ProgressAggregator {
@@ -151,6 +181,8 @@ impl ProgressAggregator {
             force_open: false,
             snapshot: None,
             last_sent: None,
+            instance_clone_total: None,
+            instance_clone_phase: None,
             stage_events: 0,
             stage_reported: 0,
             push: PushState::default(),
@@ -296,37 +328,70 @@ impl ProgressAggregator {
                 Some(true)
             }
             LoreEvent::BranchPushFragmentBegin(data) => {
-                self.push.cycle_open = true;
-                self.push.fragments = Some((0, data.fragments));
-                self.push.bytes_current = 0;
+                self.push.open.insert(
+                    (data.repository, data.branch),
+                    OpenRound {
+                        fragments: Some((0, data.fragments)),
+                        bytes: 0,
+                    },
+                );
                 self.set_push();
                 Some(true)
             }
             LoreEvent::BranchPushFragmentProgress(data) => {
                 // 注意：bytes_total 只是“目前已装载待传的字节数”，会随装载增长，不能当分母。
-                self.push.cycle_open = true;
-                self.push.fragments = Some((data.complete, data.count));
-                self.push.bytes_current = data.bytes_transferred;
+                // 进度事件永远落到自己的 (repository, branch) 上：并发推送时另一个目标的事件
+                // 不能覆盖它。没有 Begin 就到达的进度事件仍视为该轮已经开始。
+                self.push.open.insert(
+                    (data.repository, data.branch),
+                    OpenRound {
+                        fragments: Some((data.complete, data.count)),
+                        bytes: data.bytes_transferred,
+                    },
+                );
                 self.set_push();
                 Some(false)
             }
             LoreEvent::BranchPushFragmentEnd(data) => {
                 let count = self
                     .push
-                    .fragments
+                    .open
+                    .remove(&(data.repository, data.branch))
+                    .and_then(|round| round.fragments)
                     .map_or(data.fragments, |(_, count)| count);
                 self.push.bytes_prior += data.bytes_transferred;
-                self.push.bytes_current = 0;
-                self.push.cycle_open = false;
                 self.push.rounds_done += 1;
-                // 还有下一轮要准备就回到“准备中”；已宣布的轮数都传完了就停在 100%，
-                // 直到操作结束，或者又冒出一轮（总数随之上调）。
-                self.push.fragments = (self.push.rounds_done >= self.push.rounds_total)
-                    .then_some((data.fragments, count));
+                self.push.settled = Some((data.fragments, count));
                 self.set_push();
                 Some(true)
             }
             // 只为属于当前分支的版本发送，不能用来数轮（见 `PushState`）。
+
+            // ---- 实例克隆：只有“复制字节”方式才知道文件总数 ----
+            LoreEvent::RepositoryInstanceCloneBegin(data) => {
+                // Begin 在预检与真实克隆里都会发送，它只记录总量，不产生快照，
+                // 因此一次耗时较长的预检也不会开出一个 0 / 0 的流。
+                self.instance_clone_total = (data.method
+                    == LoreRepositoryInstanceCloneMethod::CopiesBytes
+                    && data.file_count > 0)
+                    .then_some(data.file_count);
+                self.instance_clone_phase = None;
+                None
+            }
+            LoreEvent::RepositoryInstanceCloneProgress(data) => {
+                let phase_changed = self.instance_clone_phase != Some(data.phase);
+                self.instance_clone_phase = Some(data.phase);
+                self.set_instance_clone(data.cloned_entry_count, data.copied_file_count, false);
+                Some(phase_changed)
+            }
+            LoreEvent::RepositoryInstanceCloneComplete(data) => {
+                // 上游约定预检（dry run）的 Complete 带零 Instance ID 且不计任何内容，不能用它开流。
+                if data.instance_id.is_zero() {
+                    return None;
+                }
+                self.set_instance_clone(data.cloned_entry_count, data.copied_file_count, true);
+                Some(true)
+            }
             _ => None,
         }
     }
@@ -394,19 +459,79 @@ impl ProgressAggregator {
         ended || flipped
     }
 
+    /// 实例克隆的快照：“复制字节”用已复制文件数对总文件数；共享数据块没有总量，只报告
+    /// 已克隆的文件与符号链接数（整目录克隆只计一次，所以这个数字不能代表数据量）。
+    fn set_instance_clone(&mut self, cloned_entries: u64, copied_files: u64, done: bool) {
+        let (current, total) = match self.instance_clone_total {
+            Some(total) if done => (total, Some(total)),
+            Some(total) => (copied_files.min(total), Some(total)),
+            // 只克隆了整目录、没有逐个文件时计数为 0，不能显示成 0 / 0。
+            None if done => (
+                cloned_entries,
+                (cloned_entries > 0).then_some(cloned_entries),
+            ),
+            None => (cloned_entries, None),
+        };
+        self.snapshot = Some(Snapshot {
+            family: Family::InstanceClone,
+            unit: Unit::Files,
+            current,
+            total,
+            total_final: total.is_some(),
+            files: None,
+            files_total: None,
+            bytes: None,
+            bytes_total: None,
+            step_index: None,
+            step_count: None,
+        });
+    }
+
     fn set_push(&mut self) {
+        // 并发推送时几个目标同时上传，进度显示所有进行中轮次的合计；单目标时它就是那一轮本身。
         // 这一轮没有片段要传（对端已经都有）时按“准备中”显示，不出现 “0 / 0 个片段”。
-        let (current, total) = match self.push.fragments {
-            Some((complete, count)) if count > 0 => (complete, Some(count)),
-            _ => (0, None),
+        let (current, total) = if self.push.open.is_empty() {
+            // 没有进行中的轮次：已宣布的轮次都传完了就停在最后一轮的 100%，直到操作
+            // 结束，或者又冒出一轮（总数随之上调）；还有下一轮要准备就回到“准备中”。
+            match self.push.settled {
+                Some((complete, count))
+                    if count > 0 && self.push.rounds_done >= self.push.rounds_total =>
+                {
+                    (complete, Some(count))
+                }
+                _ => (0, None),
+            }
+        } else {
+            let (complete, count) = self
+                .push
+                .open
+                .values()
+                .filter_map(|round| round.fragments)
+                .fold(
+                    (0u64, 0u64),
+                    |(complete, count), (round_complete, round_count)| {
+                        (complete + round_complete, count + round_count)
+                    },
+                );
+            if count > 0 {
+                (complete, Some(count))
+            } else {
+                (0, None)
+            }
         };
         let announced = self.push.rounds_total.max(1);
-        let step_index = if self.push.cycle_open {
-            self.push.rounds_done + 1
-        } else {
+        let step_index = if self.push.open.is_empty() {
             (self.push.rounds_done + 1).min(announced)
+        } else {
+            self.push.rounds_done + 1
         };
-        let bytes = self.push.bytes_prior + self.push.bytes_current;
+        let bytes = self.push.bytes_prior
+            + self
+                .push
+                .open
+                .values()
+                .map(|round| round.bytes)
+                .sum::<u64>();
         self.snapshot = Some(Snapshot {
             family: Family::Push,
             unit: Unit::Fragments,
@@ -445,6 +570,7 @@ pub(super) fn retain_in_result(event: &LoreEvent) -> bool {
             | LoreEvent::RevisionCommitProgress(_)
             | LoreEvent::BranchPushFragmentProgress(_)
             | LoreEvent::RepositoryCloneProgress(_)
+            | LoreEvent::RepositoryInstanceCloneProgress(_)
     )
 }
 
@@ -455,11 +581,17 @@ mod tests {
     // 夹具构造见 test_events：Lore 0.11 起事件类型不再实现 Deserialize，
     // 录制的 JSON 文本改为逐项对应的类型化构造，数值仍是实测原值。
     use crate::lore_adapter::test_events::{
-        clone_event, commit_discovering, commit_end, commit_running, metadata_context_event,
-        push_begin, push_end, push_start, push_tick, real_clone, real_sync_from_remote,
-        real_two_round_push, revision_done, stage_begin, stage_count_event, stage_end, stage_file,
-        stage_tick, sync_discovering, sync_running,
+        clone_event, commit_discovering, commit_end, commit_running, instance_clone_begin,
+        instance_clone_complete, instance_clone_progress, metadata_context_event, push_begin,
+        push_begin_for, push_end, push_end_for, push_start, push_start_for, push_tick,
+        push_tick_for, real_clone, real_sync_from_remote, real_two_round_push, revision_done,
+        stage_begin, stage_count_event, stage_end, stage_file, stage_tick, sync_discovering,
+        sync_running, PUSH_BRANCH, PUSH_REPOSITORY,
     };
+
+    /// 并发推送里的第二个目标（例如 layer）：仓库与分支都不同于默认夹具。
+    const LAYER_REPOSITORY: &str = "01a1344baf3377dc9bedfb65bd0911b5";
+    const LAYER_BRANCH: &str = "e726318bbc3fd75ac8733a7e030cc35c";
 
     fn at(base: Instant, ms: u64) -> Instant {
         base + Duration::from_millis(ms)
@@ -710,6 +842,223 @@ mod tests {
         let next = aggregator.observe(&push_end(0, 0), at(base, 2400)).unwrap();
         assert_eq!(data(&next)["stepIndex"], 2);
         assert!(data(&next).get("total").is_none());
+    }
+
+    #[test]
+    fn concurrent_pushes_report_the_sum_of_their_open_rounds() {
+        // v0.14.0 起主仓库、layer 与 link 最多 8 个目标同时推送，片段事件按
+        // (repository, branch) 交错。进度必须是各目标进行中轮次的合计，不能让后到的事件
+        // 覆盖先到的。
+        let base = Instant::now();
+        let mut aggregator = ProgressAggregator::new(base);
+        aggregator
+            .observe(
+                &push_start_for(PUSH_REPOSITORY, PUSH_BRANCH, 1, false),
+                at(base, 5),
+            )
+            .expect("opens immediately");
+        let announced = aggregator
+            .observe(
+                &push_start_for(LAYER_REPOSITORY, LAYER_BRANCH, 1, false),
+                at(base, 6),
+            )
+            .expect("a second announced target changes the step count");
+        assert_eq!(data(&announced)["stepCount"], 2);
+
+        aggregator
+            .observe(
+                &push_begin_for(PUSH_REPOSITORY, PUSH_BRANCH, 100),
+                at(base, 400),
+            )
+            .unwrap();
+        let both = aggregator
+            .observe(
+                &push_begin_for(LAYER_REPOSITORY, LAYER_BRANCH, 50),
+                at(base, 410),
+            )
+            .unwrap();
+        assert_eq!(data(&both)["current"], 0);
+        assert_eq!(data(&both)["total"], 150);
+
+        // 两个目标的进度事件交错到达：数字相加，字节也相加。
+        aggregator
+            .observe(
+                &push_tick_for(PUSH_REPOSITORY, PUSH_BRANCH, 40, 100, 4_000_000, 90_000_000),
+                at(base, 700),
+            )
+            .unwrap();
+        let summed = aggregator
+            .observe(
+                &push_tick_for(LAYER_REPOSITORY, LAYER_BRANCH, 10, 50, 1_000_000, 8_000_000),
+                at(base, 1000),
+            )
+            .unwrap();
+        assert_eq!(data(&summed)["current"], 50);
+        assert_eq!(data(&summed)["total"], 150);
+        assert_eq!(data(&summed)["bytes"], 5_000_000);
+
+        // 主仓库先传完：它的字节并入已完成部分，layer 仍在进行，显示只剩 layer 的这一轮。
+        let main_done = aggregator
+            .observe(
+                &push_end_for(PUSH_REPOSITORY, PUSH_BRANCH, 100, 10_000_000),
+                at(base, 1100),
+            )
+            .unwrap();
+        assert_eq!(data(&main_done)["current"], 10);
+        assert_eq!(data(&main_done)["total"], 50);
+        assert_eq!(data(&main_done)["bytes"], 11_000_000);
+        assert_eq!(data(&main_done)["stepIndex"], 2);
+        assert_eq!(data(&main_done)["stepCount"], 2);
+
+        // 两个宣布的轮次都传完：停在最后一轮的 100%，字节累计两个目标。
+        let done = aggregator
+            .observe(
+                &push_end_for(LAYER_REPOSITORY, LAYER_BRANCH, 50, 5_000_000),
+                at(base, 1200),
+            )
+            .unwrap();
+        assert_eq!(data(&done)["current"], 50);
+        assert_eq!(data(&done)["total"], 50);
+        assert_eq!(data(&done)["bytes"], 15_000_000);
+        assert_eq!(data(&done)["stepIndex"], 2);
+    }
+
+    #[test]
+    fn a_finished_target_does_not_close_the_round_of_another_branch() {
+        // 同一仓库的两个分支也要分开记账：键是 (repository, branch)，而不是只看仓库。
+        let base = Instant::now();
+        let mut aggregator = ProgressAggregator::new(base);
+        aggregator
+            .observe(&push_start(2, false), at(base, 5))
+            .expect("opens immediately");
+        aggregator
+            .observe(
+                &push_begin_for(PUSH_REPOSITORY, PUSH_BRANCH, 10),
+                at(base, 400),
+            )
+            .unwrap();
+        aggregator
+            .observe(
+                &push_begin_for(PUSH_REPOSITORY, LAYER_BRANCH, 20),
+                at(base, 410),
+            )
+            .unwrap();
+        let after = aggregator
+            .observe(
+                &push_end_for(PUSH_REPOSITORY, PUSH_BRANCH, 10, 1_000),
+                at(base, 420),
+            )
+            .unwrap();
+        // 另一个分支的轮次仍在进行，不能因为同仓库的一轮结束就回到“准备中”。
+        assert_eq!(data(&after)["total"], 20);
+        assert_eq!(data(&after)["current"], 0);
+    }
+
+    #[test]
+    fn instance_clone_that_copies_bytes_counts_copied_files_against_the_announced_total() {
+        let base = Instant::now();
+        let mut aggregator = ProgressAggregator::new(base);
+        // Begin 只记录总量，不产生快照。
+        assert!(aggregator
+            .observe(
+                &instance_clone_begin(LoreRepositoryInstanceCloneMethod::CopiesBytes, 200),
+                at(base, 5)
+            )
+            .is_none());
+
+        // 进入“复制”阶段是阶段切换，不受节流限制。
+        let copying = aggregator
+            .observe(
+                &instance_clone_progress(LoreRepositoryInstanceClonePhase::Copying, 1, 50, 50),
+                at(base, 400),
+            )
+            .expect("a phase change is sent immediately");
+        assert_eq!(copying["tagName"], "repositoryInstanceCloneProgress");
+        assert_eq!(data(&copying)["unit"], "files");
+        assert_eq!(data(&copying)["current"], 50);
+        assert_eq!(data(&copying)["total"], 200);
+        assert_eq!(data(&copying)["totalFinal"], true);
+
+        // 同一阶段内 250 ms 内的后续进度被节流。
+        assert!(aggregator
+            .observe(
+                &instance_clone_progress(LoreRepositoryInstanceClonePhase::Copying, 1, 80, 80),
+                at(base, 500),
+            )
+            .is_none());
+        let later = aggregator
+            .observe(
+                &instance_clone_progress(LoreRepositoryInstanceClonePhase::Copying, 1, 120, 120),
+                at(base, 700),
+            )
+            .expect("after the interval");
+        assert_eq!(data(&later)["current"], 120);
+
+        // 完成时立即定稿到 100%，记录里不能停在某个中间值。
+        let done = aggregator
+            .observe(&instance_clone_complete(false, 3, 200, 200), at(base, 710))
+            .expect("completion bypasses the throttle");
+        assert_eq!(data(&done)["current"], 200);
+        assert_eq!(data(&done)["total"], 200);
+    }
+
+    #[test]
+    fn instance_clone_that_shares_blocks_has_no_total_until_it_completes() {
+        let base = Instant::now();
+        let mut aggregator = ProgressAggregator::new(base);
+        aggregator.observe(
+            &instance_clone_begin(LoreRepositoryInstanceCloneMethod::SharesBlocks, 0),
+            at(base, 5),
+        );
+        let running = aggregator
+            .observe(
+                &instance_clone_progress(LoreRepositoryInstanceClonePhase::Copying, 40, 1200, 0),
+                at(base, 400),
+            )
+            .unwrap();
+        // 共享数据块的克隆没有总量：只报告逐个克隆的文件数，不能用目录数充当分母。
+        assert_eq!(data(&running)["current"], 1200);
+        assert!(data(&running).get("total").is_none());
+        assert_eq!(data(&running)["totalFinal"], false);
+
+        let done = aggregator
+            .observe(&instance_clone_complete(false, 41, 1250, 0), at(base, 420))
+            .unwrap();
+        assert_eq!(data(&done)["current"], 1250);
+        assert_eq!(data(&done)["total"], 1250);
+        assert_eq!(data(&done)["totalFinal"], true);
+    }
+
+    #[test]
+    fn instance_clone_preview_never_opens_a_stream() {
+        // 预检（dry run）只有 Begin 与零 Instance ID 的 Complete；即使扫描很慢、超过
+        // 300 ms 的开流延迟，也不能开出一个 0 / 0 的进度流。
+        let base = Instant::now();
+        let mut aggregator = ProgressAggregator::new(base);
+        assert!(aggregator
+            .observe(
+                &instance_clone_begin(LoreRepositoryInstanceCloneMethod::CopiesBytes, 200),
+                at(base, 5)
+            )
+            .is_none());
+        assert!(aggregator
+            .observe(&instance_clone_complete(true, 0, 0, 0), at(base, 5_000))
+            .is_none());
+    }
+
+    #[test]
+    fn instance_clone_progress_ticks_are_not_kept_in_the_result() {
+        assert!(!retain_in_result(&instance_clone_progress(
+            LoreRepositoryInstanceClonePhase::Copying,
+            1,
+            2,
+            3
+        )));
+        assert!(retain_in_result(&instance_clone_begin(
+            LoreRepositoryInstanceCloneMethod::SharesBlocks,
+            0
+        )));
+        assert!(retain_in_result(&instance_clone_complete(false, 1, 2, 0)));
     }
 
     #[test]

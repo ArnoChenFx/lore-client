@@ -49,6 +49,22 @@ export function readString(value: unknown, fallback = ''): string {
 }
 
 /**
+ * 读取 Lore 事件里的 Instance ID。
+ *
+ * 上游 `InstanceId` 以 `{ data: [16 个字节] }` 序列化，不像 Branch / Repository 那样是十六进制字符串（已在
+ * v0.14.0 的真实事件中确认，且 v0.13.0 已是如此），用 `readString` 只会得到空串。这里与
+ * `InstanceId::text_encoding` 一样转成 32 位小写十六进制；字符串原样保留，兼容演示数据。
+ * 形状不符合时返回空串，不猜测。
+ */
+export function readInstanceId(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (!isRecord(value) || !Array.isArray(value.data) || value.data.length !== 16) return ''
+  const bytes = value.data as unknown[]
+  if (!bytes.every((byte) => typeof byte === 'number' && Number.isInteger(byte) && byte >= 0 && byte <= 255)) return ''
+  return (bytes as number[]).map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+/**
  * 读取 Lore 的可选展示文本，并过滤固定版本用于表达“无数据”的内部哨兵。
  * 当前只用于身份类标签；真实用户输入即使包含尖括号，也不会被宽泛规则误删。
  */

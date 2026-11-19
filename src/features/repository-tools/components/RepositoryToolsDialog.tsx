@@ -152,6 +152,13 @@ export function RepositoryToolsDialog({
   onListInstances = async () => [],
   onPruneInstances = async () => false,
   onUpdateInstancePath = async () => false,
+  onSelectInstanceCloneParent = async () => null,
+  onPreviewInstanceClone = async () => {
+    throw new Error('Instance clone is unavailable')
+  },
+  onCloneInstance = async () => {
+    throw new Error('Instance clone is unavailable')
+  },
   onVerify,
   onCollectGarbage,
   onClose
@@ -1565,6 +1572,9 @@ export function RepositoryToolsDialog({
                 onListInstances={onListInstances}
                 onPruneInstances={onPruneInstances}
                 onUpdateInstancePath={onUpdateInstancePath}
+                onSelectInstanceCloneParent={onSelectInstanceCloneParent}
+                onPreviewInstanceClone={onPreviewInstanceClone}
+                onCloneInstance={onCloneInstance}
               />
             )}
             {tab === 'maintenance' && (

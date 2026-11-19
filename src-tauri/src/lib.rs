@@ -156,6 +156,7 @@ pub fn run() {
             lore_adapter::maintenance::lore_repository_instance_list,
             lore_adapter::maintenance::lore_repository_instance_prune,
             lore_adapter::maintenance::lore_repository_instance_update_path,
+            lore_adapter::maintenance::lore_repository_instance_clone,
             lore_adapter::maintenance::lore_repository_gc,
             lore_adapter::workspace::lore_stage,
             lore_adapter::workspace::lore_stage_move,

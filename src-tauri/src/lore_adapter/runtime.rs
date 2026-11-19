@@ -540,17 +540,15 @@ pub(super) fn validate_bare_clone_options(
     Ok(())
 }
 
-pub(super) fn validate_clone_destination(
-    destination_parent: &str,
-    directory_name: &str,
-) -> Result<PathBuf, LoreCommandError> {
-    let parent = validate_existing_directory(destination_parent, "Clone parent directory")?;
+/**
+ * 目录名是否是 Windows、Linux 与 macOS 共同支持的单级可移植名称。
+ *
+ * `Path::components()` 只理解当前宿主的分隔符：`foo\bar` 在 Windows 是两级
+ * 路径，在 Linux/macOS 却会被视为单个文件名。Clone 与实例克隆的请求都来自同一套
+ * IPC，因此必须先按三个桌面目标的公共文件名子集校验，再使用原生 Path 拼接。
+ */
+fn is_portable_directory_name(directory_name: &str) -> bool {
     let directory_path = Path::new(directory_name);
-    /*
-     * `Path::components()` 只理解当前宿主的分隔符：`foo\bar` 在 Windows 是两级
-     * 路径，在 Linux/macOS 却会被视为单个文件名。Clone 请求来自同一套 IPC，
-     * 因此必须先按三个桌面目标的公共文件名子集校验，再使用原生 Path 拼接。
-     */
     let is_portable_name = !directory_name.is_empty()
         && !directory_name.ends_with(['.', ' '])
         && !directory_name
@@ -561,8 +559,49 @@ pub(super) fn validate_clone_destination(
         .components()
         .all(|component| matches!(component, std::path::Component::Normal(_)))
         && directory_path.components().count() == 1;
-    if !is_portable_name || !is_single_component || directory_name == "." || directory_name == ".."
-    {
+    is_portable_name && is_single_component && directory_name != "." && directory_name != ".."
+}
+
+/**
+ * 校验实例克隆目标：父目录必须已存在，名称必须是单级可移植目录名，目标本身必须不存在。
+ *
+ * 与 Clone 目标不同，Lore 的 `instance clone` 自己创建目标目录，会拒绝任何已存在的目标，
+ * 包括空目录和指向不存在位置的符号链接（上游把悬空链接也算“已存在”）。在 Rust 边界提前拒绝，
+ * 错误码由客户端掌握，也不会把一个注定失败的请求排进仓库队列。嵌套在另一个 Instance 内、
+ * 源 Instance 内部等情况仍由 Lore 判定。
+ */
+pub(super) fn validate_instance_clone_destination(
+    destination_parent: &str,
+    directory_name: &str,
+) -> Result<PathBuf, LoreCommandError> {
+    let parent =
+        validate_existing_directory(destination_parent, "Instance clone parent directory")?;
+    if !is_portable_directory_name(directory_name) {
+        return Err(LoreCommandError::new(
+            "invalid_instance_clone_directory",
+            "The instance clone directory name must be a single portable folder name supported by Windows, Linux, and macOS",
+        ));
+    }
+    let destination = parent.join(directory_name);
+    // `symlink_metadata` 不跟随符号链接，悬空链接也会被识别为已存在。
+    if std::fs::symlink_metadata(&destination).is_ok() {
+        return Err(LoreCommandError::new(
+            "instance_clone_destination_exists",
+            format!(
+                "The instance clone destination already exists: {}",
+                display_path_without_windows_verbatim_prefix(&destination)
+            ),
+        ));
+    }
+    Ok(destination)
+}
+
+pub(super) fn validate_clone_destination(
+    destination_parent: &str,
+    directory_name: &str,
+) -> Result<PathBuf, LoreCommandError> {
+    let parent = validate_existing_directory(destination_parent, "Clone parent directory")?;
+    if !is_portable_directory_name(directory_name) {
         return Err(LoreCommandError::new(
             "invalid_clone_directory",
             "The clone directory name must be a single portable folder name supported by Windows, Linux, and macOS",
@@ -717,6 +756,24 @@ pub(super) fn validate_optional_lock_filter(
         ));
     }
     Ok(Some(value))
+}
+
+/// 锁查询只能按 Owner 或按路径筛选，不能同时使用。
+///
+/// Lore v0.14.0 起，库在询问远端之前就以 `InvalidArguments` 拒绝同时给出两者的查询（服务器
+/// 本来就不回答这种组合）。在 Rust 边界提前拒绝，错误码由客户端自己掌握，前端不必再解析
+/// 上游文案，也不会把一个注定失败的请求排进远端队列。
+pub(super) fn ensure_lock_query_filters_exclusive(
+    owner: Option<&str>,
+    path: &str,
+) -> Result<(), LoreCommandError> {
+    if owner.is_some_and(|owner| !owner.is_empty()) && !path.is_empty() {
+        return Err(LoreCommandError::new(
+            "lock_query_filters_conflict",
+            "A lock query can filter by owner or by path, not both",
+        ));
+    }
+    Ok(())
 }
 
 /// 依赖标签是用户定义的精确匹配值；限制长度、数量和控制字符，避免异常 IPC
@@ -1101,6 +1158,8 @@ pub(super) fn lore_error_code_name(code: i32) -> Option<&'static str> {
         47 => "DeleteProtected",
         48 => "DeleteCurrent",
         49 => "DeleteDefault",
+        // 挂载点仍被占用：虚拟克隆的 Instance move/delete 会拒绝被 shell 等进程持有的挂载。
+        51 => "MountsBusy",
         52 => "LinkDivergent",
         // 已存在（56–63）
         56 => "AlreadyLinked",
