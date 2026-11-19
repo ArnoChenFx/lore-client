@@ -174,10 +174,6 @@ FFI 错误码表与 v0.13.0 完全相同。
   `+crt-static` 提供 C 运行时，上游的 `.cargo/config.toml` 设置了它而本客户端没有。两种配置都能用
   本客户端的现有配置正常链接：唯一的痕迹是缺少 `swfs.pdb` 的链接警告 `LNK4099`（属预期），且二进制
   只导入系统 DLL（Universal CRT 的 API set），没有 VC 运行时 DLL。升级时需要重新核对。
-- 在 Windows 上，`cargo test` 生成的库测试程序没有 `tauri-build` 嵌入应用的 Common Controls v6 清单。
-  `tauri-plugin-dialog 2.8.4`（`rfd 0.17`）的消息框通过 `TaskDialogIndirect` 显示，只有 comctl32 v6
-  才有该函数，所以测试程序在补上这份清单之前（例如用 `mt.exe`）会以 `STATUS_ENTRYPOINT_NOT_FOUND`
-  （`0xc0000139`）启动失败。应用本体不受影响。
 - `lore-fuse` 仅限 Linux，直接使用 `/dev/fuse`，不需要任何系统库。
 - `cargo test instance_clone_matches_the_real_lore -- --ignored --test-threads=1` 会驱动真实的
   共享 Store 仓库并核对前端解析的事件契约。每次升级 Lore 后都应运行；它通过
@@ -306,3 +302,10 @@ cargo check --manifest-path src-tauri/Cargo.toml
 - **浏览器预览正常但桌面模式失败：** 使用 `bun tauri dev` 复现；浏览器样例数据不会执行原生仓库操作。
 - **本地操作正常但服务器操作失败：** 检查 `VITE_LORE_SERVER_URL`、网络、权限和 Lore 服务兼容性。
 - **文档图片被保存为普通 Git 对象：** 运行 `git lfs install`，再检查 `.gitattributes` 和 `git check-attr filter`。
+- **Windows 上 `cargo test` 以 `STATUS_ENTRYPOINT_NOT_FOUND`（`0xc0000139`）启动失败：** 测试程序缺少 Common Controls v6 清单。
+  `tauri-plugin-dialog`（经 `rfd 0.17`）用 `TaskDialogIndirect` 弹消息框，这个函数只存在于 comctl32 v6，所以链接了它的任何程序
+  都需要该清单。`tauri-build` 只把自带清单嵌入应用本体，因此 `build.rs` 关闭了这个默认行为
+  （`WindowsAttributes::new_without_app_manifest`），改为用 `embed-resource` 的 `compile_for_everything` 把
+  `windows-app-manifest.xml`（与 tauri-build 默认清单一致的副本）链接进所有目标。两处改动必须一起保留，同时存在会产生重复的清单
+  资源。检查某个程序时运行 `mt.exe -inputresource:<exe>;#1 -out:<文件>`：应用与测试程序都应有且仅有一份相同的清单。如果以后
+  `tauri-build` 自己把清单链接进所有目标，就可以删掉这个绕行方案。

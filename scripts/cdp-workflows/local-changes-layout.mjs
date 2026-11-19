@@ -77,50 +77,104 @@ export async function runLocalChangesLayoutWorkflow({ cdp, results, assert, wait
     const pause = (milliseconds) => cdp.evaluate(`new Promise(resolve => setTimeout(resolve, ${milliseconds}))`)
     const ignoreHost = `Boolean(Array.from(document.querySelectorAll('.change-context-menu .context-submenu-host > button'))
       .find(candidate => candidate.textContent.trim().startsWith('忽略')))`
-    let hostFound = false
-    const rowCount = await cdp.evaluate(`document.querySelectorAll('.change-file-row').length`)
-    /*
-     * 右键的 `clientY` 固定在视口底边：菜单位置由触发点决定，这样它一定被夹到窗口底部，子菜单才会面临
-     * 最坏的纵向空间，与文件行恰好落在哪一行无关。已暂存的行没有“忽略”，逐行找第一个带该项的。
-     */
-    for (let index = 0; index < rowCount && !hostFound; index += 1) {
-      await cdp.evaluate(`(() => {
-        const row = document.querySelectorAll('.change-file-row')[${index}];
-        const bounds = row?.getBoundingClientRect();
-        row?.dispatchEvent(new MouseEvent('contextmenu', {
-          bubbles: true, cancelable: true,
-          clientX: Math.round((bounds?.left ?? 300) + 40), clientY: innerHeight - 2
-        }));
-      })()`)
-      hostFound = await waitForEvaluatedState(cdp, ignoreHost, Boolean, 8)
-      if (!hostFound) {
+    // 子菜单展开时，第一次 Escape 只收起子菜单，第二次才关闭整个右键菜单（见 ChangeContextMenu 的键盘处理），
+    // 所以逐次按键并确认菜单真的消失，而不是只发一次就假定它已经关闭。
+    const closeContextMenu = async () => {
+      const closed = `!document.querySelector('.change-context-menu')`
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (await cdp.evaluate(closed)) return true
         await cdp.evaluate(`document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
-        await pause(80)
+        await pause(60)
       }
+      return cdp.evaluate(closed)
     }
-    assert(hostFound, 'No Local Changes row offered the Ignore submenu')
-    // 菜单有入场动画，悬停坐标会过期；宿主按钮点击同样展开子菜单，且没有时序依赖。
-    await cdp.evaluate(`Array.from(document.querySelectorAll('.change-context-menu .context-submenu-host > button'))
-      .find(candidate => candidate.textContent.trim().startsWith('忽略'))?.click()`)
-    const ignoreSubmenu = await waitForEvaluatedState(cdp, `(() => {
+    const submenuGeometry = `(() => {
       const submenu = document.querySelector('.change-context-menu .context-submenu');
       if (!submenu) return null;
       const rect = submenu.getBoundingClientRect();
       return {
         opensUp: submenu.classList.contains('opens-up'),
-        top: Math.round(rect.top), bottom: Math.round(rect.bottom), viewportHeight: innerHeight,
+        // 向下展开时子菜单顶边贴着触发行顶边（允许 8px 的重叠与误差），向上展开则整体落在触发行上方。
+        startsAtHost: rect.top >= (submenu.parentElement?.getBoundingClientRect().top ?? 0) - 8,
+        top: Math.round(rect.top), bottom: Math.round(rect.bottom), height: Math.round(rect.height), viewportHeight: innerHeight,
         fullyVisible: rect.top >= 0 && rect.bottom <= innerHeight && rect.right <= innerWidth,
-        // 与菜单自身一致，子菜单与视口边缘也要保留 8px 间距。中文标签下向下展开的底边恰在这个阈值附近
-        // （亚像素差异就会翻转），所以这里只是稳妥而非灵敏的集成守护；判定本身由 `shouldOpenSubmenuUp` 的单元测试覆盖。
+        // 与菜单自身一致，子菜单与视口边缘也要保留 8px 间距。
         withinGap: rect.top >= 8 && rect.bottom <= innerHeight - 8,
         items: submenu.querySelectorAll(':scope > button').length,
         clipped: Array.from(submenu.querySelectorAll(':scope > button')).some(button => button.scrollWidth > button.clientWidth + 1)
       };
-    })()`, Boolean)
+    })()`
+    /*
+     * 右键的 `clientY` 默认固定在视口底边：菜单位置由触发点决定，这样它一定被夹到窗口底部，子菜单才会面临
+     * 最坏的纵向空间，与文件行恰好落在哪一行无关；需要“上方空间充足”的场景时传入其他纵坐标表达式。
+     * 已暂存的行没有“忽略”，逐行找第一个带该项的。返回展开后子菜单的真实几何；调用方负责关闭菜单。
+     */
+    const openIgnoreSubmenu = async (clientYExpression = 'innerHeight - 2') => {
+      let hostFound = false
+      const rowCount = await cdp.evaluate(`document.querySelectorAll('.change-file-row').length`)
+      for (let index = 0; index < rowCount && !hostFound; index += 1) {
+        await cdp.evaluate(`(() => {
+          const row = document.querySelectorAll('.change-file-row')[${index}];
+          const bounds = row?.getBoundingClientRect();
+          row?.dispatchEvent(new MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true,
+            clientX: Math.round((bounds?.left ?? 300) + 40), clientY: ${clientYExpression}
+          }));
+        })()`)
+        hostFound = await waitForEvaluatedState(cdp, ignoreHost, Boolean, 8)
+        if (!hostFound) {
+          await closeContextMenu()
+          await pause(80)
+        }
+      }
+      assert(hostFound, 'No Local Changes row offered the Ignore submenu')
+      // 菜单有入场动画，悬停坐标会过期；宿主按钮点击同样展开子菜单，且没有时序依赖。
+      await cdp.evaluate(`Array.from(document.querySelectorAll('.change-context-menu .context-submenu-host > button'))
+        .find(candidate => candidate.textContent.trim().startsWith('忽略'))?.click()`)
+      return waitForEvaluatedState(cdp, submenuGeometry, Boolean)
+    }
+
+    const ignoreSubmenu = await openIgnoreSubmenu()
     assert(ignoreSubmenu?.items === 4 && ignoreSubmenu.fullyVisible && ignoreSubmenu.withinGap && !ignoreSubmenu.clipped,
       `The Ignore submenu is clipped or incomplete near the bottom edge: ${JSON.stringify(ignoreSubmenu)}`)
-    await cdp.evaluate(`document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
-    results.localChangesLayout = { independent, collapsed, restored, large, small, smallRestored, expanded, ignoreSubmenu }
+    assert(await closeContextMenu(), 'The context menu did not close on Escape')
+
+    /*
+     * 上面用的是真实标签，而中文单行标签下子菜单向下展开的底边只比 8px 间距阈值高出一两像素，
+     * 把“向上展开”整个去掉也可能侥幸通过，所以它只是稳妥而非灵敏。这里临时把每个子菜单项撑到 44px，
+     * 让向下展开必然越出视口（与语言、字体都无关）；此时子菜单必须翻转到触发行上方并保持完整可见。
+     */
+    await cdp.evaluate(`(() => {
+      const style = document.createElement('style');
+      style.id = 'smoke-tall-submenu';
+      style.textContent = '.change-context-menu .context-submenu > button { min-height: 44px; }';
+      document.head.append(style);
+    })()`)
+    let tallSubmenu = null
+    try {
+      tallSubmenu = await openIgnoreSubmenu()
+      // 高度断言保证压力样式确实生效；否则样式失效会让这条守护悄悄退化成上面那条。
+      assert(tallSubmenu?.height >= 170, `The tall-submenu fixture did not apply: ${JSON.stringify(tallSubmenu)}`)
+      assert(
+        tallSubmenu.opensUp && tallSubmenu.items === 4 && tallSubmenu.fullyVisible && tallSubmenu.withinGap && !tallSubmenu.clipped,
+        `A tall Ignore submenu must open upward and stay inside the viewport: ${JSON.stringify(tallSubmenu)}`
+      )
+    } finally {
+      await cdp.evaluate(`document.getElementById('smoke-tall-submenu')?.remove()`)
+      await closeContextMenu()
+    }
+
+    /*
+     * 与上面对称：菜单打开在视口上部、下方空间充足时，子菜单必须保持默认的向下展开，不能无谓地翻转到触发行上方。
+     * 它抓的是“总是向上展开”这类回归，和上面抓“从不向上展开”的检查互为补充。
+     */
+    const roomySubmenu = await openIgnoreSubmenu('120')
+    assert(
+      roomySubmenu?.items === 4 && !roomySubmenu.opensUp && roomySubmenu.startsAtHost && roomySubmenu.fullyVisible && roomySubmenu.withinGap,
+      `An Ignore submenu with room below must keep opening downward: ${JSON.stringify(roomySubmenu)}`
+    )
+    assert(await closeContextMenu(), 'The context menu did not close on Escape')
+    results.localChangesLayout = { independent, collapsed, restored, large, small, smallRestored, expanded, ignoreSubmenu, tallSubmenu, roomySubmenu }
   } finally {
     await cdp.send('Emulation.setDeviceMetricsOverride', { ...originalViewport, deviceScaleFactor: 1, mobile: false })
   }

@@ -11,6 +11,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# Windows 应用清单必须链接进库内单元测试等全部产物，而 tauri-build 只会把它链接进 bin，
+# 因此构建脚本直接使用 tauri-winres 底层的 embed-resource；`compile_for_everything` 自 3.0.6 起提供，
+# 与 tauri-winres 0.3.7 的依赖范围一致，不会引入额外版本。
+embed-resource = "3.0.6"
 toml_edit = "0.25.13"
 
 [dependencies]

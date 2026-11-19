@@ -269,8 +269,18 @@ async function assertPlainToastSurface(cdp) {
 /**
  * 纯图标按钮不能只靠肉眼判断居中。这里同时验证按钮有可计算的边框，
  * 并把 SVG 与按钮的几何中心差限制在半像素内。
+ *
+ * 传入 `referenceSelector` 时还要求外观与参照按钮一致：圆角、边框、背景、文字色、阴影，
+ * 以及默认情况下的尺寸。被测按钮与参照按钮本来就设计成不同尺寸时，把 `matchReferenceSize`
+ * 设为 false，只比较外观令牌。失败信息会列出具体不一致的属性，而不是只给一个布尔值。
  */
-async function assertInteractiveIconButton(cdp, selector, label, referenceSelector = null) {
+async function assertInteractiveIconButton(
+  cdp,
+  selector,
+  label,
+  referenceSelector = null,
+  { matchReferenceSize = true } = {}
+) {
   const result = await cdp.evaluate(`(() => {
     const button = document.querySelector(${JSON.stringify(selector)});
     const icon = button?.querySelector("svg");
@@ -283,7 +293,30 @@ async function assertInteractiveIconButton(cdp, selector, label, referenceSelect
       : document.querySelector(${JSON.stringify(referenceSelector)});
     const referenceRect = reference?.getBoundingClientRect();
     const referenceStyle = reference ? getComputedStyle(reference) : null;
+    const sizeMatchesReference = !referenceRect ||
+      !${JSON.stringify(matchReferenceSize)} ||
+      (Math.abs(buttonRect.width - referenceRect.width) <= 0.5 &&
+        Math.abs(buttonRect.height - referenceRect.height) <= 0.5);
+    // 与参照按钮不一致时，失败信息必须指出具体是哪一项，而不是只给出一个布尔值。
+    const referenceDiff = referenceRect && referenceStyle
+      ? {
+          ...Object.fromEntries(
+            ["borderRadius", "borderColor", "backgroundColor", "color", "boxShadow"]
+              .filter((name) => style[name] !== referenceStyle[name])
+              .map((name) => [name, { button: style[name], reference: referenceStyle[name] }])
+          ),
+          ...(sizeMatchesReference
+            ? {}
+            : {
+                size: {
+                  button: [buttonRect.width, buttonRect.height],
+                  reference: [referenceRect.width, referenceRect.height]
+                }
+              })
+        }
+      : null;
     return {
+      referenceDiff,
       borderWidth: style.borderTopWidth,
       borderColor: style.borderTopColor,
       background: style.backgroundColor,
@@ -298,8 +331,7 @@ async function assertInteractiveIconButton(cdp, selector, label, referenceSelect
         reference === null ||
         (referenceRect &&
           referenceStyle &&
-          Math.abs(buttonRect.width - referenceRect.width) <= 0.5 &&
-          Math.abs(buttonRect.height - referenceRect.height) <= 0.5 &&
+          sizeMatchesReference &&
           style.borderRadius === referenceStyle.borderRadius &&
           style.borderColor === referenceStyle.borderColor &&
           style.backgroundColor === referenceStyle.backgroundColor &&
@@ -824,6 +856,24 @@ async function clickButtonByAriaLabel(cdp, label) {
 }
 
 /**
+ * 等待选择器匹配到元素。
+ *
+ * 设置弹层等按需加载的视图首次打开时要先完成动态 import，在冷启动的 Vite 开发服务器上
+ * 可能耗时数百毫秒到数秒；固定延迟会随机取到加载占位而不是弹层本体。因此用有界轮询替代，
+ * 超时则明确报出选择器，而不是返回过期结果。
+ */
+async function waitForSelector(cdp, selector, timeoutMilliseconds = 15_000) {
+  const deadline = Date.now() + timeoutMilliseconds
+  while (Date.now() < deadline) {
+    if (await cdp.evaluate(`Boolean(document.querySelector(${JSON.stringify(selector)}))`)) {
+      return
+    }
+    await delay(50)
+  }
+  throw new Error(`Visual audit timed out waiting for selector: ${selector}`)
+}
+
+/**
  * 通过真实列设置复选框切换 Revision 列，覆盖隐藏列后 CSS Grid 重新排布的路径。
  * 直接点击 input 能触发 React 的 onChange，同时避免依赖弹层内部的视觉坐标。
  */
@@ -879,6 +929,8 @@ async function auditDarkSettingsCategories(cdp) {
   })()`)
   await delay(80)
   await clickButtonByAriaLabel(cdp, '客户端设置')
+  // 设置弹层是唯一按需加载的全局弹层，本步骤又是审计中第一次打开它。
+  await waitForSelector(cdp, '.settings-dialog .settings-page:not([hidden])')
 
   const checkpoints = []
   const categories = [
@@ -1562,7 +1614,10 @@ async function auditLightThemeComponents(cdp) {
     cdp,
     '.local-changes__tools .diff-visibility-toggle',
     'Local changes Diff visibility toggle',
-    '.change-view-switch button.is-active'
+    '.change-view-switch button.is-active',
+    // 视图切换已移入分区工具栏并使用更紧凑的 22×20 按钮，而 Diff 开关仍是顶部工具栏的
+    // 29×27 工具按钮：两者只共享激活态的外观令牌，尺寸本来就不同。
+    { matchReferenceSize: false }
   )
 
   // 目录多选必须只高亮目录对象，截图同时覆盖右侧“文件夹没有单一 Diff”的提示。
@@ -1911,6 +1966,7 @@ async function auditLightThemeComponents(cdp) {
   await clickButtonByAriaLabel(cdp, '关闭服务器面板')
 
   await clickButtonByAriaLabel(cdp, '客户端设置')
+  await waitForSelector(cdp, '.settings-dialog .settings-page:not([hidden])')
   checkpoints.push(await captureCheckpoint(cdp, 'settings'))
   // 设置弹层改为单类内容工作区后，每个分类都必须真实切换并进入浅色审计；
   // 只截默认“常规”页会漏掉输入框、Shared Store 长内容和维护操作区。
@@ -1986,6 +2042,8 @@ async function auditLightThemeComponents(cdp) {
     screenHeight: 720
   })
   await clickMatchingButton(cdp, '.sidebar__scroll .tree-row--root', '仓库工具')
+  // 仓库工具弹层同样按需加载，首次打开要等待动态 import 完成，否则截到的是加载占位。
+  await waitForSelector(cdp, '.tools-dialog__nav')
   checkpoints.push(await captureCheckpoint(cdp, 'repository-tools'))
   const repositoryToolsLayout = await cdp.evaluate(`(() => {
     const navigation = document.querySelector(".tools-dialog__nav");

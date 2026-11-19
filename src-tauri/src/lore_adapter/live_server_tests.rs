@@ -18,9 +18,11 @@ use super::operations::{
     lore_write_conflict_resolution,
 };
 use super::repository::{
-    lore_repository_clone, lore_repository_config_get, lore_repository_config_update,
-    lore_repository_list, lore_repository_publish, lore_repository_status,
+    lore_repository_clone, lore_repository_list, lore_repository_publish, lore_repository_status,
 };
+// 仓库配置编辑的 live 测试依赖 POSIX 符号链接，只在 Unix 上编译；其他平台引入会产生未使用导入警告。
+#[cfg(unix)]
+use super::repository::{lore_repository_config_get, lore_repository_config_update};
 use super::repository_lifecycle::initialize_repository;
 use super::workspace::{lore_ignore_paths, lore_open_external_merge, lore_stage};
 use super::*;

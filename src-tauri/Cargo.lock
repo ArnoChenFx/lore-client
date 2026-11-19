@@ -2811,6 +2811,7 @@ dependencies = [
 name = "lore-client"
 version = "0.2.20"
 dependencies = [
+ "embed-resource",
  "exr",
  "flate2",
  "image",

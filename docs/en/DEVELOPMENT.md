@@ -206,12 +206,6 @@ Build and test notes:
   warning `LNK4099` about the missing `swfs.pdb`, which is expected, and the binaries
   import only system DLLs (the Universal CRT API sets), no VC runtime DLL. Re-check
   this when upgrading.
-- On Windows, `cargo test` builds the library test binary without the Common Controls v6
-  manifest that `tauri-build` embeds in the application. `tauri-plugin-dialog 2.8.4`
-  (`rfd 0.17`) shows message dialogs through `TaskDialogIndirect`, which only comctl32 v6
-  provides, so the test binary fails to start with `STATUS_ENTRYPOINT_NOT_FOUND`
-  (`0xc0000139`) until it gets that manifest, for example with `mt.exe`. The application
-  itself is not affected.
 - `lore-fuse` is Linux-only, speaks `/dev/fuse` directly and needs no system
   library.
 - `cargo test instance_clone_matches_the_real_lore -- --ignored --test-threads=1`
@@ -359,3 +353,11 @@ Test suites and test cases use English names.
 - **The browser preview works but desktop mode fails:** reproduce the issue with `bun tauri dev`; browser sample data does not exercise native repository operations.
 - **Local work succeeds but server operations fail:** check `VITE_LORE_SERVER_URL`, connectivity, permissions, and Lore service compatibility.
 - **Documentation images appear as ordinary Git objects:** run `git lfs install`, then verify `.gitattributes` and `git check-attr filter`.
+- **`cargo test` fails to start on Windows with `STATUS_ENTRYPOINT_NOT_FOUND` (`0xc0000139`):** the test binary has no Common
+  Controls v6 manifest. `tauri-plugin-dialog` (through `rfd 0.17`) shows message dialogs with `TaskDialogIndirect`, which only
+  comctl32 v6 provides, so every binary that links it needs the manifest. `tauri-build` embeds its manifest into the application
+  only, so `build.rs` turns that default off (`WindowsAttributes::new_without_app_manifest`) and links
+  `windows-app-manifest.xml`, a copy of tauri-build's default manifest, into every target with `embed-resource`'s
+  `compile_for_everything`. Keep the two changes together: having both duplicates the manifest resource. To check a binary, run
+  `mt.exe -inputresource:<exe>;#1 -out:<file>`; the application and the test binary must each carry exactly one, identical
+  manifest. If a future `tauri-build` links its manifest into every target itself, remove this workaround.

@@ -156,6 +156,13 @@ export function useAppVersionActions({
 }: UseAppVersionActionsOptions) {
   const [state, dispatch] = useReducer(versionActionStateReducer, INITIAL_VERSION_ACTION_STATE)
 
+  // 先取出列表引用，回调与依赖数组都使用它们。React Compiler 对 `a?.b.method()` 这种“可选链上
+  // 调方法”的写法只会把根对象 `a` 推断为依赖，比手写的 `a?.b` 更粗；两边对不上时它会放弃优化整个
+  // 组件（lint 规则 `preserve-manual-memoization`）。改用局部引用后推断结果与依赖数组一致，也保住了
+  // “只在标签/修订列表本身变化时才重建回调”的原有粒度，而不是随整个快照对象重建。
+  const snapshotTags = activeSnapshot?.tags
+  const snapshotRevisions = activeSnapshot?.revisions
+
   const openBranchCreateDialog = useCallback((source: BranchCreationSource) => {
     dispatch({ type: 'openBranchCreate', source })
   }, [])
@@ -308,7 +315,7 @@ export function useAppVersionActions({
     async (name: string, message: string) => {
       const editingTag = state.editingTag
       if (!editingTag) return
-      const duplicate = activeSnapshot?.tags.some(
+      const duplicate = snapshotTags?.some(
         (tag) => tag.id !== editingTag.id && tag.name.toLocaleLowerCase() === name.toLocaleLowerCase()
       )
       if (duplicate) {
@@ -328,21 +335,21 @@ export function useAppVersionActions({
       )
       if (updated) closeTagDialog()
     },
-    [activeSnapshot?.tags, applicationMode, closeTagDialog, notify, runRepositoryMutation, state.editingTag]
+    [snapshotTags, applicationMode, closeTagDialog, notify, runRepositoryMutation, state.editingTag]
   )
 
   const selectTag = useCallback(
     (tag: LoreTag) => {
       setSelectedTagId(tag.id)
-      const revision = activeSnapshot?.revisions.find((item) => item.id === tag.revision)
+      const revision = snapshotRevisions?.find((item) => item.id === tag.revision)
       if (revision) setSelectedRevisionId(revision.id)
     },
-    [activeSnapshot?.revisions, setSelectedRevisionId, setSelectedTagId]
+    [snapshotRevisions, setSelectedRevisionId, setSelectedTagId]
   )
 
   const locateTagRevision = useCallback(
     (tag: LoreTag) => {
-      const revision = activeSnapshot?.revisions.find((item) => item.id === tag.revision)
+      const revision = snapshotRevisions?.find((item) => item.id === tag.revision)
       if (!revision) {
         notify(
           t('revisionLoadedHistory_5d63'),
@@ -355,7 +362,7 @@ export function useAppVersionActions({
       setSelectedRevisionId(revision.id)
       setActiveView('history')
     },
-    [activeSnapshot?.revisions, notify, setActiveView, setSelectedRevisionId, setSelectedTagId]
+    [snapshotRevisions, notify, setActiveView, setSelectedRevisionId, setSelectedTagId]
   )
 
   /** 已归档分支只允许定位精确 Latest，不能触发检出或隐式恢复。 */
@@ -365,7 +372,7 @@ export function useAppVersionActions({
         notify(t('archivedBranchAvailableRevision_62c0'), branch.name, 'warning')
         return
       }
-      const revision = activeSnapshot?.revisions.find((item) => item.id === branch.latest)
+      const revision = snapshotRevisions?.find((item) => item.id === branch.latest)
       if (!revision) {
         notify(
           t('revisionLoadedHistory_5d63'),
@@ -378,7 +385,7 @@ export function useAppVersionActions({
       setSelectedRevisionId(revision.id)
       setActiveView('history')
     },
-    [activeSnapshot?.revisions, notify, setActiveView, setSelectedBranchId, setSelectedRevisionId]
+    [snapshotRevisions, notify, setActiveView, setSelectedBranchId, setSelectedRevisionId]
   )
 
   const openTagContextMenu = useCallback(
@@ -428,7 +435,7 @@ export function useAppVersionActions({
     (branch: Branch) => {
       // 侧栏单击先保留 Branch 浏览上下文，但绝不把它升级为 Checkout。
       setSelectedBranchId(branch.id)
-      const revisionId = resolveSidebarBranchRevisionId(branch, activeSnapshot?.revisions ?? [])
+      const revisionId = resolveSidebarBranchRevisionId(branch, snapshotRevisions ?? [])
       if (!revisionId) {
         /*
          * 历史可能受 Lore 查询上限约束。目标不在当前真实快照时保持现有 Revision，
@@ -438,7 +445,7 @@ export function useAppVersionActions({
       }
       revealRevision(revisionId)
     },
-    [activeSnapshot?.revisions, revealRevision, setSelectedBranchId]
+    [snapshotRevisions, revealRevision, setSelectedBranchId]
   )
 
   const openRevisionContextMenu = useCallback(

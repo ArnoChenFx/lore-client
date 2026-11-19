@@ -6,18 +6,24 @@
 //! patch export destination rules.
 
 use super::*;
+use super::{operations::lore_commit, workspace::lore_stage};
+
+// 下面的导入与辅助函数只服务于带 `#[cfg(unix)]` 的测试（它们依赖符号链接与 POSIX shell 脚本伪造的
+// 外部工具）。其他平台不编译这些测试，若仍引入它们就会产生未使用导入与死代码警告。
+#[cfg(unix)]
 use super::{
-    operations::lore_commit,
     repository_lifecycle::initialize_repository,
     workspace::{
         lore_file_reset, lore_open_external_merge, lore_read_revision_text,
-        lore_read_workspace_text, lore_stage, lore_unstage, lore_workspace_diff,
-        lore_write_patch_file,
+        lore_read_workspace_text, lore_unstage, lore_workspace_diff, lore_write_patch_file,
     },
 };
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::time::{Duration, Instant};
 
+#[cfg(unix)]
 fn labels() -> ExternalMergeLabels {
     ExternalMergeLabels {
         base: "base".to_owned(),
@@ -29,6 +35,7 @@ fn labels() -> ExternalMergeLabels {
 
 /// Creates a local repository whose `doc.txt` changed from "one" (first revision) to "two"
 /// (second revision). Returns the repository path and both revisions.
+#[cfg(unix)]
 fn local_repository_with_two_revisions(root: &Path) -> (String, String, String) {
     let repository = root.join("repository");
     std::fs::create_dir_all(&repository).unwrap();
@@ -65,6 +72,7 @@ fn local_repository_with_two_revisions(root: &Path) -> (String, String, String) 
     (repository_text, revisions.remove(0), revisions.remove(0))
 }
 
+#[cfg(unix)]
 fn committed_revision_of(result: &LoreOperationResult) -> String {
     result
         .events
@@ -94,6 +102,7 @@ fn write_fake_merge_tool(directory: &Path, body: &str) -> ExternalDiffTool {
     }
 }
 
+#[cfg(unix)]
 fn wait_until(timeout: Duration, mut condition: impl FnMut() -> bool) -> bool {
     let started = Instant::now();
     while started.elapsed() < timeout {
@@ -107,6 +116,7 @@ fn wait_until(timeout: Duration, mut condition: impl FnMut() -> bool) -> bool {
 
 /// The copy-back runs after the tool exits, so a negative assertion needs a grace period
 /// after the tool's completion marker appears.
+#[cfg(unix)]
 fn wait_for_tool_completion(marker: &Path) {
     assert!(
         wait_until(Duration::from_secs(20), || marker.exists()),
